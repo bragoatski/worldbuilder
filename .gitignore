@@ -1,0 +1,12 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
+
+# Tooling we may add later
+node_modules/
+dist/
+*.tsbuildinfo
