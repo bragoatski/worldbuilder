@@ -28,3 +28,10 @@ Two things, in one session:
 - North star (income / community / portfolio / love).
 - Definition of "balanced" for the ecosystem - needed before tuning.
 - Whether deterministic ecology is wanted (gates the reproducibility fix).
+
+## UPDATE (2026-06-21, later same session) - cleanup + deploy DONE
+The DEFERRED + NEXT(1,2) items above were completed in the same session:
+- Taipan `CLAUDE.md` slimmed to inherit global, committed (`c656a02`); memory deduped (added a global pointer to the operating-model memory; added a `worldbuilder-project` sibling memory + MEMORY.md index line). Taipan otherwise untouched.
+- `index.html` reproduced into the repo from the chat paste (what was provided), UTF-8 glyphs restored; JS syntax-validated (compiles clean), zero mojibake. A few paste-collapsed emoji were best-guessed (herbivore, fauna-header, Load, zoom, avg-stat marker, place-pin) - pending a visual check. Committed `93d2bfd`.
+- Pushed to GitHub (public) `bragoatski/worldbuilder`, default branch `main`; Pages enabled and CONFIRMED LIVE (HTTP 200) at https://bragoatski.github.io/worldbuilder/.
+Remaining NEXT is in STATUS.md: verify the game in-browser (press `T`), then the measurement harness, then ecosystem balance >> rivers > beaches.
