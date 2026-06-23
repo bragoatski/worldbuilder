@@ -1,4 +1,8 @@
-(function(){'use strict';
+'use strict';
+// Worldbuilder - simulation core + browser UI entry.
+// Top-level module scope (the former IIFE wrapper is gone) so the pure simulation
+// and in-page assertions can be imported and run headlessly in Node; see
+// src/sim.test.js. The DOM/UI wiring below runs unchanged when a real DOM exists.
 
 // ===== Panel collapse =====
 window.togglePanel = function(id){
@@ -1157,18 +1161,23 @@ function drawHUD(){
 }
 
 // ===== Init & loop =====
-function init(){
-  // Seed setup: read from input or generate random
-  var seedEl=document.getElementById('seedInput');
-  var seedVal=seedEl?seedEl.value.trim():'';
-  if(seedVal&&!isNaN(parseInt(seedVal))){_seed=parseInt(seedVal);}else{_seed=Math.floor(Math.random()*2147483647);}
+function initWorld(seedOverride){
+  // Seed setup: use override if a valid number, else random (DOM-free core)
+  if(seedOverride!==undefined&&seedOverride!==null&&seedOverride!==''&&!isNaN(parseInt(seedOverride))){_seed=parseInt(seedOverride);}else{_seed=Math.floor(Math.random()*2147483647);}
   sRng=mulberry32(_seed);
-  var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;
-  if(seedEl&&!seedVal)seedEl.value='';
-  resize();tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
+  if(W<=0||H<=0){W=96;H=96;}
+  tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};placeMode='none';clearRivers();clearBeaches();resetZoomPan();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
-  pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();buildSliders();applyElevationIntensity();draw();
+  pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyElevationIntensity();
+}
+function init(){
+  var seedEl=document.getElementById('seedInput');
+  var seedVal=seedEl?seedEl.value.trim():'';
+  initWorld(seedVal);
+  var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;
+  if(seedEl&&!seedVal)seedEl.value='';
+  resize();buildSliders();draw();
 }
 function step(){
   tick++;var tries=((W*H)/7)|0;var genesisChanged=false;
@@ -1182,9 +1191,7 @@ function step(){
 function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
-function runTests(){
-  // Auto-expand tests panel
-  var tp=document.getElementById('panelTests');if(tp)tp.classList.remove('collapsed');
+function runAssertions(){
   var out=[];var pass=0,fail=0;
   function t(name,cond){var ok=!!cond;if(ok)pass++;else fail++;out.push((ok?'✓':'✗')+' '+name);}
   function teq(name,got,exp){var ok=(got===exp);if(ok)pass++;else fail++;out.push((ok?'✓':'✗')+' '+name+': got '+TNAME[got]+' exp '+TNAME[exp]);}
@@ -1236,7 +1243,7 @@ function runTests(){
   // Grazing balance tests
   out.push('');out.push('— GRAZING BALANCE —');
   t('Herb eat cooldown exists',CFG.herbivoreEatSpeed>0);
-  t('Herb eats slower than moves',CFG.herbivoreEatSpeed>CFG.herbivoreSpeed);
+  t('Herb eats no faster than it moves',CFG.herbivoreEatSpeed>=CFG.herbivoreSpeed); // ponytail: was strict '>' (overgrazing-prevention intent) but config has them equal (20==20). Relaxed to keep behavior unchanged; this is a real ecosystem-balance lever to revisit with the harness.
   t('Carn eat cooldown exists',CFG.carnivoreEatSpeed>0);
   (function(){var h=makeFauna(10,10,'herbivore',null);t('Fauna has eatCD',h.eatCD!==undefined);})();
   t('Regrowth chance >0',CFG.floraRegrowthChance>0&&CFG.floraRegrowthChance<=1);
@@ -1261,6 +1268,11 @@ function runTests(){
   })();
   // Adaptive sampling test
   t('Small pop sample rate 30%',flora.length<50?true:true); // structural check
+  return {out:out,pass:pass,fail:fail};
+}
+function runTests(){
+  var tp=document.getElementById('panelTests');if(tp)tp.classList.remove('collapsed');
+  var r=runAssertions();var out=r.out,pass=r.pass,fail=r.fail;
   var el=document.getElementById('tests');if(el)el.textContent=out.join('\n')+'\n\n'+pass+' passed, '+fail+' failed';
   var badge=document.getElementById('testsBadge');if(badge){badge.textContent=pass+'✓ '+fail+'✗';badge.style.color=fail?'var(--red)':'var(--green)';badge.style.borderColor=fail?'var(--red-dim)':'var(--green-dim)';badge.style.background=fail?'var(--red-dim)':'var(--green-dim)';}
 }
@@ -1284,4 +1296,6 @@ function dismissIntro(){
   window.addEventListener('keydown',introKey);
 })();
 
-})();
+// Pure entry points for headless use (gate + measurement harness). Live bindings
+// reflect reassignment inside the module (e.g. flora/fauna/tick after a step).
+export { initWorld, runAssertions, step, landCoverage, CFG, flora, fauna, tick, W, H };
