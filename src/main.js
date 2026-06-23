@@ -178,7 +178,7 @@ var CFG={
   herbivoreSpeed:20, carnivoreSpeed:16,
   herbivoreEatSpeed:20,             // ticks between grazing
   carnivoreEatSpeed:18,             // ticks between hunting
-  herbivoreEatGain:12, carnivoreEatGain:50,
+  herbivoreEatGain:12, carnivoreEatGain:40,
   floraRegrowthChance:0.4,         // chance eaten flora drops a root remnant
   floraRegrowthDelay:10,           // ticks before remnant sprouts
   floraMutationBias:0.45,          // how strongly mutations pull toward local tile conditions (0=random, 1=full)
