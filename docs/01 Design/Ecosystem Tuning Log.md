@@ -155,3 +155,125 @@ CASCADE notes (the big one):
 Decision: **KEEP crowding 2.0** - the best baseline by far, hits the extinction + phase-lag + cap-hit targets, near the persistence target. Committed as the knob-C milestone. Remaining work: tame AMPLITUDE and lift the 2 fragile seeds (push crowding further? revisit knob A eatGain for predator overshoot? knob B prey recruitment?).
 
 ---
+
+## Step A2 - revisit knob A: carnivoreEatGain 40 -> 32 on top of C (REVERTED - key cascade lesson)
+
+Hypothesis: lower energy-per-kill -> smaller predator booms -> shallower prey crashes -> bounded amplitude + fewer fragile seeds (D insures against over-weakening).
+
+Result (`--seeds=6`, 463s) vs C2 baseline (eatGain 40):
+
+| metric | C2 (eatGain 40) | A2 (eatGain 32) | read |
+|---|---|---|---|
+| extinction rate | 0% (0/6) | 17% (1/6) | REGRESSED (seed 1202 collapsed) |
+| carn-persistence | 5/6 | 5/6 | flat |
+| phase lag (coupled) | +68t | +27t | weaker |
+| herb amplitude | 86.3 | 88.9 | NOT damped |
+| final fauna mean | 87.2 | 66.8 | lower |
+| amp-trend | 61.6->70.4 | 61.5->75.9 | slightly worse |
+
+CASCADE LESSON (important, non-obvious - promote to Engineering Lessons):
+- **`carnivoreEatGain` does NOT control the per-capita KILL RATE.** Predators kill whenever `eatCD` (carnivoreEatSpeed=18t cooldown) is ready and prey are present, regardless of energy-per-kill. Lowering eatGain just makes predators HUNGRIER: same kill rate, less energy banked, so they need MORE kills to survive/reproduce = MORE predation pressure per predator, not less. seed1000 still boomed to 104C with herb crashed to 29.
+- So eatGain tunes the predator NUMERICAL response (how fast predator NUMBERS grow) + starvation; it is the WRONG lever for predation PRESSURE / overshoot / amplitude. The right lever is **`carnivoreEatSpeed`** (lengthen the kill cooldown to actually cut kill rate).
+
+Decision: **REVERT eatGain to 40.** Next A/B: lengthen `carnivoreEatSpeed` 18 -> 26 (single knob vs committed C2 baseline) to reduce predation pressure and tame amplitude. Predict: smaller predator booms, shallower prey crashes, bounded amplitude; risk - too slow and predators starve (D should catch it).
+
+---
+
+## Step A3 - carnivoreEatSpeed 18 -> 26 on top of C (NEUTRAL - reverted)
+
+Result (`--seeds=6`, 460s) vs C2 baseline:
+
+| metric | C2 (eatSpeed 18) | eatSpeed 26 | read |
+|---|---|---|---|
+| extinction rate | 0% (0/6) | 0% (0/6) | flat |
+| carn-persistence | 5/6 | 5/6 | flat |
+| phase lag | +68t | +66t | flat |
+| herb amplitude | 86.3 | 86.3 | IDENTICAL |
+| carn amplitude | 27.4 | 27.5 | flat |
+| final fauna mean | 87.2 | 95.7 | marginally higher (noise?) |
+| amp-trend | 61.6->70.4 | 61.6->67.0 | marginally less growing (noise?) |
+
+CASCADE notes:
+- eatSpeed 18->26 (-31% kill rate) was essentially a NO-OP. Reason: with eatGain 40 nearly filling the tank (maxEnergy 120) in ONE kill, a slower cooldown still lets a predator near a herd kill-fill-reproduce. The cooldown is not the binding constraint on the numerical response in this regime either.
+- CONCLUSION: amplitude is driven by the predator (large-eatGain, cheap-repro) ECONOMICS - predators boom whenever prey are available - not by per-capita kill rate. Neither eatGain nor eatSpeed alone is the amplitude lever in this regime.
+
+Decision: **REVERT eatSpeed to 18** (do not keep a neutral change). Pivot: the persistence gap is seed 1202 (24H/0C) where D's minPrey=30 gate blocks rescue. C's dispersion now protects prey, so re-tune D: minPrey 30 -> 20 to rescue moderate-prey seeds. Predict: persistence -> ~6/6, extinction stays 0 (dispersion guards over-suppression).
+
+---
+
+## Step D3 - carnivoreRescueMinPrey 30 -> 20 on top of C (NEUTRAL)
+
+Result (`--seeds=6`, 466s) vs C2: persistence 5/6 (unchanged), extinction 0%, herb amp 86.3, lag +68t - essentially IDENTICAL to C2. seed 1202 STILL ends 29H/0C.
+
+CASCADE notes:
+- minPrey was NOT the binding constraint. The rescue RATE (5e-5) is so low that even when eligible (hc>=20), expected rescues over the window are < 1. So the 5/6 persistence comes mainly from predator REPRODUCTION through the cycle, not rescue; 1202 is a seed where the predator cycle died and the weak rescue cannot re-establish them.
+- The lever to fix the last seed is the rescue RATE, not the minPrey gate.
+
+Decision: keep minPrey 20 (neutral, makes 1202 eligible), raise `carnivoreRescueRate` 5e-5 -> 1e-4 so the rescue actually fires in a predator-poor / prey-present seed. cap<4 guard prevents over-rescue in healthy seeds; C's dispersion guards over-suppression. Predict: 1202 -> coexistence (persistence 6/6), extinction stays 0.
+
+---
+
+## Step D4 - carnivoreRescueRate 5e-5 -> 1e-4 on top of C (REGRESSED - reverted; key METHOD lesson)
+
+Result (`--seeds=6`, 469s) vs C2:
+
+| metric | C2 (rate 5e-5) | rate 1e-4 | read |
+|---|---|---|---|
+| persistence | 5/6 | 5/6 | unchanged (1202 still 0C) |
+| phase lag | +68t | -66t | LOST the positive lag |
+| carn amplitude | 27.4 | 6.4 | predators pinned ~4, no longer cycling |
+| final fauna | 87.2 | 62.3 | lower |
+| extinction | 0% | 0% | held |
+
+CASCADE + METHOD lesson (CRITICAL - promote to Engineering Lessons):
+- Stronger rescue did NOT fix 1202: a rescued lone immigrant in a low/dispersed-prey seed STARVES before finding the fragmented herd, so rescue cannot re-establish a DEAD predator cycle (it only insures a live one against dipping to 0).
+- More important - **RNG-stream reshuffle**: knob D's rescue branch draws a CONDITIONAL `eRng()` (`...&&eRng()<rate*hc`). Changing minPrey/rate/cap changes how often that eRng() is drawn -> changes the per-tick RNG draw COUNT -> shifts the ENTIRE downstream RNG stream. So D-parameter A/Bs are NOT "same world, different rule" - they are different RNG draws entirely (seed 1000 went 62C->4C, 1404 129C->4C purely from reshuffle). Per-seed comparison across D settings is unreliable, and even aggregates carry reshuffle noise.
+- By contrast, knob A (eatGain) and knob C (crowding scoring) do NOT gate an eRng() call, so those A/Bs WERE clean same-world comparisons - which is why C read so cleanly and D so noisily.
+
+Decision: **REVERT D to committed C2** (minPrey 30, rate 5e-5). C2 is the best balanced baseline; further 6-seed D-rate tuning is chasing RNG noise. Next: validate C2 on a LONG run (ticks=3000) to test whether the large amplitude is BOUNDED (C2 genuinely balanced) or DIVERGING (needs prey-side density-dependence / knob B).
+
+---
+
+## Step V1 - LONG-RUN validation of committed C2 (ticks=3000) - MAJOR FINDING: non-stationary world
+
+Result (`--seeds=6 --warmup=3000 --ticks=3000`, 734s):
+
+| metric | C2 @1000t | C2 @3000t | reading |
+|---|---|---|---|
+| extinction rate | 0% (0/6) | 33% (2/6) | 2 seeds crash ~tick 1300 (BEYOND the tuning window) |
+| carn-persistence | 83% (5/6) | 50% (3/6) | degrades over the longer horizon |
+| cap-hits | 0 | **27** | seed 1202 herbivores hit the 400 cap = Decision-1 FAILURE |
+| herb amplitude | 86 | 128 (swings to 400) | larger |
+| land coverage | ~24% | **~54%** | terrain DOUBLED during the measured window |
+| flora total | ~2,000 | **~11,000** | food base 5x'd |
+
+THE BIG CASCADE (reframes the whole exercise):
+- **The world is NON-STATIONARY.** Terrain genesis does not stop after warmup - `step()` keeps growing land every tick. warmup=3000 -> ~24% land; +3000 measured ticks -> ~54% land, flora ~2,000 -> ~11,000. So the standard 1000-tick protocol measures the ecology against a near-static SNAPSHOT (land ~24%); a longer horizon measures it against a steadily RISING carrying capacity.
+- Consequence: as flora 5x's, herbivores boom toward the population CAP (seed 1202: 392H/400, 27 cap-hits) - a Decision-1 failure that the 1000-tick window structurally cannot reveal (caps never bound there). And the large-amplitude cycles wander 2/6 seeds to extinction at tick ~1300, past the tuning window.
+- So **C2 is WINDOW-balanced (excellent at land ~24%) but NOT steady-state balanced.** The two blockers are beyond knob-tuning of the existing levers: (1) the rising carrying capacity (non-stationary terrain), and (2) residual large amplitude that needs PREY-SIDE density-dependence (self-limit below the food base) to bound regardless of flora level.
+
+Decision: **STOP the autonomous knob loop here.** C2 is the delivered "much better baseline to work off of" (committed `2c24af7`); it is a large, real improvement on the proposal's own protocol. The remaining gap is a SCOPE/DESIGN fork for Kevin (accept window-balance / add prey density-dependence mechanism / re-baseline against a plateaued long-warmup world / bound terrain growth) - not more turning of the current knobs. Surfaced to Kevin with a recommendation.
+
+---
+
+## SUMMARY - where the loop landed (for the next session)
+
+**Committed best = C2 (`2c24af7`):** `carnivoreEatGain 40`, `carnivoreEatSpeed 18`, `herbivoreCrowding 2.0`, knob D rescue (`rate 5e-5, minPrey 30, cap 4`). Three commits: A (`5827511`), D (`4518b43`), C (`2c24af7`).
+
+**vs the seeded baseline, on the standard 1000-tick protocol:**
+| metric | baseline | C2 | 
+|---|---|---|
+| full-extinction | 17% (1/6) | **0% (0/6)** |
+| carn-persistence | 0% (0/6) | **83% (5/6)** |
+| phase lag | -44t (no +lag) | **+68t (carn after prey)** |
+| final fauna mean | 52 | 87 |
+| cap-hits | 0 | 0 |
+
+**What each knob taught us (the cascade map):**
+- **A (eatGain):** tunes the predator NUMERICAL response + starvation, NOT kill rate. 50->40 introduced lag at no starvation cost. Lower (32) backfired (hungrier predators kill the same, destabilize). 
+- **eatSpeed:** the kill-RATE lever, but a NO-OP here because one kill (eatGain 40) nearly fills the tank, so cooldown is not the binding constraint. Amplitude is predator-ECONOMICS-driven, not kill-rate-driven.
+- **D (rescue):** lifts persistence off zero but cannot RESTART a dead predator cycle (lone immigrant starves in dispersed prey); insures a live cycle. Its parameter A/Bs are RNG-confounded (conditional eRng() gate changes draw count -> reshuffles the stream). Kept as light insurance.
+- **C (crowding/dispersion):** THE load-bearing lever. 1.0 at threshold, 2.0 broke global synchrony -> 0% extinction, +lag, coexistence. Clean A/B (no eRng gate).
+- **V1 (long run):** the world is non-stationary; window-balance != steady-state balance.
+
+**Recommended next (Kevin's call):** add PREY-SIDE density-dependence (herbivore reproduction suppressed by local crowding, not just movement) - the proposal's reason-1 fix - to bound amplitude + prevent cap-hits regardless of flora level; validate in the long/high-flora regime, and decide the warmup/measurement protocol for a non-stationary world (warm up to a land plateau, or define balance per development stage).
