@@ -9,4 +9,5 @@ Thumbs.db
 # Tooling we may add later
 node_modules/
 dist/
+.vite/
 *.tsbuildinfo
