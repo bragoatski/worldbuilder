@@ -16,20 +16,23 @@ The gate is now `npm run typecheck && npm run lint && npm test` (+ `npm run buil
 - Repo: https://github.com/bragoatski/worldbuilder
 - Live (unchanged, original build): https://bragoatski.github.io/worldbuilder/
 
+## Ecosystem balance work (active 2026-06-22)
+Plan lives in `docs/01 Design/Balance Proposal.md` (read it - decisions, knob families, metrics, baselines). Kevin's resolved decisions: balance is achieved by TUNING RATES into a natural bounded predator-prey oscillation, NOT by population caps (a run that hits a cap = failure); seed the ecology RNG (done); keep the flora per-tile limit (food base); include the prey-dependent predator spawn-rescue (knob D); and make herds FRAGMENT into many spaced-out groups (knob C / spatial dispersion is a desired feature, not a fallback).
+
+**Step 1 DONE: ecology RNG seeded.** Added the `eRng` dynamics stream (see Engineering Lessons - Reproducibility). Terrain stream (`sRng`) byte-identical; new ecology-determinism test green; re-baselined (seeded numbers in the proposal). Runs are now reproducible, so A/B tuning is a clean comparison.
+
 ## NEXT (in order)
-1. **Confirm the live RENDER.** CI/HTTP are green, but the headless gate is blind to canvas render + UI. Open the live site (or `npm run dev`), Start, press `T` (should read 0 failed now), click around. The init/runTests refactor is behavior-preserving by construction, so this is a sanity check; if anything is off, `git revert` restores the prior build instantly.
-2. **DECISION (Kevin): seed the ecology RNG?** Terrain is seeded; ecology still uses raw `Math.random()`, so per-seed runs aren't reproducible. The harness works on aggregates regardless, but reproducible single-run debugging/A-B tuning needs deterministic ecology. Long-standing open question.
-3. **Ecosystem balance work, now measurable.** Use `npm run measure` to attack the traveling-wave extinction. First lever surfaced: `herbivoreEatSpeed === herbivoreSpeed` (the relaxed "eats slower than moves" assertion) - try making eating slower than moving and MEASURE the extinction-rate change. Then density-dependence + refugia (see North Star doc).
-4. **Optional deep cleanup (polish, not capability):** split the DOM-free sim core out of `src/main.js` into its own `sim.js` (removes the interim DOM stub, enables strict per-module TS). Headless already works via the stub, so this is cleanliness. NOTE it touches the render/UI shell that the gate can't see, so it needs its own browser verify + redeploy - do it as a focused follow-up, not reflexively.
+1. **Harness metrics + terrain snapshot.** Add the cycle-aware metrics (predator-prey phase lag, per-trophic period/amplitude, completed-cycles, carnivore-persistence, per-trophic min floor, cap-hit count, spatial-dispersion / cluster count) and a post-warmup terrain snapshot to cut the ~70s/seed re-run cost. The instrument the tuning depends on.
+2. **Ecosystem tuning loop** (awaiting Kevin's go per step): knob A (predator numerical-response lag - the "do not grow too fast" knob) -> add D (spawn rescue) -> tune C (dispersion/asynchrony) -> fine-tune B alongside. Each step one reproducible A/B vs the seeded baseline, kept only if the cycle metrics improve. Stop when the Decision-1 target (bounded coexisting oscillation, no cap-hits) is met.
+3. **Rivers** (after ecosystem): priority-flood -> flow-accumulation rewrite of `generateRivers` + connectivity assertions + visual verify.
+4. **Beaches:** cut or cosmetic-only coastline pass; lowest priority.
+5. **Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js` (removes the interim DOM stub, enables strict per-module TS). Touches the render/UI shell the gate can't see, so it needs its own browser verify + redeploy - a focused follow-up, not reflexive.
 
 ## Known gaps
 - The headless harness imports the browser entry `main.js` via a permissive DOM stub (`scripts/headless-dom.mjs`); interim until the sim core is split out.
 - Terrain genesis is slow (~3-4k ticks to ~30% land); ecology studies must warm up accordingly.
 - ESLint runs `eslint:recommended` with legacy-pattern rules downgraded to warnings (19 advisory warnings in `main.js`); it errors only on genuinely new bugs.
-- Per-seed ecology not reproducible (NEXT #2).
 
 ## Open decisions (Kevin's)
-- Pages source switch + merge to main (NEXT #1).
-- Deterministic ecology yes/no (NEXT #2).
-- Definition of "balanced" for the ecosystem (needed before serious tuning; see North Star doc).
 - North star (income / community / portfolio / love) - still drives long-term priority.
+- (RESOLVED 2026-06-22: deterministic ecology = yes/done; "balanced" = tuned bounded oscillation, no caps; flora limit kept; spawn-rescue in; dispersion is a goal. See Balance Proposal.)

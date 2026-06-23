@@ -90,6 +90,7 @@ function mulberry32(a) {
   };
 }
 var sRng = Math.random; // replaced in init() with seeded version
+var eRng = Math.random; // seeded DYNAMICS stream (ecology/climate-drift/beach); set in initWorld. Kept separate from sRng so terrain generation is byte-identical.
 // Seeded random helpers for generation pipeline
 function sRandn(){var u=0,v=0;while(u===0)u=sRng();while(v===0)v=sRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function sTruncNorm(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*sRandn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
@@ -280,7 +281,7 @@ function updateAnomalyBlobs(){
   for(var i=0; i<anomalyBlobs.length; i++){
     var blob=anomalyBlobs[i]; blob.x+=blob.vx; blob.y+=blob.vy;
     if(blob.x<0)blob.x+=W; if(blob.x>=W)blob.x-=W; if(blob.y<0)blob.y+=H; if(blob.y>=H)blob.y-=H;
-    if(Math.random()<0.002){ blob.vx+=(Math.random()-0.5)*0.01; blob.vy+=(Math.random()-0.5)*0.01;
+    if(eRng()<0.002){ blob.vx+=(eRng()-0.5)*0.01; blob.vy+=(eRng()-0.5)*0.01;
       var sp=Math.sqrt(blob.vx*blob.vx+blob.vy*blob.vy); if(sp>0.03){blob.vx=(blob.vx/sp)*0.03;blob.vy=(blob.vy/sp)*0.03;} }
   }
 }
@@ -529,10 +530,10 @@ function reclassTerrain(){for(var y=0;y<H;y++)for(var x=0;x<W;x++){var iR=idx(x,
   for(var yy=0;yy<H;yy++)for(var xx=0;xx<W;xx++){var ii=idx(xx,yy);var myT=grid[ii];biomeBoundary[ii]=0;if(myT===T.OCEAN)continue;var nb=neighbors4(xx,yy);for(var nn=0;nn<nb.length;nn++){var nj=idx(nb[nn][0],nb[nn][1]);if(grid[nj]!==myT&&grid[nj]!==T.OCEAN){biomeBoundary[ii]=1;break;}}}
   // Compute beaches on established coasts
 }
-function randn(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
+function randn(){var u=0,v=0;while(u===0)u=eRng();while(v===0)v=eRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function truncatedNormal(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*randn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
-function betaapprox(a,b){function gK(k){if(k<1){var u=Math.random();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=Math.random();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}var x=gK(a),y=gK(b);return x/(x+y);}
-function gammaSample(shape,scale){function gK(k){if(k<1){var u=Math.random();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=Math.random();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}return gK(shape)*scale;}
+function betaapprox(a,b){function gK(k){if(k<1){var u=eRng();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=eRng();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}var x=gK(a),y=gK(b);return x/(x+y);}
+function gammaSample(shape,scale){function gK(k){if(k<1){var u=eRng();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=eRng();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}return gK(shape)*scale;}
 function pickWorldMeta(){
   if(sRng()<0.85){WORLD.muE=sTruncNorm(3,1,1,6);}else{WORLD.muE=(sRng()<0.5?(1+sRng()):(5+sRng()));}
   var v=sBeta(2,2);if(sRng()<0.10){var v2=sBeta(0.7,0.7);if(v2>0.9)v=0.95;else if(v2<0.1)v=0.05;}WORLD.varMode=v;
@@ -760,7 +761,7 @@ function beachStep(){
       var eL=elev[i]||0;var tM=tempField[i]||0;
       var growMod=(eL<1.0?1.5:eL<CFG.beachMaxElev?1.0:0.2)*(tM>6?1.3:tM>CFG.beachMinTemp?1.0:0.3);
       beachLevel[i]=Math.min(1.0,beachLevel[i]+CFG.beachGrowRate*growMod);
-      if(!atCap&&beachLevel[i]>0.15&&Math.random()<CFG.beachSpreadChance){
+      if(!atCap&&beachLevel[i]>0.15&&eRng()<CFG.beachSpreadChance){
         var spreadCands=[];
         for(var sn=0;sn<nbrs.length;sn++){
           var si=idx(nbrs[sn][0],nbrs[sn][1]);
@@ -773,7 +774,7 @@ function beachStep(){
           var sElev=elev[si]||0;var sTemp=tempField[si]||0;
           if(sElev<=CFG.beachMaxElev&&sTemp>=CFG.beachMinTemp)spreadCands.push(si);
         }
-        if(spreadCands.length>0){var pick=spreadCands[(Math.random()*spreadCands.length)|0];beachLevel[pick]=CFG.beachSpreadAmount;}
+        if(spreadCands.length>0){var pick=spreadCands[(eRng()*spreadCands.length)|0];beachLevel[pick]=CFG.beachSpreadAmount;}
       }
       if(beachLevel[i]>CFG.beachErosionThreshold){elev[i]=Math.max(0,elev[i]-CFG.beachErosionRate);}
       if(beachLevel[i]>=CFG.beachOceanThreshold&&elev[i]<0.3){grid[i]=T.OCEAN;beachLevel[i]=0;elev[i]=0;}
@@ -784,7 +785,7 @@ function beachStep(){
       var eL2=elev[i]||0;var tM2=tempField[i]||0;
       if(eL2>CFG.beachMaxElev||tM2<CFG.beachMinTemp)continue;
       var seedChance=0.00001*(eL2<1.0?2.0:1.0)*(tM2>6?1.5:1.0)*(oceanEdges>1?1.5:1.0);
-      if(Math.random()<seedChance){beachLevel[i]=0.02;}
+      if(eRng()<seedChance){beachLevel[i]=0.02;}
     }
   }
 }
@@ -823,13 +824,13 @@ function getSpeciesName(entity,type){
 // ======================================================================
 function hsv2hex(h,s,v){s=clamp(s,0,1);v=clamp(v,0,1);var c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c;var r=0,g=0,b=0;if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}return '#'+[Math.round((r+m)*255),Math.round((g+m)*255),Math.round((b+m)*255)].map(function(vv){return vv.toString(16).padStart(2,'0');}).join('');}
 var FLORA_SHAPES=['dot','plus','x','ring','diamond'];
-function makeFlora(x,y,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var pA=prefs?prefs.prefArid:clamp(tA+(Math.random()*2-1),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(Math.random()*2-1),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(Math.random()*2-1),0,10);var tol=prefs?prefs.tolerance:(CFG.floraToleranceBase+(Math.random()-0.5)*1.0);
+function makeFlora(x,y,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var pA=prefs?prefs.prefArid:clamp(tA+(eRng()*2-1),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(eRng()*2-1),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(eRng()*2-1),0,10);var tol=prefs?prefs.tolerance:(CFG.floraToleranceBase+(eRng()-0.5)*1.0);
   // Natural flora palette: olive-gold (55) through deep green (155), aridity shifts toward gold
-  var hue=prefs?prefs.hue:(55+pT*6+Math.max(0,(7-pA))*8+(Math.random()*16-8));
-  hue=((hue%360)+360)%360; if(hue<55||hue>155) hue=55+Math.random()*100; // clamp to natural band
-  var sat=prefs?prefs.sat:(0.3+0.04*(10-pA)+Math.random()*0.15); // lower sat = more natural
-  var val=prefs?prefs.val:(0.35+Math.random()*0.25); // darker overall
-  return{id:++floraIdCounter,x:x,y:y,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.0,5.0),hue:hue,sat:clamp(sat,0.25,0.7),val:clamp(val,0.3,0.65),shape:FLORA_SHAPES[(Math.random()*FLORA_SHAPES.length)|0],health:1.0,age:0,maxAge:CFG.floraBaseMaxAge*(0.7+Math.random()*0.6),gen:prefs?(prefs.gen||0):0};}
+  var hue=prefs?prefs.hue:(55+pT*6+Math.max(0,(7-pA))*8+(eRng()*16-8));
+  hue=((hue%360)+360)%360; if(hue<55||hue>155) hue=55+eRng()*100; // clamp to natural band
+  var sat=prefs?prefs.sat:(0.3+0.04*(10-pA)+eRng()*0.15); // lower sat = more natural
+  var val=prefs?prefs.val:(0.35+eRng()*0.25); // darker overall
+  return{id:++floraIdCounter,x:x,y:y,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.0,5.0),hue:hue,sat:clamp(sat,0.25,0.7),val:clamp(val,0.3,0.65),shape:FLORA_SHAPES[(eRng()*FLORA_SHAPES.length)|0],health:1.0,age:0,maxAge:CFG.floraBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0};}
 // Biome harshness: multiplier on flora health. 1.0 = normal, lower = harder to survive
 var BIOME_FLORA_HARSHNESS=[];
 BIOME_FLORA_HARSHNESS[T.OCEAN]=0;
@@ -856,12 +857,12 @@ function mutateFloraChild(parent,cx,cy){var mag=CFG.floraMutationMag;var bias=CF
   var shiftA=randn()*mag*(1-bias)+(tA-parent.prefArid)*bias;
   var shiftT=randn()*mag*(1-bias)+(tT-parent.prefTemp)*bias;
   var shiftS=randn()*mag*(1-bias)+(tS-parent.prefSL)*bias;
-  var child=makeFlora(cx,cy,{prefArid:clamp(parent.prefArid+shiftA,0,10),prefTemp:clamp(parent.prefTemp+shiftT,0,10),prefSL:clamp(parent.prefSL+shiftS,0,10),tolerance:clamp(parent.tolerance+randn()*0.3,1.0,5.0),hue:clamp((parent.hue+randn()*12+360)%360,55,155),sat:clamp(parent.sat+(Math.random()-0.5)*0.08,0.25,0.7),val:clamp(parent.val+(Math.random()-0.5)*0.06,0.3,0.65),gen:parent.gen+1});if(Math.random()<0.3)child.shape=FLORA_SHAPES[(Math.random()*FLORA_SHAPES.length)|0];return child;}
+  var child=makeFlora(cx,cy,{prefArid:clamp(parent.prefArid+shiftA,0,10),prefTemp:clamp(parent.prefTemp+shiftT,0,10),prefSL:clamp(parent.prefSL+shiftS,0,10),tolerance:clamp(parent.tolerance+randn()*0.3,1.0,5.0),hue:clamp((parent.hue+randn()*12+360)%360,55,155),sat:clamp(parent.sat+(eRng()-0.5)*0.08,0.25,0.7),val:clamp(parent.val+(eRng()-0.5)*0.06,0.3,0.65),gen:parent.gen+1});if(eRng()<0.3)child.shape=FLORA_SHAPES[(eRng()*FLORA_SHAPES.length)|0];return child;}
 function cloneFloraChild(parent,cx,cy){return makeFlora(cx,cy,{prefArid:parent.prefArid,prefTemp:parent.prefTemp,prefSL:parent.prefSL,tolerance:parent.tolerance,hue:parent.hue,sat:parent.sat,val:parent.val,gen:parent.gen});}
-function seedFloraCluster(n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(Math.random()*W)|0,y=(Math.random()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){flora.push(makeFlora(x,y,null));placed++;}}}
+function seedFloraCluster(n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){flora.push(makeFlora(x,y,null));placed++;}}}
 // Dynamic flora pop cap: 0 = map-size based (tiles x per-tile cap), else use configured value
 function floraPopCap(){return CFG.floraMaxPop>0?CFG.floraMaxPop:(W*H*(CFG.floraPerTileMax||4));}
-function naturalFloraSpawn(){if(flora.length>=floraPopCap())return;if(Math.random()>=CFG.floraSpawnChance)return;var guard=50;while(guard-->0){var x=(Math.random()*W)|0,y=(Math.random()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){flora.push(makeFlora(x,y,null));return;}}}
+function naturalFloraSpawn(){if(flora.length>=floraPopCap())return;if(eRng()>=CFG.floraSpawnChance)return;var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){flora.push(makeFlora(x,y,null));return;}}}
 function floraStep(){if(!CFG.ecoActive)return;naturalFloraSpawn();
   // Process regrowth remnants
   var rKeep=[];for(var ri=0;ri<floraRemnants.length;ri++){var rem=floraRemnants[ri];if(tick>=rem.tickDue){if(flora.length<floraPopCap()){var ti=idx(rem.x,rem.y);if(grid[ti]!==T.OCEAN){flora.push(makeFlora(rem.x,rem.y,rem.prefs));}}}else{rKeep.push(rem);}}floraRemnants=rKeep;
@@ -870,12 +871,12 @@ function floraStep(){if(!CFG.ecoActive)return;naturalFloraSpawn();
   // Adaptive sampling: higher rate at small populations for establishment
   var sampleRate=(flora.length<50)?0.30:0.15;
   var sampleSize=Math.min(flora.length,Math.max(8,(flora.length*sampleRate)|0));var newFlora=[];
-  for(var k=0;k<sampleSize;k++){var fi=(Math.random()*flora.length)|0;var f=flora[fi];if(!f)continue;f.health=computeFloraHealth(f);f.age++;var effectiveMaxAge=f.maxAge*(0.3+0.7*f.health);if(f.age>=effectiveMaxAge||f.health<0.05){flora[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){flora[fi]=null;continue;}if(flora.length+newFlora.length>=floraPopCap())continue;
+  for(var k=0;k<sampleSize;k++){var fi=(eRng()*flora.length)|0;var f=flora[fi];if(!f)continue;f.health=computeFloraHealth(f);f.age++;var effectiveMaxAge=f.maxAge*(0.3+0.7*f.health);if(f.age>=effectiveMaxAge||f.health<0.05){flora[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){flora[fi]=null;continue;}if(flora.length+newFlora.length>=floraPopCap())continue;
     // Spread chance: base x health^2 x ecotone boost
     var spreadMod=1.0;if(biomeBoundary&&biomeBoundary[idx(f.x,f.y)])spreadMod=CFG.ecotoneFloraBoost||1.0;
-    if(Math.random()>=CFG.floraSpreadBase*f.health*f.health*spreadMod)continue;
-    var cands=neighbors8(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(!cands.length)continue;var dest=cands[(Math.random()*cands.length)|0];
-    var child=Math.random()<CFG.floraMutationChance?mutateFloraChild(f,dest[0],dest[1]):cloneFloraChild(f,dest[0],dest[1]);
+    if(eRng()>=CFG.floraSpreadBase*f.health*f.health*spreadMod)continue;
+    var cands=neighbors8(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(!cands.length)continue;var dest=cands[(eRng()*cands.length)|0];
+    var child=eRng()<CFG.floraMutationChance?mutateFloraChild(f,dest[0],dest[1]):cloneFloraChild(f,dest[0],dest[1]);
     // Competition: check carrying capacity at destination
     var destIdx=idx(dest[0],dest[1]);var existing=_floraTile[destIdx];var cap=CFG.floraPerTileMax||4;
     if(existing&&existing.length>=cap){
@@ -892,17 +893,17 @@ function floraStep(){if(!CFG.ecoActive)return;naturalFloraSpawn();
 // Fauna
 // Vivid mutation palette: striking colors that stand out against earthy backdrop
 var VIVID_HUES=[210,25,290,50,355,175,320,140]; // blue, orange, purple, gold, crimson, cyan, magenta, lime
-function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var isH=(type==='herbivore');var pA=prefs?prefs.prefArid:clamp(tA+(Math.random()*3-1.5),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(Math.random()*3-1.5),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(Math.random()*3-1.5),0,10);var tol=prefs?prefs.tolerance:(3.0+Math.random()*1.5);
+function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var isH=(type==='herbivore');var pA=prefs?prefs.prefArid:clamp(tA+(eRng()*3-1.5),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(eRng()*3-1.5),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(eRng()*3-1.5),0,10);var tol=prefs?prefs.tolerance:(3.0+eRng()*1.5);
   var vivid=prefs?!!prefs.vivid:false;
   var hue,sat,val;
   if(prefs&&prefs.hue!==undefined){hue=prefs.hue;sat=prefs.sat;val=prefs.val;}
-  else if(vivid){hue=VIVID_HUES[(Math.random()*VIVID_HUES.length)|0]+randn()*8;sat=0.75+Math.random()*0.2;val=0.8+Math.random()*0.15;}
-  else if(isH){hue=35+Math.random()*15;sat=0.05+Math.random()*0.1;val=0.78+Math.random()*0.17;} // warm cream/white
-  else{hue=210+Math.random()*30;sat=0.05+Math.random()*0.1;val=0.2+Math.random()*0.18;} // charcoal/slate
-  return{id:++faunaIdCounter,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,vivid?0.65:0.03,vivid?0.95:0.2),val:clamp(val,vivid?0.7:(isH?0.75:0.18),vivid?0.95:(isH?0.95:0.4)),vivid:vivid,energy:isH?CFG.herbivoreStartEnergy:CFG.carnivoreStartEnergy,maxEnergy:isH?CFG.herbivoreMaxEnergy:CFG.carnivoreMaxEnergy,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+Math.random()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:0,eatCD:0};}
+  else if(vivid){hue=VIVID_HUES[(eRng()*VIVID_HUES.length)|0]+randn()*8;sat=0.75+eRng()*0.2;val=0.8+eRng()*0.15;}
+  else if(isH){hue=35+eRng()*15;sat=0.05+eRng()*0.1;val=0.78+eRng()*0.17;} // warm cream/white
+  else{hue=210+eRng()*30;sat=0.05+eRng()*0.1;val=0.2+eRng()*0.18;} // charcoal/slate
+  return{id:++faunaIdCounter,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,vivid?0.65:0.03,vivid?0.95:0.2),val:clamp(val,vivid?0.7:(isH?0.75:0.18),vivid?0.95:(isH?0.95:0.4)),vivid:vivid,energy:isH?CFG.herbivoreStartEnergy:CFG.carnivoreStartEnergy,maxEnergy:isH?CFG.herbivoreMaxEnergy:CFG.carnivoreMaxEnergy,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:0,eatCD:0};}
 function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;return Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));}
-function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(Math.random()*W)|0,y=(Math.random()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
-function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;if(Math.random()>=CFG.faunaSpawnChance)return;var type=(Math.random()<0.7)?'herbivore':'carnivore';if(type==='carnivore'){var hc=0;for(var i=0;i<fauna.length;i++)if(fauna[i]&&fauna[i].type==='herbivore')hc++;if(hc<3)return;}var guard=50;while(guard-->0){var x=(Math.random()*W)|0,y=(Math.random()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
+function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
+function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;if(eRng()>=CFG.faunaSpawnChance)return;var type=(eRng()<0.7)?'herbivore':'carnivore';if(type==='carnivore'){var hc=0;for(var i=0;i<fauna.length;i++)if(fauna[i]&&fauna[i].type==='herbivore')hc++;if(hc<3)return;}var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
 var _floraAtTile,_herbAtTile,_carnAtTile;
 function buildSpatialIndex(){_floraAtTile={};_herbAtTile={};_carnAtTile={};for(var i=0;i<flora.length;i++){var f=flora[i];if(!f)continue;var k=idx(f.x,f.y);if(!_floraAtTile[k])_floraAtTile[k]=[];_floraAtTile[k].push(i);}for(var j=0;j<fauna.length;j++){var a=fauna[j];if(!a)continue;var k2=idx(a.x,a.y);if(a.type==='herbivore'){if(!_herbAtTile[k2])_herbAtTile[k2]=[];_herbAtTile[k2].push(j);}else{if(!_carnAtTile[k2])_carnAtTile[k2]=[];_carnAtTile[k2].push(j);}}}
 function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]||5)-f.prefArid,dT=(tempField[ti]||5)-f.prefTemp,dS=(sunlight[ti]||5)-f.prefSL;var score=(1-Math.sqrt(dA*dA+dT*dT+dS*dS)/15)*2;if(isHerb){var fH=_floraAtTile[ti];var floraCount=fH?fH.length:0;
@@ -923,26 +924,26 @@ function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]
   }return score;}
 function mutateFaunaChild(parent,cx,cy){var mag=CFG.faunaMutationMag;
   // Vivid inheritance: 50% from vivid parent, 2% spontaneous
-  var childVivid=parent.vivid?(Math.random()<0.5):false;
-  if(!childVivid&&Math.random()<0.02) childVivid=true; // rare spontaneous vivid mutation
+  var childVivid=parent.vivid?(eRng()<0.5):false;
+  if(!childVivid&&eRng()<0.02) childVivid=true; // rare spontaneous vivid mutation
   var childHue,childSat,childVal;
   if(childVivid&&!parent.vivid){
     // New vivid! Pick a striking color from the palette
-    childHue=VIVID_HUES[(Math.random()*VIVID_HUES.length)|0]+randn()*8;
-    childSat=0.75+Math.random()*0.2;childVal=0.8+Math.random()*0.15;
+    childHue=VIVID_HUES[(eRng()*VIVID_HUES.length)|0]+randn()*8;
+    childSat=0.75+eRng()*0.2;childVal=0.8+eRng()*0.15;
   } else if(childVivid){
     // Inherited vivid: drift within bright range
-    childHue=(parent.hue+randn()*10+360)%360;childSat=clamp(parent.sat+(Math.random()-0.5)*0.08,0.65,0.95);childVal=clamp(parent.val+(Math.random()-0.5)*0.06,0.7,0.95);
+    childHue=(parent.hue+randn()*10+360)%360;childSat=clamp(parent.sat+(eRng()-0.5)*0.08,0.65,0.95);childVal=clamp(parent.val+(eRng()-0.5)*0.06,0.7,0.95);
   } else {
     // Normal: cream herbivores, charcoal carnivores
     var isH=(parent.type==='herbivore');
-    childHue=clamp(parent.hue+randn()*8,isH?30:200,isH?55:245);childSat=clamp(parent.sat+(Math.random()-0.5)*0.04,0.03,0.2);childVal=clamp(parent.val+(Math.random()-0.5)*0.06,isH?0.75:0.18,isH?0.95:0.4);
+    childHue=clamp(parent.hue+randn()*8,isH?30:200,isH?55:245);childSat=clamp(parent.sat+(eRng()-0.5)*0.04,0.03,0.2);childVal=clamp(parent.val+(eRng()-0.5)*0.06,isH?0.75:0.18,isH?0.95:0.4);
   }
   return makeFauna(cx,cy,parent.type,{prefArid:clamp(parent.prefArid+randn()*mag,0,10),prefTemp:clamp(parent.prefTemp+randn()*mag,0,10),prefSL:clamp(parent.prefSL+randn()*mag,0,10),tolerance:clamp(parent.tolerance+randn()*0.3,1.5,6.0),hue:childHue,sat:childSat,val:childVal,vivid:childVivid,gen:parent.gen+1});}
 function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefArid:parent.prefArid,prefTemp:parent.prefTemp,prefSL:parent.prefSL,tolerance:parent.tolerance,hue:parent.hue,sat:parent.sat,val:parent.val,vivid:parent.vivid,gen:parent.gen});}
-function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(Math.random()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
+function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(eRng()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
   for(var oi2=0;oi2<order.length;oi2++){var fi=order[oi2];var f=fauna[fi];if(!f)continue;var isHerb=(f.type==='herbivore');var climateFit=computeFaunaClimateFit(f);var idleCost=isHerb?CFG.faunaIdleCost:(CFG.faunaIdleCost*0.6);f.energy-=(idleCost+CFG.faunaClimatePenalty*(1-climateFit));f.age++;if(f.energy<=0){deathParticles.push({x:f.x,y:f.y,type:'starve',tick:tick});fauna[fi]=null;continue;}if(f.age>=f.maxAge){deathParticles.push({x:f.x,y:f.y,type:'age',tick:tick});fauna[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){fauna[fi]=null;continue;}
-    f.moveCD--;f.eatCD--;if(f.moveCD<=0){f.moveCD=isHerb?CFG.herbivoreSpeed:CFG.carnivoreSpeed;var nbrs=neighbors4(f.x,f.y);var bestScore=scoreTileForFauna(f,f.x,f.y,isHerb);var bestPos=[f.x,f.y];for(var ni=0;ni<nbrs.length;ni++){var nx=nbrs[ni][0],ny=nbrs[ni][1];if(grid[idx(nx,ny)]===T.OCEAN)continue;var score=scoreTileForFauna(f,nx,ny,isHerb)+(Math.random()-0.5)*0.5;if(score>bestScore){bestScore=score;bestPos=[nx,ny];}}if(bestPos[0]!==f.x||bestPos[1]!==f.y){f.x=bestPos[0];f.y=bestPos[1];f.energy-=CFG.faunaMoveCost;}}
+    f.moveCD--;f.eatCD--;if(f.moveCD<=0){f.moveCD=isHerb?CFG.herbivoreSpeed:CFG.carnivoreSpeed;var nbrs=neighbors4(f.x,f.y);var bestScore=scoreTileForFauna(f,f.x,f.y,isHerb);var bestPos=[f.x,f.y];for(var ni=0;ni<nbrs.length;ni++){var nx=nbrs[ni][0],ny=nbrs[ni][1];if(grid[idx(nx,ny)]===T.OCEAN)continue;var score=scoreTileForFauna(f,nx,ny,isHerb)+(eRng()-0.5)*0.5;if(score>bestScore){bestScore=score;bestPos=[nx,ny];}}if(bestPos[0]!==f.x||bestPos[1]!==f.y){f.x=bestPos[0];f.y=bestPos[1];f.energy-=CFG.faunaMoveCost;}}
     var tileIdx=idx(f.x,f.y);
     // Eating gated by eatCD cooldown
     if(f.eatCD<=0){if(isHerb){var floraHere=_floraAtTile[tileIdx];if(floraHere&&floraHere.length>0){
@@ -950,12 +951,12 @@ function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIn
       var biteCount=(floraHere.length>=3)?2:1;
       for(var bi=0;bi<biteCount&&floraHere.length>0;bi++){var eatIdx=floraHere[0];if(flora[eatIdx]){var eatenFlora=flora[eatIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.herbivoreEatGain*(0.7+eatenFlora.health*0.5));
       // Regrowth remnant: roots survive grazing
-      if(Math.random()<CFG.floraRegrowthChance){floraRemnants.push({x:eatenFlora.x,y:eatenFlora.y,prefs:{prefArid:eatenFlora.prefArid,prefTemp:eatenFlora.prefTemp,prefSL:eatenFlora.prefSL,tolerance:eatenFlora.tolerance,hue:eatenFlora.hue,sat:eatenFlora.sat,val:eatenFlora.val,gen:eatenFlora.gen},tickDue:tick+CFG.floraRegrowthDelay});}
+      if(eRng()<CFG.floraRegrowthChance){floraRemnants.push({x:eatenFlora.x,y:eatenFlora.y,prefs:{prefArid:eatenFlora.prefArid,prefTemp:eatenFlora.prefTemp,prefSL:eatenFlora.prefSL,tolerance:eatenFlora.tolerance,hue:eatenFlora.hue,sat:eatenFlora.sat,val:eatenFlora.val,gen:eatenFlora.gen},tickDue:tick+CFG.floraRegrowthDelay});}
       flora[eatIdx]=null;floraHere.shift();}}f.eatCD=CFG.herbivoreEatSpeed;}}else{
       // Carnivore hunting: check current tile AND adjacent tiles
       var huntTiles=[tileIdx];var adjH=neighbors4(f.x,f.y);for(var hi=0;hi<adjH.length;hi++){var hti=idx(adjH[hi][0],adjH[hi][1]);if(grid[hti]!==T.OCEAN)huntTiles.push(hti);}
       var hunted=false;for(var ht=0;ht<huntTiles.length&&!hunted;ht++){var herbHere=_herbAtTile[huntTiles[ht]];if(herbHere&&herbHere.length>0){var preyIdx=herbHere[0];if(fauna[preyIdx]){var prey=fauna[preyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.carnivoreEatGain);deathParticles.push({x:prey.x,y:prey.y,type:'kill',tick:tick});fauna[preyIdx]=null;herbHere.shift();f.eatCD=CFG.carnivoreEatSpeed;hunted=true;}}}}}    var reproThresh=isHerb?CFG.faunaReproThreshold:CFG.carnivoreReproThreshold;var reproCost=isHerb?CFG.faunaReproCost:CFG.carnivoreReproCost;
-    if(f.energy>=reproThresh&&fauna.length+newFauna.length<CFG.faunaMaxPop){var reproCands=neighbors4(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(reproCands.length>0){f.energy-=reproCost;var dest=reproCands[(Math.random()*reproCands.length)|0];newFauna.push(Math.random()<CFG.faunaMutationChance?mutateFaunaChild(f,dest[0],dest[1]):cloneFaunaChild(f,dest[0],dest[1]));}}}
+    if(f.energy>=reproThresh&&fauna.length+newFauna.length<CFG.faunaMaxPop){var reproCands=neighbors4(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(reproCands.length>0){f.energy-=reproCost;var dest=reproCands[(eRng()*reproCands.length)|0];newFauna.push(eRng()<CFG.faunaMutationChance?mutateFaunaChild(f,dest[0],dest[1]):cloneFaunaChild(f,dest[0],dest[1]));}}}
   flora=flora.filter(function(f){return f!==null;});fauna=fauna.filter(function(f){return f!==null;});for(var j=0;j<newFauna.length;j++)fauna.push(newFauna[j]);}
 
 // ======================================================================
@@ -1165,6 +1166,9 @@ function initWorld(seedOverride){
   // Seed setup: use override if a valid number, else random (DOM-free core)
   if(seedOverride!==undefined&&seedOverride!==null&&seedOverride!==''&&!isNaN(parseInt(seedOverride))){_seed=parseInt(seedOverride);}else{_seed=Math.floor(Math.random()*2147483647);}
   sRng=mulberry32(_seed);
+  // Dynamics stream: seeded deterministically from _seed but on a distinct offset, so a given
+  // seed reproduces the same ECOLOGY run (flora/fauna/climate-drift/beach), not just the terrain.
+  eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
   tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};placeMode='none';clearRivers();clearBeaches();resetZoomPan();

@@ -22,6 +22,24 @@ describe('in-page assertions (headless)', () => {
     expect(landB).toBe(landA);
   });
 
+  // Step 1 of the balance plan: the ecology RNG (eRng) is now seeded, so a fixed seed
+  // reproduces the same ECOLOGY run, not just the terrain. Warm up, seed fauna, run, and
+  // assert two identical-seed runs land on identical flora/fauna counts.
+  it('is deterministic for a fixed seed (ecology)', () => {
+    function run() {
+      sim.initWorld(2024);
+      for (let i = 0; i < 600; i++) sim.step();
+      sim.seedFloraCluster(20);
+      sim.seedFaunaGroup('herbivore', 12);
+      sim.seedFaunaGroup('carnivore', 4);
+      for (let i = 0; i < 200; i++) sim.step();
+      return { flora: sim.flora.length, fauna: sim.fauna.length };
+    }
+    const a = run();
+    const b = run();
+    expect(b).toEqual(a);
+  }, 30000);
+
   // The browser runs `T` after the sim has developed land, not on a fresh ocean. Exercise
   // the assertions in that state so world-state-dependent flakiness (erosion luck, the biome
   // at a probed tile) is caught here rather than only showing up in the live page.
