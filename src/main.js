@@ -185,6 +185,9 @@ var CFG={
   faunaMoveCost:0.5, faunaIdleCost:0.1, faunaClimatePenalty:0.5,
   faunaReproThreshold:95, faunaReproCost:60,
   carnivoreReproThreshold:80, carnivoreReproCost:40,
+  carnivoreRescueRate:0.00005,      // knob D: per-herbivore per-tick carnivore immigration prob
+  carnivoreRescueMinPrey:30,        // need an ABUNDANT herd before predators re-immigrate (preserves prey rebound refuge)
+  carnivoreRescueCarnCap:4,         // stop rescuing once predators are established (rescue, not subsidy)
   herbivoreStartEnergy:50, carnivoreStartEnergy:75,
   herbivoreMaxEnergy:100, carnivoreMaxEnergy:120
 };
@@ -903,7 +906,15 @@ function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tem
   return{id:++faunaIdCounter,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,vivid?0.65:0.03,vivid?0.95:0.2),val:clamp(val,vivid?0.7:(isH?0.75:0.18),vivid?0.95:(isH?0.95:0.4)),vivid:vivid,energy:isH?CFG.herbivoreStartEnergy:CFG.carnivoreStartEnergy,maxEnergy:isH?CFG.herbivoreMaxEnergy:CFG.carnivoreMaxEnergy,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:0,eatCD:0};}
 function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;return Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));}
 function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
-function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;if(eRng()>=CFG.faunaSpawnChance)return;var type=(eRng()<0.7)?'herbivore':'carnivore';if(type==='carnivore'){var hc=0;for(var i=0;i<fauna.length;i++)if(fauna[i]&&fauna[i].type==='herbivore')hc++;if(hc<3)return;}var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
+function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
+function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;
+  var hc=0,cc=0;for(var i=0;i<fauna.length;i++){var a=fauna[i];if(a){if(a.type==='herbivore')hc++;else cc++;}}
+  // Baseline herbivore immigration trickle (preserves the old 0.7*spawnChance rate).
+  if(eRng()<CFG.faunaSpawnChance*0.7)spawnFaunaAt('herbivore');
+  // Knob D: prey-dependent carnivore RESCUE. Immigration probability scales with prey
+  // abundance and only fires while predators are scarce, so predators cannot go
+  // permanently extinct while prey are plentiful (the absorbing-zero failure mode).
+  if(cc<CFG.carnivoreRescueCarnCap&&hc>=CFG.carnivoreRescueMinPrey&&eRng()<CFG.carnivoreRescueRate*hc)spawnFaunaAt('carnivore');}
 var _floraAtTile,_herbAtTile,_carnAtTile;
 function buildSpatialIndex(){_floraAtTile={};_herbAtTile={};_carnAtTile={};for(var i=0;i<flora.length;i++){var f=flora[i];if(!f)continue;var k=idx(f.x,f.y);if(!_floraAtTile[k])_floraAtTile[k]=[];_floraAtTile[k].push(i);}for(var j=0;j<fauna.length;j++){var a=fauna[j];if(!a)continue;var k2=idx(a.x,a.y);if(a.type==='herbivore'){if(!_herbAtTile[k2])_herbAtTile[k2]=[];_herbAtTile[k2].push(j);}else{if(!_carnAtTile[k2])_carnAtTile[k2]=[];_carnAtTile[k2].push(j);}}}
 function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]||5)-f.prefArid,dT=(tempField[ti]||5)-f.prefTemp,dS=(sunlight[ti]||5)-f.prefSL;var score=(1-Math.sqrt(dA*dA+dT*dT+dS*dS)/15)*2;if(isHerb){var fH=_floraAtTile[ti];var floraCount=fH?fH.length:0;
