@@ -1,90 +1,266 @@
-// Measurement harness: run the simulation headless across N seeds and report
-// ecosystem outcomes (extinction rate, population trajectories, oscillation, variance).
-// This is the CLI form of the gate AND the instrument for tuning ecosystem balance:
+// Measurement harness: run the simulation headless across N seeds and report ecosystem
+// outcomes. This is the CLI form of the gate AND the instrument for tuning ecosystem balance:
 // change a parameter, re-run, compare the numbers instead of eyeballing one animation.
 //
-// Usage:  node scripts/harness.mjs [--seeds=8] [--warmup=400] [--ticks=1500]
-//                                  [--herb=24] [--carn=8] [--flora=40] [--sample=50]
-//                                  [--traj]   (print per-seed trajectory rows)
+// Usage:  node scripts/harness.mjs [--seeds=6] [--warmup=3000] [--ticks=1000]
+//                                  [--herb=24] [--carn=8] [--flora=40] [--sample=5]
+//                                  [--snapshot]      (warm terrain once per seed, replay from a snapshot)
+//                                  [--repeat=1]      (measured windows per seed; with --snapshot the
+//                                                     warmup is paid once, so this shows the runtime cut)
+//                                  [--traj]          (print a coarse per-seed trajectory)
 //
-// Per-seed reproducibility note: terrain is seeded, but the ecology still uses raw
-// Math.random(), so a given seed's ecology differs run to run. The aggregate stats
-// below are therefore distributions over independent runs - robust to that. Making the
-// ecology deterministic is an open product decision (see STATUS.md).
+// The ecology is now seeded (eRng), so a seed reproduces the same run. The cycle-aware metrics below
+// (phase lag, per-trophic period/amplitude, completed cycles, persistence, min floor, cap-hits,
+// spatial dispersion) distinguish a healthy bounded predator-prey limit cycle from a crash-to-zero,
+// which the old max-min "oscillation" could not. See docs/01 Design/Balance Proposal.md.
+//
+// Snapshot caveat: --snapshot re-seeds both RNG streams on restore (mulberry32 state is not readable),
+// so fauna are seeded at a different RNG phase than a continuous run. Snapshot numbers are therefore
+// their own internally-consistent baseline, NOT byte-equal to the non-snapshot baseline. A/B tuning
+// within snapshot mode (same snapshot, only CFG differs) is still a clean comparison.
 
 import { installDomStub } from './headless-dom.mjs';
 installDomStub();
 const sim = await import('../src/main.js');
 
 function parseArgs() {
-  // Defaults aim for a DEVELOPED world: terrain genesis is slow, so ~3k warmup ticks
-  // are needed before there is enough land/flora to measure ecology on. A full run is a
-  // few minutes; scale --seeds / --warmup down for a quick smoke check.
-  const o = { seeds: 5, warmup: 3000, ticks: 1000, herb: 24, carn: 8, flora: 40, sample: 50, traj: false };
+  // Defaults aim for a DEVELOPED world: terrain genesis is slow, so ~3k warmup ticks are needed
+  // before there is enough land/flora to measure ecology on. Scale --seeds / --warmup down for a smoke check.
+  const o = { seeds: 6, warmup: 3000, ticks: 1000, herb: 24, carn: 8, flora: 40, sample: 5,
+    repeat: 1, snapshot: false, traj: false };
   for (const a of process.argv.slice(2)) {
     const m = /^--([a-z]+)(?:=(.+))?$/.exec(a);
     if (!m) continue;
     const [, k, v] = m;
     if (k === 'traj') o.traj = true;
+    else if (k === 'snapshot') o.snapshot = true;
     else if (k in o && v !== undefined) o[k] = Number(v);
   }
   return o;
 }
 
+// ----- small stats helpers -----
 function mean(a) { return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0; }
 function stdev(a) { const m = mean(a); return a.length ? Math.sqrt(mean(a.map((x) => (x - m) ** 2))) : 0; }
 function pad(s, n) { s = String(s); return s + ' '.repeat(Math.max(0, n - s.length)); }
 function herbCount() { return sim.fauna.filter((f) => f && f.type === 'herbivore').length; }
 function carnCount() { return sim.fauna.filter((f) => f && f.type === 'carnivore').length; }
 
-function runOne(seed, o) {
+// Pearson correlation of two equal-length series (0 if degenerate).
+function pearson(a, b) {
+  const n = Math.min(a.length, b.length);
+  if (n < 2) return 0;
+  let ma = 0, mb = 0;
+  for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) { const x = a[i] - ma, y = b[i] - mb; num += x * y; da += x * x; db += y * y; }
+  const den = Math.sqrt(da * db);
+  return den > 0 ? num / den : 0;
+}
+
+// Phase lag (in SAMPLES) maximizing corr(herb[t], carn[t+L]). Positive L => carnivores peak AFTER prey,
+// the signature of a real predator-prey cycle. Searches lags in [-maxLag, +maxLag].
+function phaseLag(herb, carn, maxLag) {
+  let bestLag = 0, bestCorr = -Infinity;
+  for (let L = -maxLag; L <= maxLag; L++) {
+    const h = [], c = [];
+    for (let t = 0; t < herb.length; t++) {
+      const tc = t + L;
+      if (tc < 0 || tc >= carn.length) continue;
+      h.push(herb[t]); c.push(carn[tc]);
+    }
+    if (h.length < 8) continue;
+    const r = pearson(h, c);
+    if (r > bestCorr) { bestCorr = r; bestLag = L; }
+  }
+  return { lag: bestLag, corr: bestCorr };
+}
+
+// Autocorrelation at lag L (samples).
+function autocorr(x, L) {
+  if (x.length - L < 8) return 0;
+  return pearson(x.slice(0, x.length - L), x.slice(L));
+}
+// Dominant oscillation period (in SAMPLES): first positive local max of the autocorrelation after the
+// zero-lag decay. 0 = no clear period (flatline or monotone).
+function dominantPeriod(x, minLag, maxLag) {
+  const acf = [];
+  for (let L = 0; L <= maxLag; L++) acf.push(autocorr(x, L));
+  for (let L = minLag; L < maxLag; L++) {
+    if (acf[L] > acf[L - 1] && acf[L] >= acf[L + 1] && acf[L] > 0.1) return L;
+  }
+  return 0;
+}
+// Light moving-average smoothing (odd window).
+function smooth(x, w) {
+  const n = x.length, out = new Array(n), h = (w / 2) | 0;
+  for (let i = 0; i < n; i++) {
+    let s = 0, c = 0;
+    for (let j = -h; j <= h; j++) { const k = i + j; if (k >= 0 && k < n) { s += x[k]; c++; } }
+    out[i] = s / c;
+  }
+  return out;
+}
+// Amplitude of a series: half the peak-to-trough range of the smoothed series.
+function amplitude(x) {
+  if (!x.length) return 0;
+  const s = smooth(x, 5);
+  let mn = Infinity, mx = -Infinity;
+  for (const v of s) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  return (mx - mn) / 2;
+}
+// Completed cycles ~ count of oscillation peaks (local maxima above the series mean) on a smoothed series.
+function peakCount(x) {
+  const s = smooth(x, 5), m = mean(s);
+  let peaks = 0;
+  for (let i = 1; i < s.length - 1; i++) if (s[i] > s[i - 1] && s[i] >= s[i + 1] && s[i] > m) peaks++;
+  return peaks;
+}
+// Amplitude trend: first-half vs second-half amplitude (growing => diverging toward a crash).
+function ampTrend(x) {
+  const h = (x.length / 2) | 0;
+  return { first: amplitude(x.slice(0, h)), second: amplitude(x.slice(h)) };
+}
+
+// Spatial dispersion of herbivores (the herds Kevin wants to FRAGMENT into spaced groups), measured
+// on the final state: count of occupied 8x8 grid buckets (more = more fragmented) and mean pairwise
+// distance. Reads sim.fauna directly.
+function herbDispersion() {
+  const herbs = sim.fauna.filter((f) => f && f.type === 'herbivore');
+  const B = 8, buckets = new Set();
+  for (const f of herbs) buckets.add(((f.x / B) | 0) + '_' + ((f.y / B) | 0));
+  let pts = herbs;
+  const cap = 250;
+  if (pts.length > cap) { const st = [], step = pts.length / cap; for (let i = 0; i < pts.length; i += step) st.push(pts[i | 0]); pts = st; }
+  let sum = 0, cnt = 0;
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+    const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+    sum += Math.sqrt(dx * dx + dy * dy); cnt++;
+  }
+  return { clusters: buckets.size, meanDist: cnt ? sum / cnt : 0, n: herbs.length };
+}
+
+// Warm the slow terrain genesis for a seed (no ecology seeded yet).
+function warm(seed, o) {
   sim.initWorld(seed);
-  for (let i = 0; i < o.warmup; i++) sim.step();          // grow land + flora
+  for (let i = 0; i < o.warmup; i++) sim.step();
+}
+
+// Measure one ecology window. Assumes the world is already warmed (fresh init or restored snapshot).
+// Seeds flora + fauna, runs o.ticks, captures the herb/carn/flora series, and computes the cycle metrics.
+function measureWindow(seed, o) {
   sim.seedFloraCluster(o.flora);
   sim.seedFaunaGroup('herbivore', o.herb);
   sim.seedFaunaGroup('carnivore', o.carn);
 
+  const cap = sim.CFG.faunaMaxPop;
+  const herbS = [], carnS = [], floraS = [];
   let minFauna = Infinity, maxFauna = 0, extinctAt = null;
-  const traj = [];
+  let minHerb = Infinity, minCarn = Infinity, capHits = 0;
+
   for (let i = 0; i < o.ticks; i++) {
     sim.step();
     const fa = sim.fauna.length;
     if (fa < minFauna) minFauna = fa;
     if (fa > maxFauna) maxFauna = fa;
+    if (fa >= cap) capHits++;
     if (fa === 0 && extinctAt === null) extinctAt = i + 1;
-    if (o.traj && i % o.sample === 0) traj.push([sim.tick, sim.flora.length, herbCount(), carnCount()]);
+    if (i % o.sample === 0) {
+      const h = herbCount(), c = carnCount();
+      herbS.push(h); carnS.push(c); floraS.push(sim.flora.length);
+      if (h < minHerb) minHerb = h;
+      if (c < minCarn) minCarn = c;
+    }
   }
+
+  const maxLag = Math.min(60, (herbS.length / 2) | 0);
+  const minPer = 3, maxPer = (herbS.length / 2) | 0;
+  const pl = phaseLag(herbS, carnS, maxLag);
+  const herbPer = dominantPeriod(herbS, minPer, maxPer) * o.sample;
+  const carnPer = dominantPeriod(carnS, minPer, maxPer) * o.sample;
+  const herbTrend = ampTrend(herbS);
+  const disp = herbDispersion();
+
   return {
     seed, land: sim.landCoverage(), flora: sim.flora.length,
     herb: herbCount(), carn: carnCount(), fauna: sim.fauna.length,
-    minFauna: minFauna === Infinity ? 0 : minFauna, maxFauna, extinctAt, traj,
+    minFauna: minFauna === Infinity ? 0 : minFauna, maxFauna, extinctAt,
+    minHerb: minHerb === Infinity ? 0 : minHerb, minCarn: minCarn === Infinity ? 0 : minCarn,
+    capHits,
+    phaseLagTicks: pl.lag * o.sample, phaseCorr: pl.corr,
+    herbPeriod: herbPer, carnPeriod: carnPer,
+    herbAmp: amplitude(herbS), carnAmp: amplitude(carnS),
+    cycles: peakCount(herbS),
+    ampFirst: herbTrend.first, ampSecond: herbTrend.second,
+    clusters: disp.clusters, meanDist: disp.meanDist,
+    herbS, carnS, floraS,
   };
 }
 
 const o = parseArgs();
 console.log(`\nWorldbuilder measurement harness`);
-console.log(`seeds=${o.seeds} warmup=${o.warmup} ticks=${o.ticks} seed-fauna=${o.herb}H/${o.carn}C flora=${o.flora}\n`);
+console.log(`seeds=${o.seeds} warmup=${o.warmup} ticks=${o.ticks} seed-fauna=${o.herb}H/${o.carn}C flora=${o.flora} sample=${o.sample}` +
+  ` repeat=${o.repeat}${o.snapshot ? ' [snapshot]' : ''}\n`);
 
 const t0 = Date.now();
+let tWarm = 0, tMeasure = 0;
 const rows = [];
 for (let s = 0; s < o.seeds; s++) {
-  const r = runOne(1000 + s * 101, o);
-  rows.push(r);
+  const seed = 1000 + s * 101;
+  let snap = null;
+  if (o.snapshot) { const w0 = Date.now(); warm(seed, o); snap = sim.snapshotState(); tWarm += Date.now() - w0; }
+
+  let r = null;
+  for (let rep = 0; rep < o.repeat; rep++) {
+    if (o.snapshot) { sim.restoreState(snap); }
+    else { const w0 = Date.now(); warm(seed, o); tWarm += Date.now() - w0; }
+    const m0 = Date.now();
+    r = measureWindow(seed, o);
+    tMeasure += Date.now() - m0;
+  }
+  rows.push(r); // metrics are deterministic across repeats; the last one represents the seed
+
   const status = r.fauna === 0 ? `EXTINCT @${r.extinctAt}` : `alive (${r.herb}H/${r.carn}C)`;
   console.log(`  seed ${pad(r.seed, 5)} land ${pad((r.land * 100).toFixed(1) + '%', 7)} flora ${pad(r.flora, 5)} fauna ${pad(r.fauna, 4)} [min ${pad(r.minFauna, 4)} max ${pad(r.maxFauna, 4)}]  ${status}`);
-  if (o.traj) for (const [tk, fl, h, c] of r.traj) console.log(`        t=${pad(tk, 6)} flora ${pad(fl, 5)} herb ${pad(h, 4)} carn ${pad(c, 4)}`);
+  console.log(`        cycle: phase-lag ${pad((r.phaseLagTicks >= 0 ? '+' : '') + r.phaseLagTicks + 't', 6)} (r=${r.phaseCorr.toFixed(2)})  herb[per ${r.herbPeriod || '--'}t amp ${r.herbAmp.toFixed(0)}]  carn[per ${r.carnPeriod || '--'}t amp ${r.carnAmp.toFixed(0)}]  cycles ${r.cycles}`);
+  console.log(`        floor: minHerb ${pad(r.minHerb, 4)} minCarn ${pad(r.minCarn, 4)}  amp-trend ${r.ampFirst.toFixed(0)}->${r.ampSecond.toFixed(0)}  disp: clusters ${pad(r.clusters, 3)} meanDist ${r.meanDist.toFixed(1)}  cap-hits ${r.capHits}`);
+  if (o.traj) {
+    const stride = Math.max(1, (50 / o.sample) | 0);
+    for (let i = 0; i < r.herbS.length; i += stride) {
+      console.log(`        t=${pad((i * o.sample), 6)} flora ${pad(r.floraS[i], 5)} herb ${pad(r.herbS[i], 4)} carn ${pad(r.carnS[i], 4)}`);
+    }
+  }
 }
 
+// ----- aggregate summary -----
 const extinct = rows.filter((r) => r.fauna === 0);
 const survived = rows.filter((r) => r.fauna > 0);
+const carnAlive = rows.filter((r) => r.carn > 0);
 const finalFauna = rows.map((r) => r.fauna);
 const finalFlora = rows.map((r) => r.flora);
 const osc = rows.map((r) => r.maxFauna - r.minFauna);
+const totalCapHits = rows.reduce((s, r) => s + r.capHits, 0);
+const lagsCycling = rows.filter((r) => r.phaseCorr > 0.3).map((r) => r.phaseLagTicks); // only where coupling is real
 
 console.log(`\n  ---- summary over ${o.seeds} runs (${((Date.now() - t0) / 1000).toFixed(1)}s) ----`);
-console.log(`  extinction rate   ${(extinct.length / rows.length * 100).toFixed(0)}%  (${extinct.length}/${rows.length})`);
+console.log(`  extinction rate        ${(extinct.length / rows.length * 100).toFixed(0)}%  (${extinct.length}/${rows.length})`);
 if (extinct.length) console.log(`  mean time-to-extinction  ${Math.round(mean(extinct.map((r) => r.extinctAt)))} ticks`);
-console.log(`  final fauna       mean ${mean(finalFauna).toFixed(1)}  sd ${stdev(finalFauna).toFixed(1)}  range ${Math.min(...finalFauna)}..${Math.max(...finalFauna)}`);
-if (survived.length) console.log(`  final fauna (survivors only)  mean ${mean(survived.map((r) => r.fauna)).toFixed(1)}`);
-console.log(`  final flora       mean ${mean(finalFlora).toFixed(1)}  sd ${stdev(finalFlora).toFixed(1)}`);
-console.log(`  fauna oscillation mean ${mean(osc).toFixed(1)} (max-min within a run)\n`);
+console.log(`  carnivore-persistence  ${(carnAlive.length / rows.length * 100).toFixed(0)}%  (${carnAlive.length}/${rows.length})   <- the metric the headline hides`);
+console.log(`  predator-prey phase lag  mean ${lagsCycling.length ? (mean(lagsCycling) >= 0 ? '+' : '') + mean(lagsCycling).toFixed(0) + 't' : 'n/a'} (carn peaks after prey when +, over ${lagsCycling.length} coupled seeds)`);
+console.log(`  oscillation period     herb mean ${mean(rows.map((r) => r.herbPeriod)).toFixed(0)}t   carn mean ${mean(rows.map((r) => r.carnPeriod)).toFixed(0)}t`);
+console.log(`  oscillation amplitude  herb mean ${mean(rows.map((r) => r.herbAmp)).toFixed(1)}   carn mean ${mean(rows.map((r) => r.carnAmp)).toFixed(1)}`);
+console.log(`  completed cycles       mean ${mean(rows.map((r) => r.cycles)).toFixed(1)}  (peaks in herb series)`);
+console.log(`  amplitude trend (herb) first ${mean(rows.map((r) => r.ampFirst)).toFixed(1)} -> second ${mean(rows.map((r) => r.ampSecond)).toFixed(1)}  (growing => diverging)`);
+console.log(`  min floor              herb mean ${mean(rows.map((r) => r.minHerb)).toFixed(1)} (worst ${Math.min(...rows.map((r) => r.minHerb))})   carn mean ${mean(rows.map((r) => r.minCarn)).toFixed(1)} (worst ${Math.min(...rows.map((r) => r.minCarn))})`);
+console.log(`  spatial dispersion     herbClusters mean ${mean(rows.map((r) => r.clusters)).toFixed(1)}   meanPairDist mean ${mean(rows.map((r) => r.meanDist)).toFixed(1)}`);
+console.log(`  cap-hits (total)       ${totalCapHits}  (MUST be 0; a cap-hit is a failure)`);
+console.log(`  final fauna            mean ${mean(finalFauna).toFixed(1)}  sd ${stdev(finalFauna).toFixed(1)}  range ${Math.min(...finalFauna)}..${Math.max(...finalFauna)}`);
+if (survived.length) console.log(`  final fauna (survivors)  mean ${mean(survived.map((r) => r.fauna)).toFixed(1)}`);
+console.log(`  final flora            mean ${mean(finalFlora).toFixed(1)}  sd ${stdev(finalFlora).toFixed(1)}`);
+console.log(`  fauna oscillation      mean ${mean(osc).toFixed(1)} (max-min within a run)`);
+if (o.snapshot || o.repeat > 1) {
+  console.log(`  runtime split          warmup ${(tWarm / 1000).toFixed(1)}s  measured ${(tMeasure / 1000).toFixed(1)}s` +
+    `${o.snapshot ? `  (snapshot: warmup paid once/seed across ${o.repeat} replays)` : `  (no snapshot: warmup paid every replay)`}`);
+}
+console.log('');
