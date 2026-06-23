@@ -1,6 +1,19 @@
-# CodeMap - Worldbuilder (index.html)
+# CodeMap - Worldbuilder
 
-Navigation index for the single-file app. Line numbers are PENDING the first `/codemap` run against the on-disk `index.html` (the file is not in the repo yet); the section ORDER and the key symbols below are accurate and are the primary navigation aid. Re-grep by function name; fill in line numbers once index.html lands.
+## Project structure (as of 2026-06-22, branch `professionalize-codebase`)
+The app is now a Vite + TS project, not a single file:
+- **`index.html`** - HTML shell + CSS; loads `src/main.js` as an ES module.
+- **`src/main.js`** (~1300 lines) - the whole sim + UI, top-level module scope (former IIFE). Sections + key symbols are mapped below. Pure entry points are EXPORTED at the bottom: `initWorld(seed)`, `runAssertions()`, `step`, `seedFloraCluster`, `seedFaunaGroup`, `landCoverage`, and live `flora`/`fauna`/`tick`/`CFG`/`W`/`H`. `init` = DOM wrapper over `initWorld`; `runTests` = DOM wrapper over `runAssertions`.
+- **`src/sim.test.js`** - vitest: runs the ~52 in-page assertions headless (the automated gate).
+- **`scripts/harness.mjs`** - `npm run measure`, the multi-seed ecosystem measurement tool.
+- **`scripts/headless-dom.mjs`** - permissive Proxy DOM stub so `main.js` imports cleanly in Node (interim, until the sim core splits into its own `sim.js`).
+- **`eslint.config.js`, `vite.config.js`, `tsconfig.json`, `.github/workflows/ci.yml`** - toolchain.
+
+Gate: `npm run typecheck && npm run lint && npm test` (+ `npm run build`). The function inventory below is still accurate for `src/main.js`; line numbers are approximate (re-grep by function name).
+
+---
+
+Navigation index for `src/main.js`. The section ORDER and the key symbols below are accurate and are the primary navigation aid. Re-grep by function name for exact lines.
 
 ## File shape (top to bottom)
 1. **Head + CSS** - design tokens (`:root`), component styles (toolbar, status bar, sidebar panels, inspector, tooltip, legend, intro screen, population graph).
