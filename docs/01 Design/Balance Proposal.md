@@ -186,7 +186,8 @@ Kevin wants herds to fragment into many spaced-out groups covering the map, not 
 ## Implementation status
 
 - **Step 1 (seed the ecology RNG): DONE 2026-06-22.** Added the `eRng` dynamics stream (seeded in `initWorld` from `_seed ^ 0x9E3779B9`); routed all per-tick stochasticity (flora/fauna/beach/anomaly-drift + `randn()`) through it; left terrain generation (`sRng`) byte-identical; kept the random-seed picker on raw `Math.random()`. Gate green (typecheck + lint + test); a new `is deterministic for a fixed seed (ecology)` test proves two identical-seed runs land on identical flora/fauna counts. Re-baseline numbers below.
-- **Next:** harness metrics + terrain snapshot, then the A/D/C/B tuning loop. Awaiting Kevin's go per step.
+- **Step 2 (harness metrics + terrain snapshot): DONE 2026-06-22.** The harness now captures the herb/carn/flora time series and reports the cycle-aware metrics that make the Decision-1 pass/fail readable: predator-prey phase lag (cross-correlation), per-trophic oscillation period (autocorrelation) + amplitude, completed cycles (peak count), amplitude trend (first vs second half), carnivore-persistence rate, per-trophic min floor, cap-hit count, and herd spatial dispersion (occupied 8x8 buckets + mean pairwise distance). Added `snapshotState()`/`restoreState()` + a `--snapshot`/`--repeat` harness mode that warms the slow ~3k-tick terrain once and replays the ecology window (head-to-head: warmup 31.4s -> 7.7s across 4 replays). Gate green; a new determinism-through-snapshot test proves replays match. Snapshot RNG-phase caveat captured in Engineering Lessons. Pure tooling - no ecology rate/behavior changed. Seeded-baseline cycle numbers below.
+- **Next:** the A/D/C/B tuning loop, starting with knob A (predator lag). Awaiting Kevin's go per step.
 
 ### Re-baseline after seeding (reproducible from here on)
 
@@ -201,3 +202,21 @@ Kevin wants herds to fragment into many spaced-out groups covering the map, not 
 | land coverage per seed | 21-25% | identical (terrain unchanged) |
 
 Seeding did NOT change the qualitative dynamics, as expected - same ~17% extinction, the same total predator-layer collapse (now 6/6), similar oscillation. It only made runs reproducible: the harness now returns identical numbers run-to-run, so from here every tuning A/B is a clean comparison rather than a draw from noise. This seeded set is the baseline all tuning is measured against.
+
+### Seeded baseline, NEW cycle metrics (the step-2 instrument, the numbers step 3 tunes against)
+
+`npm run measure --seeds=6 --warmup=3000 --ticks=1000 --sample=5` (402s, the protocol all tuning A/Bs use). The step-2 metrics now make the dysfunction directly readable, and they reproduce the survival numbers above exactly (`final fauna 52.3 / sd 33.4`, `oscillation 144.2`) - confirming the metric additions are behavior-preserving, not a perturbation.
+
+| cycle metric | seeded baseline | reading |
+|---|---|---|
+| carnivore-persistence | **0% (0/6)** | the predator layer collapses in EVERY run - the failure the 17% extinction headline hid |
+| min floor (carn) | 0.0 (worst 0) | carnivores reach 0 in every seed |
+| min floor (herb) | 18.0 (worst 0) | herbivores hold a floor except the one full-extinction seed |
+| predator-prey phase lag | -44t over 5 coupled seeds | NO healthy +lag cycle; negative = carnivores decline BEFORE prey peak (the collapse signature, not coexistence) |
+| oscillation amplitude (herb / carn) | 70.6 / 13.0 | large, unregulated herb swings; carn amplitude is just the die-off |
+| amplitude trend (herb, 1st -> 2nd half) | 67.2 -> 41.1 | boom then overgraze-crash within the window |
+| completed cycles (herb peaks) | 4.5 | herbivore-only sawtooth (overgraze waves), not a coupled predator-prey cycle |
+| spatial dispersion (herbClusters / meanPairDist) | 4.8 / 12.7 | LOW - the single moving-herd signature; this is the "before" for knob C (want clusters UP, herds fragmented) |
+| cap-hits | 0 | caps NEVER bind (fauna ~52 vs cap 400) - validates Decision 1: the problem is the coupling, not a ceiling |
+
+Step-3 pass targets to move these toward: carnivore-persistence >= 90%, carn min floor above ~10, a positive (carn-after-prey) phase lag with a real coupled period in both layers, a bounded (non-growing) amplitude trend, herbClusters UP (fragmentation), and cap-hits still 0.
