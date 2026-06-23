@@ -1298,4 +1298,4 @@ function dismissIntro(){
 
 // Pure entry points for headless use (gate + measurement harness). Live bindings
 // reflect reassignment inside the module (e.g. flora/fauna/tick after a step).
-export { initWorld, runAssertions, step, landCoverage, CFG, flora, fauna, tick, W, H };
+export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, CFG, flora, fauna, tick, W, H };
