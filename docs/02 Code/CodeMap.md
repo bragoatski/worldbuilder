@@ -3,7 +3,7 @@
 ## Project structure (as of 2026-06-22, branch `professionalize-codebase`)
 The app is now a Vite + TS project, not a single file:
 - **`index.html`** - HTML shell + CSS; loads `src/main.js` as an ES module.
-- **`src/main.js`** (~1300 lines) - the whole sim + UI, top-level module scope (former IIFE). Sections + key symbols are mapped below. Pure entry points are EXPORTED at the bottom: `initWorld(seed)`, `runAssertions()`, `step`, `seedFloraCluster`, `seedFaunaGroup`, `landCoverage`, and live `flora`/`fauna`/`tick`/`CFG`/`W`/`H`. `init` = DOM wrapper over `initWorld`; `runTests` = DOM wrapper over `runAssertions`.
+- **`src/main.js`** (~1300 lines) - the whole sim + UI, top-level module scope (former IIFE). Sections + key symbols are mapped below. Pure entry points are EXPORTED at the bottom: `initWorld(seed)`, `runAssertions()`, `step`, `seedFloraCluster`, `seedFaunaGroup`, `landCoverage`, `snapshotState()`/`restoreState(snap)` (warm-once ecology replay; see Engineering Lessons - Snapshot/restore), and live `flora`/`fauna`/`tick`/`CFG`/`W`/`H`. `init` = DOM wrapper over `initWorld`; `runTests` = DOM wrapper over `runAssertions`.
 - **`src/sim.test.js`** - vitest: runs the ~52 in-page assertions headless (the automated gate).
 - **`scripts/harness.mjs`** - `npm run measure`, the multi-seed ecosystem measurement tool.
 - **`scripts/headless-dom.mjs`** - permissive Proxy DOM stub so `main.js` imports cleanly in Node (interim, until the sim core splits into its own `sim.js`).
