@@ -1301,6 +1301,57 @@ function dismissIntro(){
   window.addEventListener('keydown',introKey);
 })();
 
+// ===== Snapshot / restore (headless A/B: warm the slow terrain once, replay ecology many times) =====
+// Captures ALL sim state needed to resume a run: the terrain + climate typed arrays, the
+// flora/fauna/remnant lists, world meta, and the scalars. mulberry32's internal counter is not
+// externally readable, so the snapshot stores the SEED and restoreState RE-SEEDS sRng/eRng from it
+// (exactly as initWorld does). Two restores of one snapshot therefore replay identically - proven by
+// the determinism-through-snapshot test. structuredClone gives an independent deep copy (typed arrays
+// keep their view type, nested flora/fauna/blob objects are copied), so the snapshot survives reuse.
+function snapshotState(){
+  return structuredClone({
+    seed:_seed, tick:tick, W:W, H:H,
+    floraIdCounter:floraIdCounter, faunaIdCounter:faunaIdCounter,
+    yearlyVariation:yearlyVariation, sunPhase:sunPhase, riverGenerated:riverGenerated,
+    WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache,
+    // terrain + volcano fields
+    grid:grid, elev:elev, aridity:aridity, tempField:tempField, sunlight:sunlight,
+    coastTTL:coastTTL, adjCooldown:adjCooldown, ringDone:ringDone, hillDecayCount:hillDecayCount,
+    peakVolcano:peakVolcano, volcActive:volcActive, volcAge:volcAge, volcLife:volcLife,
+    volcanoRing:volcanoRing, volcanoCenters:volcanoCenters, biomeStability:biomeStability,
+    biomeDesiredNext:biomeDesiredNext, biomeBoundary:biomeBoundary,
+    // climate fields
+    modTempSeasonal:modTempSeasonal, modTempAnom:modTempAnom, modTempVolc:modTempVolc,
+    modAridSeasonal:modAridSeasonal, modAridAnom:modAridAnom, modAridVolc:modAridVolc,
+    modArid:modArid, anomalyBlobs:anomalyBlobs,
+    // rivers + beaches
+    riverData:riverData, beachLevel:beachLevel,
+    // ecology lists
+    flora:flora, fauna:fauna, floraRemnants:floraRemnants, deathParticles:deathParticles,
+  });
+}
+function restoreState(snap){
+  var s=structuredClone(snap); // clone so one snapshot can be restored repeatedly without aliasing
+  _seed=s.seed; tick=s.tick; W=s.W; H=s.H;
+  // Re-seed both streams from the stored seed (mulberry32 state is not externally readable), exactly
+  // as initWorld does. sRng is consumed by per-tick terrain genesis, eRng by ecology, so both matter.
+  sRng=mulberry32(_seed);
+  eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
+  floraIdCounter=s.floraIdCounter; faunaIdCounter=s.faunaIdCounter;
+  yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; riverGenerated=s.riverGenerated;
+  WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache;
+  grid=s.grid; elev=s.elev; aridity=s.aridity; tempField=s.tempField; sunlight=s.sunlight;
+  coastTTL=s.coastTTL; adjCooldown=s.adjCooldown; ringDone=s.ringDone; hillDecayCount=s.hillDecayCount;
+  peakVolcano=s.peakVolcano; volcActive=s.volcActive; volcAge=s.volcAge; volcLife=s.volcLife;
+  volcanoRing=s.volcanoRing; volcanoCenters=s.volcanoCenters; biomeStability=s.biomeStability;
+  biomeDesiredNext=s.biomeDesiredNext; biomeBoundary=s.biomeBoundary;
+  modTempSeasonal=s.modTempSeasonal; modTempAnom=s.modTempAnom; modTempVolc=s.modTempVolc;
+  modAridSeasonal=s.modAridSeasonal; modAridAnom=s.modAridAnom; modAridVolc=s.modAridVolc;
+  modArid=s.modArid; anomalyBlobs=s.anomalyBlobs;
+  riverData=s.riverData; beachLevel=s.beachLevel;
+  flora=s.flora; fauna=s.fauna; floraRemnants=s.floraRemnants; deathParticles=s.deathParticles;
+}
+
 // Pure entry points for headless use (gate + measurement harness). Live bindings
 // reflect reassignment inside the module (e.g. flora/fauna/tick after a step).
-export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, CFG, flora, fauna, tick, W, H };
+export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, snapshotState, restoreState, CFG, flora, fauna, tick, W, H };

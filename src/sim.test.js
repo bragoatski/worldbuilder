@@ -40,6 +40,30 @@ describe('in-page assertions (headless)', () => {
     expect(b).toEqual(a);
   }, 30000);
 
+  // Step 2 of the balance plan: snapshot/restore lets the harness warm the slow terrain ONCE and
+  // replay the ecology window many times. The contract that makes that valid is determinism THROUGH
+  // the snapshot: restoring one snapshot, seeding, and running must give identical results every time
+  // (restoreState re-seeds both RNG streams from the stored seed). Warm once, snapshot, then restore
+  // + seed + run twice and assert the flora/fauna/herb/carn counts match.
+  it('is deterministic through a snapshot (warm once, replay twice)', () => {
+    sim.initWorld(31337);
+    for (let i = 0; i < 350; i++) sim.step();
+    const snap = sim.snapshotState();
+    function replay() {
+      sim.restoreState(snap);
+      sim.seedFloraCluster(20);
+      sim.seedFaunaGroup('herbivore', 12);
+      sim.seedFaunaGroup('carnivore', 4);
+      for (let i = 0; i < 120; i++) sim.step();
+      const herb = sim.fauna.filter((f) => f && f.type === 'herbivore').length;
+      const carn = sim.fauna.filter((f) => f && f.type === 'carnivore').length;
+      return { flora: sim.flora.length, fauna: sim.fauna.length, herb, carn };
+    }
+    const a = replay();
+    const b = replay();
+    expect(b).toEqual(a);
+  }, 30000);
+
   // The browser runs `T` after the sim has developed land, not on a fresh ocean. Exercise
   // the assertions in that state so world-state-dependent flakiness (erosion luck, the biome
   // at a probed tile) is caught here rather than only showing up in the live page.
