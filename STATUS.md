@@ -16,6 +16,9 @@ The gate is now `npm run typecheck && npm run lint && npm test` (+ `npm run buil
 - Repo: https://github.com/bragoatski/worldbuilder
 - Live (unchanged, original build): https://bragoatski.github.io/worldbuilder/
 
+## Branch / deploy
+Steps 1 + 2 are MERGED to `main` and pushed (2026-06-22, Kevin's call). They are sim-internal tooling with no visual change, so the CI redeploy is a functional no-op. `ecology-balance` remains the working branch for the tuning loop. (Top "Where things are" section below predates this merge; it narrates the professionalization deploy.)
+
 ## Ecosystem balance work (active 2026-06-22)
 Plan lives in `docs/01 Design/Balance Proposal.md` (read it - decisions, knob families, metrics, baselines). Kevin's resolved decisions: balance is achieved by TUNING RATES into a natural bounded predator-prey oscillation, NOT by population caps (a run that hits a cap = failure); seed the ecology RNG (done); keep the flora per-tile limit (food base); include the prey-dependent predator spawn-rescue (knob D); and make herds FRAGMENT into many spaced-out groups (knob C / spatial dispersion is a desired feature, not a fallback).
 
