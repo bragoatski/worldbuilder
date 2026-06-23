@@ -103,3 +103,55 @@ CASCADE notes:
 Decision: **KEEP D at minPrey 30** as a net-positive intermediate (persistence 0->2/6, extinction flat, overshoot bounded), magnitude TO BE RE-TUNED after C. Move to knob C next. Committed with knob A.
 
 ---
+
+## Step C1 - add knob C: herbivore conspecific crowding (crowding 1.0)
+
+Mechanism: NEW term in `scoreTileForFauna` (herbivore branch) - subtract `crowding * herbCount` for herbivores on the tile, half-weight for adjacent tiles. Targets BOTH root causes at once: fragments the single moving mass into spaced groups (dispersion / reason 2) AND makes a patch unattractive before it is fully stripped (local density-dependence / reason 1). Prior best = A+D (minPrey 30).
+
+Result (`--seeds=6`, 545s):
+
+| metric | A+D (minPrey 30) | + C crowding 1.0 | read |
+|---|---|---|---|
+| carn-persistence | 2/6 | **3/6** | up |
+| extinction rate | 17% (1/6) | 17% (1/6) | flat |
+| final fauna mean | 22.7 | 35.7 | warmer (less over-suppression) |
+| herbClusters | 3.3 | 4.8 | fragmenting, but modestly |
+| carn min-floor | 0.2 | 0.7 | up |
+| herb amplitude | 52.9 | 73.9 | ROSE (not yet smoothed) |
+| completed cycles | 1.8 | 2.8 | more |
+| cap-hits | 0 | 0 | clean |
+
+CASCADE notes:
+- Modest net improvement across the board (persistence, warmth, dispersion, carn-floor all up; extinction flat).
+- **seed 1000 is the proof-of-concept**: 128H in 13 CLUSTERS, 3C persisting, 6 completed cycles - the dispersed-herds + coexisting-predators target dynamic, achieved in one seed.
+- But aggregate herbClusters only 3.3->4.8: most seeds barely fragmented, and amplitude ROSE (52.9->73.9). Reads as crowding=1.0 sitting at the fragmentation THRESHOLD - it tips one seed over but is not strong enough to reliably fragment all, so out-of-phase smoothing has not kicked in.
+
+Decision: **KEEP direction, push harder.** Next A/B: crowding 1.0 -> 2.0 to fragment across all seeds. Predict: clusters up broadly, amplitude smooths (out-of-phase patches), persistence up. Two-sided risk: too thin and predators cannot find prey.
+
+---
+
+## Step C2 - herbivoreCrowding 1.0 -> 2.0 (BREAKTHROUGH)
+
+Result (`--seeds=6`, 475s):
+
+| metric | C1 (crowding 1.0) | **C2 (crowding 2.0)** | target |
+|---|---|---|---|
+| extinction rate | 17% (1/6) | **0% (0/6)** | 0% MET |
+| carn-persistence | 3/6 (50%) | **5/6 (83%)** | >=90% (close) |
+| phase lag (coupled) | -202t | **+68t** | positive - MET |
+| carn amplitude | 6.0 | 27.4 | predators now genuinely cycle |
+| final fauna mean | 35.7 | 87.2 | warm, healthy |
+| herbClusters | 4.8 | 5.8 | up |
+| herb amplitude | 73.9 | 86.3 | still large / growing |
+| carn min-floor | 0.7 | 0.3 | dips to ~0 at troughs |
+| cap-hits | 0 | 0 | 0 MET |
+
+CASCADE notes (the big one):
+- Crowding/dispersion was the LOAD-BEARING lever, as the proposal predicted. Doubling it flipped the system from "fragile stragglers, predators mostly dying" to 0 extinctions / 83% persistence / +68t phase lag (carnivores peaking AFTER prey - the healthy coupled-cycle signature, achieved for the first time in aggregate).
+- 3 seeds show real coexistence with substantial predator populations and strong +lag: 1000 (127H/62C, 14 clusters, +300 r.85), 1404 (64H/129C, 10 clusters, +260 r.80), 1505 (31H/79C, +300 r.77).
+- WHY it works: enough out-of-phase patches finally exist that a local crash leaves neighbors to recolonize from -> no global synchronous collapse -> predators survive the troughs. This is reason-2 (synchrony) being broken.
+- Remaining problems: (1) amplitude large + trending up (herb 61.6->70.4; per-seed swings 30->230) - boom-bust, not gentle; Decision 1 wants bounded/non-growing. (2) carn min-floor ~0.3 - predators graze zero at troughs (stochastic-extinction risk on longer runs). (3) 2 fragile seeds (1101 5H/1C, 1303 0H/1C). (4) some seeds predator-heavy (1404 129C vs 64H) = predator overshoot still happening.
+
+Decision: **KEEP crowding 2.0** - the best baseline by far, hits the extinction + phase-lag + cap-hit targets, near the persistence target. Committed as the knob-C milestone. Remaining work: tame AMPLITUDE and lift the 2 fragile seeds (push crowding further? revisit knob A eatGain for predator overshoot? knob B prey recruitment?).
+
+---

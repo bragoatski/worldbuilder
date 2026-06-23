@@ -188,6 +188,7 @@ var CFG={
   carnivoreRescueRate:0.00005,      // knob D: per-herbivore per-tick carnivore immigration prob
   carnivoreRescueMinPrey:30,        // need an ABUNDANT herd before predators re-immigrate (preserves prey rebound refuge)
   carnivoreRescueCarnCap:4,         // stop rescuing once predators are established (rescue, not subsidy)
+  herbivoreCrowding:2.0,            // knob C: herbivores avoid tiles crowded with conspecifics (fragments the herd; adds local density-dependence)
   herbivoreStartEnergy:50, carnivoreStartEnergy:75,
   herbivoreMaxEnergy:100, carnivoreMaxEnergy:120
 };
@@ -925,6 +926,11 @@ function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]
     // Look-ahead: scan adjacent tiles for flora density (seek greener pastures)
     var adjFlora=0;var adj=neighbors4(tx,ty);for(var i=0;i<adj.length;i++){var aF=_floraAtTile[idx(adj[i][0],adj[i][1])];if(aF)adjFlora+=aF.length;}
     score+=adjFlora*0.4;
+    // Knob C: conspecific crowding penalty - herbivores avoid tiles dense with other
+    // herbivores, so the single moving mass fragments into spaced groups (dispersion) and
+    // a patch turns unattractive before it is fully stripped (local density-dependence).
+    var selfH=_herbAtTile[ti];if(selfH)score-=selfH.length*CFG.herbivoreCrowding;
+    for(var ci=0;ci<adj.length;ci++){var hN=_herbAtTile[idx(adj[ci][0],adj[ci][1])];if(hN)score-=hN.length*CFG.herbivoreCrowding*0.5;}
     var cH=_carnAtTile[ti];if(cH)score-=cH.length*2.5;for(var i2=0;i2<adj.length;i2++){var cA=_carnAtTile[idx(adj[i2][0],adj[i2][1])];if(cA)score-=cA.length*1.0;}
   }else{
     // Carnivore prey tracking: immediate tile (strong), ring 1 (medium), ring 2-3 (scent)
