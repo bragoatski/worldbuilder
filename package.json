@@ -1,0 +1,20 @@
+{
+  "name": "worldbuilder",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Procedural terrain + ecology simulator",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}
