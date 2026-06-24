@@ -51,10 +51,19 @@ Tuned with Kevin over several visual rounds (the render is GATE-BLIND - verified
   meander, threshold 22 (~4% coverage, nuanced not covered), mouths clipped at the coast (no ocean bleed),
   occasional braided deltas at wide mouths.
 - Lakes: FEWER + BIGGER + VARIED, placed as source lakes at the highest river heads (natural fill-lakes are
-  only coastal); smooth curved per-lake shores (not pressed-together circles); flora/fauna suppressed on water.
+  only coastal); smooth curved per-lake shores from a shape outline (~1/3 given a distinctive non-circular
+  shape), the shape also defines the cell mask so flora/fauna are suppressed across the whole lake footprint
+  and no river line is ever drawn inside a lake.
+
+**Fauna distribution (Kevin asked: rarer / crowd water / rare in deserts) was ATTEMPTED and REVERTED** -
+the harness proves it regresses the C2 balance (0%->17% extinction, 83%->50% carnivore-persistence) because
+fauna scoring is what knob C uses to disperse the herd (see Engineering Lessons). It needs its own
+harness-tuned loop, NOT a quick add. The branch's ecology is back to C2 (only the render suppression of
+fauna/flora ON lakes is kept - balance-neutral).
 
 **NEXT for rivers: Kevin's final look sign-off + DEPLOY** (clean ff `main` + push = Pages). Confirm before
-pushing. Open follow-ups Kevin may want: revisit the `maxLandCap=0.90` ecology tradeoff; richer braided deltas.
+pushing. Open follow-ups: fauna-distribution as a measured ecology task; the `maxLandCap=0.90` ecology
+tradeoff; richer braided deltas.
 
 ## NEXT (in order)
 1. **Rivers DEPLOY** (above) - confirm look + push `main`.

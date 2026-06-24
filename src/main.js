@@ -732,20 +732,37 @@ function generateRivers(){
     for(var pk=0;pk<picked.length;pk++){var qx=picked[pk]%W,qy=(picked[pk]/W)|0;if(Math.abs(phx-qx)+Math.abs(phy-qy)<SOURCE_LAKE_SPACING){far=false;break;}}
     if(far)picked.push(ph);
   }
+  // Each lake gets an organic outline (per-angle radii); ~1/3 are given a distinctive, elongated/lobed
+  // shape rather than a circle. Cells inside the outline (plus a thin shore margin) are marked lake so
+  // the fauna-free + no-river zone matches what is drawn. lakeShapes stores the outline for the render.
+  lakeShapes=[];var srcLakeCell=new Uint8Array(N);var LAKE_NPTS=16;
   for(var pp=0;pp<picked.length;pp++){
     var lc=picked[pp],lcx=lc%W,lcy=(lc/W)|0;
     var lr=SOURCE_LAKE_R_MIN+rRng()*(SOURCE_LAKE_R_MAX-SOURCE_LAKE_R_MIN); // varied size per lake
-    var rad=Math.ceil(lr);
-    for(var oy=-rad;oy<=rad;oy++)for(var ox=-rad;ox<=rad;ox++){
-      if(ox*ox+oy*oy>lr*lr)continue;
+    var uniq=(pp%3===2); // ~1/3 distinctive
+    var p1=rRng()*6.2832,p2=rRng()*6.2832,p3=rRng()*6.2832;
+    var amp1=uniq?0.30+rRng()*0.22:0.08+rRng()*0.07,amp2=uniq?0.22+rRng()*0.18:0.05+rRng()*0.05;
+    var elong=uniq?0.30+rRng()*0.30:0.0,erot=rRng()*3.1416;
+    var radii=new Array(LAKE_NPTS),maxR=0;
+    for(var an=0;an<LAKE_NPTS;an++){var ang=an/LAKE_NPTS*6.2832;
+      var f=1+amp1*Math.sin(ang*2+p1)+amp2*Math.sin(ang*3+p2)+(uniq?0.12*Math.sin(ang+p3):0);
+      f*=(1-elong*0.5*Math.cos(2*(ang-erot)));
+      var rv2=Math.max(lr*0.4,lr*f);radii[an]=rv2;if(rv2>maxR)maxR=rv2;}
+    var rmark=Math.ceil(maxR+1);
+    for(var oy=-rmark;oy<=rmark;oy++)for(var ox=-rmark;ox<=rmark;ox++){
       var oxx=lcx+ox,oyy=lcy+oy;if(!inb(oxx,oyy))continue;var oii=oyy*W+oxx;if(grid[oii]===T.OCEAN)continue;
+      var dist=Math.sqrt(ox*ox+oy*oy);if(dist>maxR+1)continue;
+      var ang2=Math.atan2(oy,ox);if(ang2<0)ang2+=6.2832;
+      var t2=ang2/6.2832*LAKE_NPTS,i0=Math.floor(t2)%LAKE_NPTS,i1=(i0+1)%LAKE_NPTS,fr=t2-Math.floor(t2);
+      var rAt=radii[i0]*(1-fr)+radii[i1]*fr;
+      if(dist>rAt+0.8)continue; // shore margin so NO fauna sit even partly under the lake
       var prevExit=riverData[oii]?riverData[oii].exitDir:-1;
       if(!riverData[oii])riverData[oii]={entryDir:-1,exitDir:-1,volume:1,lake:false,sourcePool:false,estuary:false,curveOffset:0,poolSize:0};
-      var rdl=riverData[oii];
-      rdl.lake=true;rdl.sourcePool=false;rdl.entryDir=-1;rdl.poolSize=0.55+rRng()*0.15;
-      // The centre cell keeps its outflow (the lake overflows into the river); the rest are pure pool.
+      var rdl=riverData[oii];rdl.lake=true;rdl.sourcePool=false;rdl.entryDir=-1;
       if(oii===lc){rdl.exitDir=prevExit;}else{rdl.exitDir=-1;rdl.estuary=false;}
+      srcLakeCell[oii]=1;
     }
+    lakeShapes.push({cx:lcx+0.5,cy:lcy+0.5,radii:radii});
   }
 
   // --- Step 6: Per-river UNIFORM width. Decompose the network into rivers - a main stem plus each
@@ -778,16 +795,15 @@ function generateRivers(){
   }
   for(var aw=0;aw<N;aw++)if(riverW[aw]>=0&&riverData[aw])riverData[aw].volume=riverW[aw];
 
-  // Smooth lake outlines (centroid + effective radius per connected lake) so the shore renders as a
-  // curved blob, not a cluster of per-cell circles.
-  lakeShapes=[];
+  // Natural fill-lakes (rare on a high continent) get a simple circular outline appended to lakeShapes.
   var lseen=new Uint8Array(N),lstk=new Int32Array(N);
   for(var ls=0;ls<N;ls++){
-    if(!riverData[ls]||!riverData[ls].lake||lseen[ls])continue;
+    if(!riverData[ls]||!riverData[ls].lake||lseen[ls]||srcLakeCell[ls])continue;
     var lp=0,lcnt=0,sxx=0,syy=0;lstk[lp++]=ls;lseen[ls]=1;
     while(lp>0){var lcur=lstk[--lp];lcnt++;sxx+=lcur%W;syy+=(lcur/W)|0;var ax=lcur%W,ay=(lcur/W)|0;
-      for(var ld=0;ld<8;ld++){var nlx=ax+DIR_DX[ld],nly=ay+DIR_DY[ld];if(!inb(nlx,nly))continue;var nli=nly*W+nlx;if(riverData[nli]&&riverData[nli].lake&&!lseen[nli]){lseen[nli]=1;lstk[lp++]=nli;}}}
-    lakeShapes.push({cx:sxx/lcnt+0.5,cy:syy/lcnt+0.5,r:Math.sqrt(lcnt/Math.PI),seed:((ls+1)*2654435761)>>>0});
+      for(var ld=0;ld<8;ld++){var nlx=ax+DIR_DX[ld],nly=ay+DIR_DY[ld];if(!inb(nlx,nly))continue;var nli=nly*W+nlx;if(riverData[nli]&&riverData[nli].lake&&!lseen[nli]&&!srcLakeCell[nli]){lseen[nli]=1;lstk[lp++]=nli;}}}
+    var rr0=Math.sqrt(lcnt/Math.PI),radc=new Array(16);for(var rc2=0;rc2<16;rc2++)radc[rc2]=rr0;
+    lakeShapes.push({cx:sxx/lcnt+0.5,cy:syy/lcnt+0.5,radii:radc});
   }
 }
 
@@ -799,17 +815,15 @@ function clearRivers(){
 function drawRivers(){
   if(!riverData||!riverGenerated)return;
 
-  // Lakes: one smooth curved shore per connected lake (drawn under the river lines), each a unique
-  // wobbly blob so they read as natural water bodies rather than a cluster of per-cell circles.
+  // Lakes: one smooth closed curve per lake (drawn under the river lines) through its stored per-angle
+  // radii, so the shore is curved and (for ~1/3) a distinctive shape rather than a circle.
   for(var lk=0;lk<lakeShapes.length;lk++){
-    var L=lakeShapes[lk];
-    var lcx=L.cx*PIX,lcy=L.cy*PIX,base=Math.max(PIX,L.r*PIX*1.2);
-    var lrng=mulberry32(L.seed);
-    var pts=14,rs=[];for(var a=0;a<pts;a++)rs.push(base*(0.82+lrng()*0.36)); // varied -> unique shore
-    var pa=function(k){var ang=(k%pts)/pts*Math.PI*2,rr=rs[((k%pts)+pts)%pts];return[lcx+Math.cos(ang)*rr,lcy+Math.sin(ang)*rr];};
+    var L=lakeShapes[lk];var radii=L.radii;var npts=radii.length;
+    var lcx=L.cx*PIX,lcy=L.cy*PIX;
+    var pa=function(k){var kk=((k%npts)+npts)%npts;var ang=kk/npts*Math.PI*2,rr=radii[kk]*PIX;return[lcx+Math.cos(ang)*rr,lcy+Math.sin(ang)*rr];};
     ctx.fillStyle=LAKE_COLOR;ctx.beginPath();
-    var p0=pa(0),pl=pa(pts-1);ctx.moveTo((p0[0]+pl[0])/2,(p0[1]+pl[1])/2);
-    for(var a2=0;a2<pts;a2++){var cur=pa(a2),nx=pa(a2+1);ctx.quadraticCurveTo(cur[0],cur[1],(cur[0]+nx[0])/2,(cur[1]+nx[1])/2);}
+    var p0=pa(0),pl=pa(npts-1);ctx.moveTo((p0[0]+pl[0])/2,(p0[1]+pl[1])/2);
+    for(var a2=0;a2<npts;a2++){var cur=pa(a2),nx=pa(a2+1);ctx.quadraticCurveTo(cur[0],cur[1],(cur[0]+nx[0])/2,(cur[1]+nx[1])/2);}
     ctx.closePath();ctx.fill();
   }
 
@@ -824,8 +838,9 @@ function drawRivers(){
       ctx.beginPath();ctx.arc(px+mid,py+mid,radius,0,Math.PI*2);ctx.fill();
     }
 
-    // River line. Width is uniform per river (set by river length in generateRivers).
-    if(rd.exitDir>=0){
+    // River line (never drawn inside a lake - lakes render as the smooth blob only; the inflow/outflow
+    // rivers draw on the adjacent land cells, so the river emerges from the lake's edge).
+    if(rd.exitDir>=0&&!rd.lake){
       var ex,ey;
       if(rd.entryDir>=0){ex=px+mid+DIR_DX[rd.entryDir]*mid;ey=py+mid+DIR_DY[rd.entryDir]*mid;}
       else{ex=px+mid;ey=py+mid;}
@@ -1112,7 +1127,7 @@ function draw(){
       if(terr===T.OCEAN){col='#0a2a3f';}
       else{
         var bLvl=beachLevel?beachLevel[i]:0;var hasRiv=riverData&&riverData[i];
-        if(hasRiv&&riverData[i].lake){col='#1a6b94';}
+        if(hasRiv&&riverData[i].lake){/* lake is the smooth blob in drawRivers; keep terrain under the shore margin */}
         else if(hasRiv&&riverData[i].sourcePool){col='#1a8ab0';}
         else if(hasRiv){var rv=Math.min(1,riverData[i].volume/9);col='rgb('+Math.round(20+25*rv)+','+Math.round(90+35*rv)+','+Math.round(140+30*rv)+')';}
         else if(bLvl>0.05){var bs=Math.min(1,bLvl);col='rgb('+Math.round(226*bs+21*(1-bs))+','+Math.round(204*bs+29*(1-bs))+','+Math.round(143*bs+40*(1-bs))+')';}
