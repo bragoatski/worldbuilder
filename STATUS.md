@@ -36,7 +36,7 @@ On the standard 1000-tick protocol, C2 vs the seeded baseline: full-extinction *
 ## Ecosystem balance: ACCEPTED + SHIPPED (Kevin, 2026-06-23)
 Kevin's call: **accept C2 and ship it.** C2 is the committed balanced baseline (knobs A+D+C; 1000t: 0% extinction / 83% persistence / +68t lag). The clean rate-knob search is EXHAUSTED - everything past C2 (knob B, the D re-tunes, eatGain 32, eatSpeed 26, crowding 2.5) was measured and reverted. The long-run gap is the paradox of enrichment under non-stationary K, which rate knobs cannot reach; treated as ORGANIC living-world behavior, not a bug. **`faunaMaxPop` kept at 400** (deliberate, NOT raised): the long-run data shows the cap does benign STABILIZING work (clamps the seed-1202 boom and keeps it alive), so raising it would risk trading a metric artifact for a real boom-and-crash. If steady-state long-run balance ever becomes a priority, the root fix is to BOUND K generation-side (cap land/flora growth) or add an enrichment-robust mechanism (predator interference / prey predation-refuge) - see the tuning log FINAL STATE + Engineering Lessons (paradox of enrichment).
 
-## Rivers (active 2026-06-23) - IMPLEMENTED, gate green, on branch `ecology-balance`, NOT yet deployed
+## Rivers (2026-06-23) - DONE + DEPLOYED to Pages (main `5ee98df`, CI success, live bundle index-D0G5m6MV.js)
 Rewrote `generateRivers` as the standard hydrology pipeline (priority-flood depression fill -> D8 flow
 receivers -> flow accumulation -> threshold), replacing the greedy downhill tracer that dead-ended in
 basins. Guarantees dendritic rivers reaching the sea by construction; structural invariants gate-tested
@@ -61,12 +61,15 @@ fauna scoring is what knob C uses to disperse the herd (see Engineering Lessons)
 harness-tuned loop, NOT a quick add. The branch's ecology is back to C2 (only the render suppression of
 fauna/flora ON lakes is kept - balance-neutral).
 
-**NEXT for rivers: Kevin's final look sign-off + DEPLOY** (clean ff `main` + push = Pages). Confirm before
-pushing. Open follow-ups: fauna-distribution as a measured ecology task; the `maxLandCap=0.90` ecology
-tradeoff; richer braided deltas.
+Deployed 2026-06-23 (Kevin's call: ship rivers/lakes; fauna as a separate task). main == ecology-balance
+== `5ee98df`, live. Open follow-ups: the `maxLandCap=0.90` ecology tradeoff; richer braided deltas.
 
 ## NEXT (in order)
-1. **Rivers DEPLOY** (above) - confirm look + push `main`.
+1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
+   deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
+   attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence
+   because that score is knob C's dispersion lever (see Engineering Lessons - Fauna distribution vs the
+   balance). Needs the harness measure->A/B->keep-if-better loop, ideally at the new high-land regime.
 2. **Beaches:** cut or cosmetic-only coastline pass; lowest priority.
 3. **Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js` (removes the interim DOM stub, enables strict per-module TS). Touches the render/UI shell the gate can't see, so it needs its own browser verify + redeploy - a focused follow-up, not reflexive.
 
