@@ -74,3 +74,82 @@ describe('in-page assertions (headless)', () => {
     expect(fail, '\n' + out.join('\n')).toBe(0);
   }, 30000);
 });
+
+// Rivers: the hydrology rewrite (priority-flood -> D8 flow -> accumulation -> threshold) must produce
+// dendritic rivers that reach the sea BY CONSTRUCTION, with no orphaned basin stubs. Warming real
+// terrain to a river-bearing land coverage (~6000 ticks) is far too slow for a unit test, so we paint
+// a deterministic synthetic continent (a noisy cone with one deliberate pit) and assert the structural
+// invariants directly on it. grid/elev are live module bindings; mutating them in place after
+// initWorld paints the surface generateRivers reads.
+describe('rivers (hydrology pipeline)', () => {
+  const DX = [0, 1, 1, 1, 0, -1, -1, -1], DY = [-1, -1, 0, 1, 1, 1, 0, -1];
+
+  function paintSyntheticContinent() {
+    sim.initWorld(2024); // allocates grid/elev at W*H and fixes the RNG seed
+    const W = sim.W, H = sim.H, T = sim.T, grid = sim.grid, elev = sim.elev;
+    const cx = W / 2, cy = H / 2;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      let e = 9 - 0.26 * Math.hypot(x - cx, y - cy);           // cone: high centre -> coast
+      // Several octaves of sine so the surface is fractal/channelized (a smooth cone gives sheet
+      // flow = 2D blobs; real terrain concentrates flow into dendritic valleys).
+      e += 2.2 * Math.sin(x * 0.19 + 1.3) * Math.sin(y * 0.17 + 0.7);
+      e += 1.4 * Math.sin(x * 0.33 - 0.5) * Math.cos(y * 0.29 + 2.1);
+      e += 0.9 * Math.sin(x * 0.61 + y * 0.43);
+      e += 0.5 * Math.cos(x * 0.83 - y * 0.71);
+      const dp = Math.hypot(x - 34, y - 44);                   // one deliberate pit -> a lake
+      if (dp < 6) e -= 4.0 * (1 - dp / 6);
+      if (e < 0) e = 0;
+      elev[i] = e;
+      grid[i] = e < 0.6 ? T.OCEAN : T.PLAINS;
+    }
+    for (let x = 0; x < W; x++) { grid[x] = T.OCEAN; grid[(H - 1) * W + x] = T.OCEAN; } // sea border = outlet
+    for (let y = 0; y < H; y++) { grid[y * W] = T.OCEAN; grid[y * W + W - 1] = T.OCEAN; }
+  }
+
+  it('builds a connected dendritic network, no basin stubs, with a lake', () => {
+    paintSyntheticContinent();
+    sim.generateRivers();
+    const rd = sim.riverData, grid = sim.grid, W = sim.W, H = sim.H, T = sim.T;
+    const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+    let river = 0, lake = 0, deadEnd = 0, reachFail = 0;
+    for (let i = 0; i < W * H; i++) {
+      const r = rd[i]; if (!r) continue;
+      river++; if (r.lake) lake++;
+      if (r.exitDir < 0 && !r.lake && !r.estuary) deadEnd++;          // a river that flows nowhere
+      const x = i % W, y = (i / W) | 0;
+      let px = x, py = y, steps = 0, ok = false;                       // walk exitDir to a valid terminus
+      while (steps <= W + H) {
+        const cur = rd[py * W + px];
+        if (!cur || cur.lake || cur.estuary) { ok = true; break; }
+        if (cur.exitDir < 0) { ok = false; break; }
+        const nx = px + DX[cur.exitDir], ny = py + DY[cur.exitDir];
+        if (!inb(nx, ny)) { ok = true; break; }
+        if (grid[ny * W + nx] === T.OCEAN) { ok = true; break; }
+        px = nx; py = ny; steps++;
+      }
+      if (!ok) reachFail++;
+    }
+    // Dendritic = lines, not 2D area-fill. Count fully-river 2x2 blocks (excluding lakes): rare on a
+    // dendritic network, common on a blob.
+    let solid = 0;
+    for (let y = 0; y < H - 1; y++) for (let x = 0; x < W - 1; x++) {
+      const a = rd[y * W + x], b = rd[y * W + x + 1], c = rd[(y + 1) * W + x], d2 = rd[(y + 1) * W + x + 1];
+      if (a && b && c && d2 && !a.lake && !b.lake && !c.lake && !d2.lake) solid++;
+    }
+    expect(river).toBeGreaterThan(20);          // a real network formed (vs the old ~7 stubs)
+    expect(reachFail).toBe(0);                  // every river reaches the sea, a lake, or the map edge
+    expect(deadEnd).toBe(0);                    // no orphaned dead-end basin stubs
+    expect(lake).toBeGreaterThan(0);            // the pit filled into a lake (the overflow feature)
+    expect(solid).toBeLessThan(river * 0.12);   // few solid 2x2 blocks -> dendritic lines, not blobs
+  });
+
+  it('is deterministic for a fixed surface', () => {
+    const fingerprint = () => {
+      paintSyntheticContinent();
+      sim.generateRivers();
+      return sim.riverData.map((r) => (r ? `${r.entryDir},${r.exitDir},${r.volume},${r.lake ? 1 : 0}` : '.')).join('|');
+    };
+    expect(fingerprint()).toBe(fingerprint());
+  });
+});

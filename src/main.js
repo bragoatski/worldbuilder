@@ -67,12 +67,24 @@ var floraRemnants = []; // {x, y, prefs, tickDue}
 // Directions: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW, -1=source/terminal
 var riverData;       // array of W*H, null or river object
 var riverGenerated = false;
-var RIVER_COLOR = '#2d7da8';
+var lakeShapes = [];  // [{cx,cy,r,seed}] smooth lake outlines (tile units) for a curved shore render
+var RIVER_COLOR = '#3aa6e0';
 var LAKE_COLOR = '#1a6b94';
-var RIVER_MIN_ELEV = 5.0;          // minimum source elevation (hills+)
-var RIVER_MAX_COUNT_BASE = 7;       // rivers per 96^2 map
-var RIVER_MIN_SOURCE_SPACING = 8;   // min manhattan distance between sources
 var RIVER_ARIDITY_EFFECT = 0.6;     // aridity reduction on river tiles
+// Hydrology pipeline tunables (priority-flood -> flow accumulation; tuned for a 6px read).
+var RIVER_ACCUM_THRESHOLD = 22;     // upstream drainage cells before a tile renders as a river
+var RIVER_SMOOTH_PASSES = 3;        // 3x3 blur of elevation BEFORE flow routing (only): on this
+                                    // low-relief terrain raw D8 disperses into speckle; smoothing the
+                                    // routing surface merges tributaries into longer, curvier channels.
+var LAKE_MIN_DEPTH = 0.06;          // fill depth (filled - routing elev) for a tile to count as lake
+var LAKE_MIN_CELLS = 12;            // drop small filled pits; keep only fewer, bigger lakes
+var LAKE_MIN_ELEV_FRAC = 0.45;      // keep natural fill lakes only in the upper elevation band (not low
+                                    // coastal ponds); on this terrain that leaves ~none, so:
+var SOURCE_LAKE_COUNT = 6;          // big lakes placed at the highest, well-spaced river heads, so a
+var SOURCE_LAKE_R_MIN = 1.6;        // river springs from a lake near its source rather than nowhere;
+var SOURCE_LAKE_R_MAX = 3.6;        // radius varies per lake so they differ in size
+var SOURCE_LAKE_SPACING = 15;       // min manhattan distance between source lakes (spread them out)
+var DELTA_MIN_VOL = 5;              // wide rivers (>= this width) occasionally braid into a delta mouth
 
 // ===== Beach System (erosion process) =====
 var beachLevel;       // Float32Array of W*H, 0.0 = no beach, 1.0 = fully eroded
@@ -141,7 +153,7 @@ var WORLD={ muE:3, varMode:0.5, gammaA:4, gammaTheta:400, H0:1.4, Hmax:9.0, k:0.
 
 var CFG={
   volcanoChancePerTile:0.00005, coastalSpreadBase:0.0030, erosionChanceBase:0.00025,
-  hardenRate:0.0025, elevationIntensity:1.0, maxLandCap:0.60,
+  hardenRate:0.0025, elevationIntensity:1.0, maxLandCap:0.90,
   sunlightNeighborMaxDelta:1.0, sunlightIntensity:1.0,
   aridityDistK:0.085, ariditySunCoef:0.18, aridityElevCoef:0.03, aridityHotBoost:0.50,
   clusterSpikeRate:0.025, clusterPlusChance:0.18,
@@ -574,171 +586,272 @@ var DIR_DX=[0,1,1,1,0,-1,-1,-1];
 var DIR_DY=[-1,-1,0,1,1,1,0,-1];
 function oppositeDir(d){return(d+4)%8;}
 
+// Standard hydrology pipeline (replaces the old greedy downhill tracer, which dead-ended in
+// local minima): priority-flood depression fill -> D8 flow receivers -> flow accumulation ->
+// threshold. This guarantees dendritic rivers that reach the sea BY CONSTRUCTION - every land
+// cell has a monotone-descending path to an ocean outlet, so there are no orphaned basin stubs.
+// Pure + seeded (reads grid/elev/_seed only); runs on the rivers button, not per tick.
 function generateRivers(){
-  riverData=new Array(W*H);for(var i=0;i<W*H;i++)riverData[i]=null;
+  var N=W*H;
+  riverData=new Array(N);for(var i0=0;i0<N;i0++)riverData[i0]=null;
   riverGenerated=true;
-  // Use seeded RNG for reproducibility
-  var rRng=mulberry32(_seed+7919);
+  var rRng=mulberry32((_seed+7919)>>>0); // seeded jitter for meander offsets + pool sizes
 
-  // 1. Find candidate source tiles: elevation >= threshold, not ocean/glacier
-  var candidates=[];
-  for(var y=0;y<H;y++)for(var x=0;x<W;x++){
-    var i=idx(x,y);var e=elev[i]||0;var t=grid[i];
-    if(e>=RIVER_MIN_ELEV&&t!==T.OCEAN&&t!==T.GLACIER&&t!==T.VOLCANIC){
-      candidates.push({x:x,y:y,i:i,elev:e});
+  // --- Step 0: Smooth the ROUTING surface (not the displayed terrain) ---
+  // A light 3x3 land-only blur. D8 on the raw noisy elevation scatters flow into disconnected
+  // single-cell rivulets; smoothing the surface that drives fill/flow merges them into channels.
+  var se=new Float64Array(N);for(var q0=0;q0<N;q0++)se[q0]=elev[q0]||0;
+  for(var sp0=0;sp0<RIVER_SMOOTH_PASSES;sp0++){
+    var prev=new Float64Array(N);prev.set(se);
+    for(var sy=0;sy<H;sy++)for(var sx=0;sx<W;sx++){
+      var si=sy*W+sx;if(grid[si]===T.OCEAN)continue;
+      var sum=0,cnt=0;
+      for(var ddy=-1;ddy<=1;ddy++)for(var ddx=-1;ddx<=1;ddx++){
+        var ax=sx+ddx,ay=sy+ddy;if(!inb(ax,ay))continue;var aj=ay*W+ax;if(grid[aj]===T.OCEAN)continue;
+        sum+=prev[aj];cnt++;
+      }
+      if(cnt>0)se[si]=sum/cnt;
     }
   }
-  // Sort by elevation descending
-  candidates.sort(function(a,b){return b.elev-a.elev;});
 
-  // 2. Select sources with spacing constraint
-  var maxRivers=Math.max(2,Math.round(RIVER_MAX_COUNT_BASE*(W*H)/(96*96)));
-  var sources=[];
-  for(var ci=0;ci<candidates.length&&sources.length<maxRivers;ci++){
-    var c=candidates[ci];var tooClose=false;
-    for(var si=0;si<sources.length;si++){
-      if(Math.abs(c.x-sources[si].x)+Math.abs(c.y-sources[si].y)<RIVER_MIN_SOURCE_SPACING){tooClose=true;break;}
+  // --- Step 1: Priority-flood depression fill + flow directions (Barnes et al. 2014) ---
+  // A min-heap keyed on the filled surface, seeded from every ocean cell (the base level) plus the
+  // map border (a safety outlet). Popping in increasing filled order, the first cell to reach an
+  // unvisited neighbour becomes that neighbour's receiver and raises it to the spill level. One pass
+  // yields a pit-free surface AND a drainage tree rooted at the sea. recvDir[n] = 8-dir n -> receiver.
+  var filled=new Float64Array(N);
+  var recv=new Int32Array(N);    // receiver cell index; -1 = outlet (ocean / map edge)
+  var recvDir=new Int8Array(N);  // direction from a cell toward its receiver; -1 = none
+  var visited=new Uint8Array(N);
+  for(var r0=0;r0<N;r0++){recv[r0]=-1;recvDir[r0]=-1;}
+
+  // Binary min-heap over (filled value, cell index).
+  var hF=new Float64Array(N),hI=new Int32Array(N),hn=0;
+  function hpush(f,ci){var c=hn++;hF[c]=f;hI[c]=ci;while(c>0){var p=(c-1)>>1;if(hF[p]<=hF[c])break;var tf=hF[p];hF[p]=hF[c];hF[c]=tf;var ti=hI[p];hI[p]=hI[c];hI[c]=ti;c=p;}}
+  function hpop(){var out=hI[0];hn--;if(hn>0){hF[0]=hF[hn];hI[0]=hI[hn];var c=0;for(;;){var l=2*c+1,rg=2*c+2,m=c;if(l<hn&&hF[l]<hF[m])m=l;if(rg<hn&&hF[rg]<hF[m])m=rg;if(m===c)break;var tf=hF[m];hF[m]=hF[c];hF[c]=tf;var ti=hI[m];hI[m]=hI[c];hI[c]=ti;c=m;}}return out;}
+  function seed(ci){if(visited[ci])return;filled[ci]=se[ci];visited[ci]=1;hpush(filled[ci],ci);}
+
+  for(var s=0;s<N;s++)if(grid[s]===T.OCEAN)seed(s);
+  for(var bx=0;bx<W;bx++){seed(bx);seed((H-1)*W+bx);}
+  for(var by=0;by<H;by++){seed(by*W);seed(by*W+(W-1));}
+
+  var order=new Int32Array(N),on=0;
+  while(hn>0){
+    var c=hpop();order[on++]=c;
+    var cx=c%W,cy=(c/W)|0;
+    for(var d=0;d<8;d++){
+      var nx=cx+DIR_DX[d],ny=cy+DIR_DY[d];
+      if(!inb(nx,ny))continue;
+      var n=ny*W+nx;
+      if(visited[n])continue;
+      var fn=se[n];if(fn<filled[c])fn=filled[c]; // raise a pit to its spill level
+      filled[n]=fn;recv[n]=c;recvDir[n]=oppositeDir(d);visited[n]=1;
+      hpush(fn,n);
     }
-    if(!tooClose)sources.push(c);
   }
 
-  // 3. Trace each river downhill
-  for(var ri=0;ri<sources.length;ri++){
-    var src=sources[ri];
-    // Source gets a pool
-    riverData[src.i]={entryDir:-1,exitDir:-1,volume:1,lake:false,sourcePool:true,estuary:false,
-      curveOffset:(rRng()-0.5)*0.4,poolSize:0.2+rRng()*0.2};
+  // --- Step 2: Flow accumulation (drainage area per cell) ---
+  // Unit area per land cell, donated downstream. Processing in reverse pop order guarantees a cell
+  // is fully accumulated before it pays its receiver (the receiver is always popped earlier).
+  var acc=new Float64Array(N);
+  for(var a0=0;a0<N;a0++)acc[a0]=(grid[a0]===T.OCEAN)?0:1;
+  for(var k=on-1;k>=0;k--){var cc=order[k];var rc=recv[cc];if(rc>=0)acc[rc]+=acc[cc];}
 
-    var cx=src.x,cy=src.y;
-    var visited=new Uint8Array(W*H);visited[src.i]=1;
-    var path=[src.i];
+  // Longest upstream flow length per cell (reverse pop order = upstream first, so a cell's value is
+  // final before it pays its receiver). Used below to give each whole river one length-based width.
+  var ul=new Float64Array(N);
+  for(var u0=on-1;u0>=0;u0--){var uc=order[u0];var urr=recv[uc];if(urr>=0&&ul[uc]+1>ul[urr])ul[urr]=ul[uc]+1;}
 
-    for(var step=0;step<W+H;step++){
-      // Find lowest neighbor: try cardinal first, then diagonal
-      var bestE=Infinity,bestX=-1,bestY=-1,bestDir=-1;
-      var curE=elev[idx(cx,cy)]||0;
+  // --- Step 3: Lakes = filled basins, big enough AND high enough to read as headwater lakes ---
+  // A filled depression holds water. Keep only components that are large (LAKE_MIN_CELLS) and sit in
+  // the upper elevation band (LAKE_MIN_ELEV_FRAC) - those read as source/highland lakes near the river
+  // heads rather than coastal ponds. Small or low-lying fills are flowed over, not drawn.
+  var eMinL=Infinity,eMaxL=-Infinity;
+  for(var em=0;em<N;em++)if(grid[em]!==T.OCEAN){var ev=se[em];if(ev<eMinL)eMinL=ev;if(ev>eMaxL)eMaxL=ev;}
+  var hiCut=eMinL+(eMaxL-eMinL)*LAKE_MIN_ELEV_FRAC;
+  var isLake=new Uint8Array(N);
+  for(var l0=0;l0<N;l0++)if(grid[l0]!==T.OCEAN&&(filled[l0]-se[l0])>LAKE_MIN_DEPTH)isLake[l0]=1;
+  var seen=new Uint8Array(N),stack=new Int32Array(N),comp=new Int32Array(N);
+  for(var c0=0;c0<N;c0++){
+    if(!isLake[c0]||seen[c0])continue;
+    var sp=0,cn=0,esum=0;stack[sp++]=c0;seen[c0]=1;
+    while(sp>0){var cur=stack[--sp];comp[cn++]=cur;esum+=se[cur];var ux=cur%W,uy=(cur/W)|0;
+      for(var dd=0;dd<8;dd+=2){var lx=ux+DIR_DX[dd],ly=uy+DIR_DY[dd];if(!inb(lx,ly))continue;var li=ly*W+lx;if(isLake[li]&&!seen[li]){seen[li]=1;stack[sp++]=li;}}}
+    if(cn<LAKE_MIN_CELLS||(esum/cn)<hiCut)for(var ci=0;ci<cn;ci++)isLake[comp[ci]]=0;
+  }
 
-      // Cardinal directions first (0,2,4,6)
-      for(var d=0;d<8;d+=2){
-        var nx=cx+DIR_DX[d],ny=cy+DIR_DY[d];
-        if(!inb(nx,ny))continue;var ni=idx(nx,ny);
-        if(visited[ni])continue;
-        var ne=elev[ni]||0;var nt=grid[ni];
-        if(nt===T.GLACIER)continue; // frozen, no flow
-        if(ne<bestE){bestE=ne;bestX=nx;bestY=ny;bestDir=d;}
+  // --- Step 4: Build render data. River where accumulation crosses the threshold; lakes render as
+  // pools (no through-line) except at their spill cell, which carries the overflow river out. ---
+  for(var i=0;i<N;i++){
+    if(grid[i]===T.OCEAN)continue;
+    var lake=isLake[i]===1;
+    var river=acc[i]>=RIVER_ACCUM_THRESHOLD;
+    if(!lake&&!river)continue;
+
+    var rc2=recv[i];
+    var recvIsLake=(rc2>=0&&isLake[rc2]===1);
+    // A lake only discharges at its spill cell (receiver not itself a lake); interiors are pools.
+    var exitDir=(lake&&recvIsLake)?-1:recvDir[i];
+    var atSea=(rc2>=0&&grid[rc2]===T.OCEAN);
+    var atEdge=(rc2<0);
+    var estuary=(atSea||atEdge)&&!(lake&&recvIsLake);
+
+    // Entry edge = toward the dominant upstream contributor (largest accumulation draining in).
+    // Lakes are pools and carry no entry/exit line, so only river cells compute this.
+    var entryDir=-1,sourcePool=false;
+    if(!lake){
+      var bestUp=-1,bestAcc=-1,px=i%W,py=(i/W)|0;
+      for(var ud=0;ud<8;ud++){
+        var qx=px+DIR_DX[ud],qy=py+DIR_DY[ud];if(!inb(qx,qy))continue;
+        var q=qy*W+qx;
+        if(recv[q]===i&&(acc[q]>=RIVER_ACCUM_THRESHOLD||isLake[q])&&acc[q]>bestAcc){bestAcc=acc[q];bestUp=ud;}
       }
-      // If no cardinal is lower, try diagonals (1,3,5,7)
-      if(bestE>=curE){
-        for(var d2=1;d2<8;d2+=2){
-          var nx2=cx+DIR_DX[d2],ny2=cy+DIR_DY[d2];
-          if(!inb(nx2,ny2))continue;var ni2=idx(nx2,ny2);
-          if(visited[ni2])continue;
-          var ne2=elev[ni2]||0;var nt2=grid[ni2];
-          if(nt2===T.GLACIER)continue;
-          if(ne2<bestE){bestE=ne2;bestX=nx2;bestY=ny2;bestDir=d2;}
-        }
-      }
-
-      // No lower neighbor at all -> form a basin lake
-      if(bestDir===-1||bestE>=curE){
-        var ci2=idx(cx,cy);
-        if(riverData[ci2]){riverData[ci2].lake=true;riverData[ci2].exitDir=-1;
-          riverData[ci2].poolSize=0.25+rRng()*0.2;}
-        else{riverData[ci2]={entryDir:-1,exitDir:-1,volume:1,lake:true,sourcePool:false,estuary:false,
-          curveOffset:0,poolSize:0.25+rRng()*0.2};}
-        break;
-      }
-
-      // Set exit direction on current tile
-      var curI=idx(cx,cy);
-      if(riverData[curI])riverData[curI].exitDir=bestDir;
-
-      var nextI=idx(bestX,bestY);var nextT=grid[nextI];
-
-      // Termination: ocean or coast -> mark estuary on current tile
-      if(nextT===T.OCEAN||nextT===T.COAST){
-        if(riverData[curI])riverData[curI].estuary=true;
-        break;
-      }
-      // Termination: wetland absorbs the river
-      if(nextT===T.WETLAND){
-        break;
-      }
-
-      // Place river on next tile
-      var entDir=oppositeDir(bestDir);
-      if(riverData[nextI]){
-        // Merge: another river already here -> add volume
-        riverData[nextI].volume++;
-      } else {
-        riverData[nextI]={entryDir:entDir,exitDir:-1,volume:1,lake:false,sourcePool:false,estuary:false,
-          curveOffset:(rRng()-0.5)*0.5,poolSize:0};
-      }
-      visited[nextI]=1;path.push(nextI);
-      cx=bestX;cy=bestY;
+      if(bestUp>=0)entryDir=bestUp;else if(river)sourcePool=true;
     }
 
-    // Backfill volume downstream (accumulate)
-    var vol=1;
-    for(var pi=0;pi<path.length;pi++){
-      var rd=riverData[path[pi]];
-      if(rd){if(rd.volume<vol)rd.volume=vol;vol=rd.volume+1;}
+    // Width: grows with sqrt of drainage area so a river visibly widens as it gathers tributaries
+    // downstream (volume 1 at a headwater .. ~12 on a continental trunk).
+    var ratio=acc[i]/RIVER_ACCUM_THRESHOLD;if(ratio<1)ratio=1;
+    var volume=Math.round(1+Math.sqrt(ratio-1)*2.2);if(volume<1)volume=1;else if(volume>12)volume=12;
+
+    riverData[i]={entryDir:entryDir,exitDir:exitDir,volume:volume,
+      lake:lake,sourcePool:sourcePool,estuary:estuary,
+      curveOffset:(rRng()-0.5)*0.8,
+      poolSize:lake?(0.5+rRng()*0.15):(sourcePool?0.4+rRng()*0.25:0)};
+  }
+
+  // --- Step 5: Source lakes. Natural fill lakes only form in low ground, so place a few BIG lakes at
+  // the highest, well-spaced river heads: each river then visibly SPRINGS from a lake near its source
+  // (no "starting from nowhere"), and the lake overflows into the river that carries on to the sea. ---
+  var heads=[];
+  for(var hh=0;hh<N;hh++){var rh=riverData[hh];if(rh&&rh.sourcePool)heads.push(hh);}
+  heads.sort(function(a,b){return se[b]-se[a];}); // highest sources first
+  var picked=[];
+  for(var pj=0;pj<heads.length&&picked.length<SOURCE_LAKE_COUNT;pj++){
+    var ph=heads[pj],phx=ph%W,phy=(ph/W)|0,far=true;
+    for(var pk=0;pk<picked.length;pk++){var qx=picked[pk]%W,qy=(picked[pk]/W)|0;if(Math.abs(phx-qx)+Math.abs(phy-qy)<SOURCE_LAKE_SPACING){far=false;break;}}
+    if(far)picked.push(ph);
+  }
+  for(var pp=0;pp<picked.length;pp++){
+    var lc=picked[pp],lcx=lc%W,lcy=(lc/W)|0;
+    var lr=SOURCE_LAKE_R_MIN+rRng()*(SOURCE_LAKE_R_MAX-SOURCE_LAKE_R_MIN); // varied size per lake
+    var rad=Math.ceil(lr);
+    for(var oy=-rad;oy<=rad;oy++)for(var ox=-rad;ox<=rad;ox++){
+      if(ox*ox+oy*oy>lr*lr)continue;
+      var oxx=lcx+ox,oyy=lcy+oy;if(!inb(oxx,oyy))continue;var oii=oyy*W+oxx;if(grid[oii]===T.OCEAN)continue;
+      var prevExit=riverData[oii]?riverData[oii].exitDir:-1;
+      if(!riverData[oii])riverData[oii]={entryDir:-1,exitDir:-1,volume:1,lake:false,sourcePool:false,estuary:false,curveOffset:0,poolSize:0};
+      var rdl=riverData[oii];
+      rdl.lake=true;rdl.sourcePool=false;rdl.entryDir=-1;rdl.poolSize=0.55+rRng()*0.15;
+      // The centre cell keeps its outflow (the lake overflows into the river); the rest are pure pool.
+      if(oii===lc){rdl.exitDir=prevExit;}else{rdl.exitDir=-1;rdl.estuary=false;}
     }
+  }
+
+  // --- Step 6: Per-river UNIFORM width. Decompose the network into rivers - a main stem plus each
+  // tributary as its own river (the 'main child' at a junction is the longest-upstream branch) - and
+  // give every cell of a river ONE width set by that river's LENGTH (short rivers skinny, long rivers
+  // wide), rather than widening downstream. ---
+  function mainChildOf(c){
+    var mx=c%W,my=(c/W)|0,best=-1,bestUl=-1;
+    for(var dch=0;dch<8;dch++){var ncx=mx+DIR_DX[dch],ncy=my+DIR_DY[dch];if(!inb(ncx,ncy))continue;var nci=ncy*W+ncx;
+      if(recv[nci]===c){var rdn=riverData[nci];if(rdn&&!rdn.lake&&ul[nci]>bestUl){bestUl=ul[nci];best=nci;}}}
+    return best;
+  }
+  var riverW=new Int16Array(N);for(var rw0=0;rw0<N;rw0++)riverW[rw0]=-1;
+  var tails=[]; // a river's downstream end: a river cell that discharges to sea / map edge / a lake
+  for(var ti=0;ti<N;ti++){var rdt=riverData[ti];if(!rdt||rdt.lake)continue;var rt=recv[ti];
+    if(rt<0||grid[rt]===T.OCEAN||(riverData[rt]&&riverData[rt].lake))tails.push(ti);}
+  for(var tj=0;tj<tails.length;tj++){
+    var tail=tails[tj];if(riverW[tail]>=0)continue;
+    var chain=[],cc2=tail;
+    while(cc2>=0&&riverData[cc2]&&!riverData[cc2].lake&&riverW[cc2]<0){
+      chain.push(cc2);
+      var mc=mainChildOf(cc2);
+      var bx=cc2%W,by=(cc2/W)|0; // non-main upstream branches start their own (tributary) rivers
+      for(var bd=0;bd<8;bd++){var nbx=bx+DIR_DX[bd],nby=by+DIR_DY[bd];if(!inb(nbx,nby))continue;var nbi=nby*W+nbx;
+        if(recv[nbi]===cc2&&riverData[nbi]&&!riverData[nbi].lake&&nbi!==mc&&riverW[nbi]<0)tails.push(nbi);}
+      cc2=mc;
+    }
+    var vol=Math.round(1+chain.length/4);if(vol<1)vol=1;else if(vol>12)vol=12;
+    for(var chi=0;chi<chain.length;chi++)riverW[chain[chi]]=vol;
+  }
+  for(var aw=0;aw<N;aw++)if(riverW[aw]>=0&&riverData[aw])riverData[aw].volume=riverW[aw];
+
+  // Smooth lake outlines (centroid + effective radius per connected lake) so the shore renders as a
+  // curved blob, not a cluster of per-cell circles.
+  lakeShapes=[];
+  var lseen=new Uint8Array(N),lstk=new Int32Array(N);
+  for(var ls=0;ls<N;ls++){
+    if(!riverData[ls]||!riverData[ls].lake||lseen[ls])continue;
+    var lp=0,lcnt=0,sxx=0,syy=0;lstk[lp++]=ls;lseen[ls]=1;
+    while(lp>0){var lcur=lstk[--lp];lcnt++;sxx+=lcur%W;syy+=(lcur/W)|0;var ax=lcur%W,ay=(lcur/W)|0;
+      for(var ld=0;ld<8;ld++){var nlx=ax+DIR_DX[ld],nly=ay+DIR_DY[ld];if(!inb(nlx,nly))continue;var nli=nly*W+nlx;if(riverData[nli]&&riverData[nli].lake&&!lseen[nli]){lseen[nli]=1;lstk[lp++]=nli;}}}
+    lakeShapes.push({cx:sxx/lcnt+0.5,cy:syy/lcnt+0.5,r:Math.sqrt(lcnt/Math.PI),seed:((ls+1)*2654435761)>>>0});
   }
 }
 
 function clearRivers(){
   riverData=new Array(W*H);for(var i=0;i<W*H;i++)riverData[i]=null;
-  riverGenerated=false;
+  riverGenerated=false;lakeShapes=[];
 }
 
 function drawRivers(){
   if(!riverData||!riverGenerated)return;
+
+  // Lakes: one smooth curved shore per connected lake (drawn under the river lines), each a unique
+  // wobbly blob so they read as natural water bodies rather than a cluster of per-cell circles.
+  for(var lk=0;lk<lakeShapes.length;lk++){
+    var L=lakeShapes[lk];
+    var lcx=L.cx*PIX,lcy=L.cy*PIX,base=Math.max(PIX,L.r*PIX*1.2);
+    var lrng=mulberry32(L.seed);
+    var pts=14,rs=[];for(var a=0;a<pts;a++)rs.push(base*(0.82+lrng()*0.36)); // varied -> unique shore
+    var pa=function(k){var ang=(k%pts)/pts*Math.PI*2,rr=rs[((k%pts)+pts)%pts];return[lcx+Math.cos(ang)*rr,lcy+Math.sin(ang)*rr];};
+    ctx.fillStyle=LAKE_COLOR;ctx.beginPath();
+    var p0=pa(0),pl=pa(pts-1);ctx.moveTo((p0[0]+pl[0])/2,(p0[1]+pl[1])/2);
+    for(var a2=0;a2<pts;a2++){var cur=pa(a2),nx=pa(a2+1);ctx.quadraticCurveTo(cur[0],cur[1],(cur[0]+nx[0])/2,(cur[1]+nx[1])/2);}
+    ctx.closePath();ctx.fill();
+  }
+
   for(var y=0;y<H;y++)for(var x=0;x<W;x++){
     var i=idx(x,y);var rd=riverData[i];if(!rd)continue;
     var px=x*PIX,py=y*PIX;var mid=PIX/2;
 
-    // Source pool or basin lake
-    if(rd.sourcePool||rd.lake){
+    // Small spring pool at a headwater that has no source lake (lakes are the smooth blobs above).
+    if(rd.sourcePool&&!rd.lake){
       ctx.fillStyle=LAKE_COLOR;
       var radius=Math.max(1.5,PIX*rd.poolSize);
       ctx.beginPath();ctx.arc(px+mid,py+mid,radius,0,Math.PI*2);ctx.fill();
     }
 
-    // River line
+    // River line. Width is uniform per river (set by river length in generateRivers).
     if(rd.exitDir>=0){
-      // Entry point
       var ex,ey;
       if(rd.entryDir>=0){ex=px+mid+DIR_DX[rd.entryDir]*mid;ey=py+mid+DIR_DY[rd.entryDir]*mid;}
-      else if(rd.sourcePool){ex=px+mid;ey=py+mid;}
       else{ex=px+mid;ey=py+mid;}
-      // Exit point
-      var ox=px+mid+DIR_DX[rd.exitDir]*mid;
-      var oy=py+mid+DIR_DY[rd.exitDir]*mid;
-      // Control point for Bezier curve (offset from center for meander)
+      var lineW=Math.max(1.2,Math.min(PIX*0.85,0.8+rd.volume*0.5));
+      // Stop a river at land's end: an estuary's exit edge faces the ocean, so pull the endpoint back
+      // by half the stroke so the round cap ends exactly at the coast (no blue bleeding over the sea).
+      var reach=rd.estuary?Math.max(mid*0.15,mid-lineW*0.5):mid;
+      var ox=px+mid+DIR_DX[rd.exitDir]*reach;
+      var oy=py+mid+DIR_DY[rd.exitDir]*reach;
       var cpx=px+mid+rd.curveOffset*PIX;
       var cpy=py+mid+(rd.curveOffset*0.6)*PIX;
-      // Width based on volume
-      var lineW=Math.max(1,Math.min(PIX*0.4,0.8+rd.volume*0.4));
       ctx.strokeStyle=RIVER_COLOR;ctx.lineWidth=lineW;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(ex,ey);ctx.quadraticCurveTo(cpx,cpy,ox,oy);ctx.stroke();
 
-      // Estuary: widen at the end
-      if(rd.estuary){
-        var estuaryW=lineW*2.2;
-        ctx.strokeStyle=RIVER_COLOR;ctx.lineWidth=estuaryW;ctx.lineCap='round';
-        ctx.beginPath();
-        var t=0.65;var mx=(1-t)*(1-t)*ex+2*(1-t)*t*cpx+t*t*ox;var my=(1-t)*(1-t)*ey+2*(1-t)*t*cpy+t*t*oy;
-        ctx.moveTo(mx,my);ctx.lineTo(ox,oy);ctx.stroke();
+      // Braided delta: a wide river occasionally splits into side distributaries at its mouth, each
+      // also stopping at the coast (no ocean bleed). Deterministic hash -> only some wide mouths braid.
+      if(rd.estuary&&rd.volume>=DELTA_MIN_VOL&&((i*2654435761)>>>0)%2===0){
+        var perpx=-DIR_DY[rd.exitDir],perpy=DIR_DX[rd.exitDir];
+        var apx=px+mid+DIR_DX[rd.exitDir]*mid*0.15,apy=py+mid+DIR_DY[rd.exitDir]*mid*0.15;
+        ctx.lineWidth=Math.max(1,lineW*0.6);
+        for(var sgn=-1;sgn<=1;sgn+=2){
+          var endx=px+mid+DIR_DX[rd.exitDir]*reach+perpx*mid*0.6*sgn;
+          var endy=py+mid+DIR_DY[rd.exitDir]*reach+perpy*mid*0.6*sgn;
+          ctx.beginPath();ctx.moveTo(apx,apy);ctx.lineTo(endx,endy);ctx.stroke();
+        }
       }
-    }
-    // Standalone entry (river flows in but terminates here -> lake)
-    else if(rd.entryDir>=0&&rd.lake){
-      var ex2=px+mid+DIR_DX[rd.entryDir]*mid;
-      var ey2=py+mid+DIR_DY[rd.entryDir]*mid;
-      var lineW2=Math.max(1,0.8+rd.volume*0.4);
-      ctx.strokeStyle=RIVER_COLOR;ctx.lineWidth=lineW2;ctx.lineCap='round';
-      ctx.beginPath();ctx.moveTo(ex2,ey2);ctx.lineTo(px+mid,py+mid);ctx.stroke();
     }
   }
 }
@@ -1001,7 +1114,7 @@ function draw(){
         var bLvl=beachLevel?beachLevel[i]:0;var hasRiv=riverData&&riverData[i];
         if(hasRiv&&riverData[i].lake){col='#1a6b94';}
         else if(hasRiv&&riverData[i].sourcePool){col='#1a8ab0';}
-        else if(hasRiv){var rv=Math.min(1,riverData[i].volume/5);col='rgb('+Math.round(20+25*rv)+','+Math.round(90+35*rv)+','+Math.round(140+30*rv)+')';}
+        else if(hasRiv){var rv=Math.min(1,riverData[i].volume/9);col='rgb('+Math.round(20+25*rv)+','+Math.round(90+35*rv)+','+Math.round(140+30*rv)+')';}
         else if(bLvl>0.05){var bs=Math.min(1,bLvl);col='rgb('+Math.round(226*bs+21*(1-bs))+','+Math.round(204*bs+29*(1-bs))+','+Math.round(143*bs+40*(1-bs))+')';}
         else{col='#151d28';}
       }
@@ -1053,10 +1166,10 @@ function draw(){
   // River render (after beach, before ecology)
   if(overlayMode==='none'||overlayMode==='elev')drawRivers();
   // Flora render
-  if(CFG.ecoRender&&overlayMode!=='eco'){for(var fi=0;fi<flora.length;fi++){var f=flora[fi];if(!f)continue;var brightness=0.4+0.6*f.health;var fCol=hsv2hex(f.hue,f.sat*(0.3+0.7*f.health),f.val*brightness);ctx.fillStyle=fCol;var px=f.x*PIX,py=f.y*PIX;var sz=Math.max(1,PIX<6?1:2);var off=((PIX-sz)/2)|0;
+  if(CFG.ecoRender&&overlayMode!=='eco'){for(var fi=0;fi<flora.length;fi++){var f=flora[fi];if(!f)continue;var fw=riverData&&riverData[idx(f.x,f.y)];if(fw&&fw.lake)continue;var brightness=0.4+0.6*f.health;var fCol=hsv2hex(f.hue,f.sat*(0.3+0.7*f.health),f.val*brightness);ctx.fillStyle=fCol;var px=f.x*PIX,py=f.y*PIX;var sz=Math.max(1,PIX<6?1:2);var off=((PIX-sz)/2)|0;
     if(f.shape==='dot'){ctx.fillRect(px+off,py+off,sz,sz);}else if(f.shape==='plus'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='x'){ctx.fillRect(px+off-1,py+off-1,1,1);ctx.fillRect(px+off+sz,py+off-1,1,1);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off-1,py+off+sz,1,1);ctx.fillRect(px+off+sz,py+off+sz,1,1);}else if(f.shape==='ring'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='diamond'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,sz+2,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else{ctx.fillRect(px+off,py+off,sz,sz);}}}
   // Fauna render
-  if(CFG.ecoRender&&overlayMode!=='eco'){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var isH=(a.type==='herbivore');var aBright=0.4+0.6*(a.energy/a.maxEnergy);var faunaCol=hsv2hex(a.hue,a.sat,a.val*aBright);var apx=a.x*PIX,apy=a.y*PIX;
+  if(CFG.ecoRender&&overlayMode!=='eco'){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var isH=(a.type==='herbivore');var aBright=0.4+0.6*(a.energy/a.maxEnergy);var faunaCol=hsv2hex(a.hue,a.sat,a.val*aBright);var apx=a.x*PIX,apy=a.y*PIX;
     // Vivid glow: draw 1px bright halo behind vivid fauna
     if(a.vivid){ctx.fillStyle=hsv2hex(a.hue,Math.min(1,a.sat*1.3),Math.min(1,a.val*1.2));var gsz=Math.max(3,Math.min(5,PIX));var goff=((PIX-gsz)/2)|0;ctx.fillRect(apx+goff,apy+goff,gsz,gsz);}
     ctx.fillStyle=faunaCol;
@@ -1120,8 +1233,11 @@ function updateTooltip(ev){
 
 // ===== QoL =====
 function exportPNG(){try{var url=canvas.toDataURL('image/png');var a=document.createElement('a');a.href=url;a.download='worldbuilder_'+W+'x'+H+'_tick'+tick+'.png';document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Export error: '+e.message;}}}
-function exportJSON(){try{var snapshot={meta:{version:'wb-eco-1',W:W,H:H,tick:tick,seed:_seed,preset:activePreset,world:WORLD,cfg:{climateIntensity:CFG.climateIntensity,climateSeasonLength:CFG.climateSeasonLength},sunlightPhase:sunPhase},elev:Array.from(elev),aridity:Array.from(aridity),temp:Array.from(tempField),flora:flora.filter(function(f){return f!==null;}),fauna:fauna.filter(function(f){return f!==null;}),remnants:floraRemnants,rivers:riverGenerated?riverData:null};var json=JSON.stringify(snapshot,null,2);var blob=new Blob([json],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='worldbuilder_'+W+'x'+H+'_tick'+tick+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Export error: '+e.message;}}}
-function importJSON(data){try{if(!data||!data.meta||(data.meta.version!=='wb-land-base-1'&&data.meta.version!=='wb-eco-1'))throw new Error('Invalid snapshot format');if(data.meta.W!==W||data.meta.H!==H){W=data.meta.W;H=data.meta.H;resize();}tick=data.meta.tick||0;if(data.meta.seed!==undefined){_seed=data.meta.seed;sRng=mulberry32(_seed);var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;var seedInp=document.getElementById('seedInput');if(seedInp)seedInp.value=_seed;}if(data.meta.preset){activePreset=data.meta.preset;var psEl=document.getElementById('presetSelect');if(psEl)psEl.value=activePreset;}if(data.meta.world)WORLD=data.meta.world;if(data.meta.cfg){CFG.climateIntensity=data.meta.cfg.climateIntensity||1.0;CFG.climateSeasonLength=data.meta.cfg.climateSeasonLength||10000;}if(data.meta.sunlightPhase!==undefined)sunPhase=data.meta.sunlightPhase;grid=new Uint8Array(W*H);elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];if(data.rivers&&Array.isArray(data.rivers)){riverData=data.rivers;riverGenerated=true;}else{clearRivers();}reseedSunlight();computeSunlight();climateInit();reclassTerrain();buildSliders();
+// Pure serializer (the 'wb-eco-1' load format). Split out of exportJSON so headless tooling can
+// produce a loadable world snapshot without the DOM download path.
+function buildSnapshot(){return {meta:{version:'wb-eco-1',W:W,H:H,tick:tick,seed:_seed,preset:activePreset,world:WORLD,cfg:{climateIntensity:CFG.climateIntensity,climateSeasonLength:CFG.climateSeasonLength},sunlightPhase:sunPhase},grid:Array.from(grid),elev:Array.from(elev),aridity:Array.from(aridity),temp:Array.from(tempField),flora:flora.filter(function(f){return f!==null;}),fauna:fauna.filter(function(f){return f!==null;}),remnants:floraRemnants,rivers:riverGenerated?riverData:null};}
+function exportJSON(){try{var snapshot=buildSnapshot();var json=JSON.stringify(snapshot,null,2);var blob=new Blob([json],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='worldbuilder_'+W+'x'+H+'_tick'+tick+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Export error: '+e.message;}}}
+function importJSON(data){try{if(!data||!data.meta||(data.meta.version!=='wb-land-base-1'&&data.meta.version!=='wb-eco-1'))throw new Error('Invalid snapshot format');if(data.meta.W!==W||data.meta.H!==H){W=data.meta.W;H=data.meta.H;resize();}tick=data.meta.tick||0;if(data.meta.seed!==undefined){_seed=data.meta.seed;sRng=mulberry32(_seed);var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;var seedInp=document.getElementById('seedInput');if(seedInp)seedInp.value=_seed;}if(data.meta.preset){activePreset=data.meta.preset;var psEl=document.getElementById('presetSelect');if(psEl)psEl.value=activePreset;}if(data.meta.world)WORLD=data.meta.world;if(data.meta.cfg){CFG.climateIntensity=data.meta.cfg.climateIntensity||1.0;CFG.climateSeasonLength=data.meta.cfg.climateSeasonLength||10000;}if(data.meta.sunlightPhase!==undefined)sunPhase=data.meta.sunlightPhase;grid=new Uint8Array(W*H);if(data.grid&&data.grid.length===W*H){grid=new Uint8Array(data.grid);}elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];if(data.rivers&&Array.isArray(data.rivers)){riverData=data.rivers;riverGenerated=true;}else{clearRivers();}reseedSunlight();computeSunlight();climateInit();reclassTerrain();buildSliders();
   var cIE=document.getElementById('climateIntensity'),cIO=document.getElementById('climateIntensityOut');if(cIE&&cIO){cIE.value=CFG.climateIntensity;cIO.textContent=CFG.climateIntensity.toFixed(2);}var cSE=document.getElementById('climateSeasonLen'),cSO=document.getElementById('climateSeasonLenOut');if(cSE&&cSO){cSE.value=CFG.climateSeasonLength;cSO.textContent=CFG.climateSeasonLength;}draw();}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Import error: '+e.message;}}}
 
 // ===== HUD =====
@@ -1318,6 +1434,15 @@ function dismissIntro(){
   window.addEventListener('keydown',introKey);
 })();
 
+// Verification handle, active ONLY with ?debug in the URL (inert for normal users). Lets the
+// gate-blind river visual verify drive load->rivers->draw from one script call, no file dialog.
+if(typeof location!=='undefined'&&/[?&]debug(\b|=)/.test(location.search)){
+  window.__wb={importJSON:importJSON,generateRivers:generateRivers,computeAridity:computeAridity,
+    reclassTerrain:reclassTerrain,draw:draw,resize:resize,initWorld:initWorld,step:step,landCoverage:landCoverage,
+    setPix:function(p){PIX=p;},setView:function(z,px,py){zoomLevel=z;panX=px;panY=py;applyZoomPan();draw();},
+    lakeCells:function(){var out=[];if(riverData)for(var i=0;i<riverData.length;i++)if(riverData[i]&&riverData[i].lake)out.push(i);return out;}};
+}
+
 // ===== Snapshot / restore (headless A/B: warm the slow terrain once, replay ecology many times) =====
 // Captures ALL sim state needed to resume a run: the terrain + climate typed arrays, the
 // flora/fauna/remnant lists, world meta, and the scalars. mulberry32's internal counter is not
@@ -1372,3 +1497,6 @@ function restoreState(snap){
 // Pure entry points for headless use (gate + measurement harness). Live bindings
 // reflect reassignment inside the module (e.g. flora/fauna/tick after a step).
 export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, snapshotState, restoreState, CFG, flora, fauna, tick, W, H };
+// Additional live bindings for the river structural tests + headless probe (grid/elev are
+// reassigned in initWorld; in-place mutation of them from a test paints a synthetic surface).
+export { generateRivers, clearRivers, riverData, grid, elev, T, buildSnapshot };

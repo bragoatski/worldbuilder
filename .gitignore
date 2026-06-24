@@ -11,3 +11,7 @@ node_modules/
 dist/
 .vite/
 *.tsbuildinfo
+
+# Headless-warmed preview worlds for gate-blind visual verification (regenerate via
+# scripts/make-preview-world.mjs); large, not source.
+public/preview-*.json
