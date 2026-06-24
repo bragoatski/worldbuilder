@@ -277,3 +277,56 @@ Decision: **STOP the autonomous knob loop here.** C2 is the delivered "much bett
 - **V1 (long run):** the world is non-stationary; window-balance != steady-state balance.
 
 **Recommended next (Kevin's call):** add PREY-SIDE density-dependence (herbivore reproduction suppressed by local crowding, not just movement) - the proposal's reason-1 fix - to bound amplitude + prevent cap-hits regardless of flora level; validate in the long/high-flora regime, and decide the warmup/measurement protocol for a non-stationary world (warm up to a land plateau, or define balance per development stage).
+
+---
+
+## Step B1/B2 - knob B: local density-dependent herbivore birth (cap 8, then 12) - NEGATIVE RESULT (reverted)
+
+Kevin chose the prey-density-dependence direction. Implemented as a DETERMINISTIC gate: a herbivore does not reproduce if its local 5-tile neighborhood already holds >= `herbivoreLocalCap` herbivores (logistic self-limit below the flora food base). Validated in BOTH regimes.
+
+| run | extinction | persistence | cap-hits | final fauna | note |
+|---|---|---|---|---|---|
+| C2 @1000t | 0% | 5/6 | 0 | 87 | baseline window |
+| B cap 8 @1000t | 17% | 4/6 | 0 | 41 | REGRESSED - cap 8 bites healthy clusters, cools prey, starves predators |
+| C2 @3000t (V1) | 33% | 3/6 | 27 | 121 | baseline long-run |
+| B cap 12 @3000t | 50% | 2/6 | 27 | 121 | INERT - 5/6 seeds byte-identical to V1; only reshuffle where it bound |
+
+CASCADE - why knob B is the WRONG lever here (key finding):
+- **Local density-dependent birth is INERT under knob C.** C (crowding) makes herbivores actively SPREAD to keep local density low, so even when total herbivores boom to the 400 cap (seed 1202), the local 5-tile neighborhood stays BELOW 12 - the cap never binds (5/6 seeds at cap 12 byte-identical to no-knob-B). They boom by COVERING MORE AREA (more clusters across the growing map), not by getting locally denser. So a local-density birth cap cannot distinguish a healthy window from a long-run boom: lower it enough to bind the boom (cap 8) and it also bites healthy clusters (window regression); raise it to spare the window (cap 12) and it never binds.
+- **The cap-hit reframes as a BACKSTOP ARTIFACT, not a rate failure.** seed 1202 @3000t = 392H/8C over ~2700 land tiles with saturated flora = a SPARSE, COEXISTING population (~0.15 herb/tile) bumping the arbitrary faunaMaxPop=400 ceiling, not a starvation overshoot. Decision 1 itself says to raise the backstop well above any healthy band.
+- **The REAL long-run failure is the 2 EXTINCTIONS (~tick 1300):** large-amplitude predator-prey cycles wandering to the absorbing-zero wall (min floors hit 0). This is the proposal's reason-2 "neutrally-stable orbit wanders to zero," whose named fix is out-of-phase REFUGIA = knob C. So the lever is MORE dispersion (push C), not prey birth control.
+
+Decision: **REVERT knob B entirely** (removed mechanism + config - clean negative result, no dead code). Pivot: push knob C `herbivoreCrowding` 2.0 -> 2.5 (more refugia for the absorbing-wall extinctions; a CLEAN non-eRng A/B), tested at 3000t where the real failure lives. The cap-hit, if it persists, is fixed separately by raising the faunaMaxPop backstop per Decision 1.
+
+---
+
+## Step C3 - herbivoreCrowding 2.0 -> 2.5 at 3000t (BACKFIRED - reverted; ROOT diagnosis: paradox of enrichment)
+
+Result (`--seeds=6 --ticks=3000`, 660s) vs C2 @3000t (V1):
+
+| metric | C2 (crowding 2.0) | crowding 2.5 | read |
+|---|---|---|---|
+| extinction rate | 33% (2/6) | 33% (2/6) | no help |
+| carn-persistence | 3/6 | 3/6 | no help |
+| cap-hits | 27 | **388** | 14x WORSE (3 seeds slam the 400 cap) |
+| herb amplitude | 128 | 160 | LARGER |
+| amp-trend | 90->71 | 88->152 | MORE diverging |
+
+ROOT DIAGNOSIS - the paradox of enrichment (the real wall):
+- More dispersion made the long run WORSE: herbivores spread over even more of the big map, exploit even more of the food base, boom BIGGER, crash harder. Dispersion RAISES effective carrying capacity, so it amplifies the instability it was meant to cure.
+- **This is the PARADOX OF ENRICHMENT** (Rosenzweig 1971): raising the prey carrying capacity K ENLARGES the predator-prey limit-cycle amplitude until troughs hit the absorbing-zero wall -> extinction. The non-stationary world raises K without bound (land 24->54%, flora 5x), so the cycle amplitude grows over time (amp-trend diverging) and seeds wander to zero. The destabilizer is K ITSELF, not the rates.
+- Consequence: **no fixed set of rate knobs gives steady-state balance in a world with unbounded-growing K.** Both prey-side rate levers fail for the same root reason - local birth control is inert (C disperses prey), more dispersion backfires (raises K). The clean rate-knob search for LONG-RUN balance is exhausted.
+
+Decision: **REVERT crowding to 2.0** (C2 is strictly better long-run: 27 vs 388 cap-hits, smaller amplitude). STOP the autonomous knob loop. The remaining levers are design forks beyond rate tuning, brought to Kevin:
+1. ACCEPT C2 + window-balance; treat the long-run boom/bust as ORGANIC (worlds enrich, destabilize, reseed) - cheapest, fits a living-world sim; just raise the faunaMaxPop backstop so the cap-hit artifact stops counting as failure.
+2. BOUND the carrying capacity (generation-side: cap land/flora growth so K stabilizes) - root fix; then the existing knobs give steady-state balance. Touches terrain generation, not ecology.
+3. Add an ENRICHMENT-ROBUST mechanism (predator interference / a prey predation-refuge) that stabilizes predator-prey cycles at high K - more ecological modeling, uncertain against unbounded K.
+
+## FINAL STATE (loop complete)
+
+**Committed best = C2 (`2c24af7`), unchanged by the post-V1 experiments** (all of B, the D re-tunes, eatGain 32, eatSpeed 26, crowding 2.5 were reverted as no-improvement/regressions). C2 = `eatGain 40` + knob D rescue (`5e-5/30/4`) + `herbivoreCrowding 2.0`.
+
+- **1000t (window, land ~24%):** 0% extinction, 83% carn-persistence, +68t phase lag, cap-hits 0 - a large, real win vs the seeded baseline (17% / 0% / -44t).
+- **3000t (long, land ~54%):** 33% extinction, 50% persistence, cap-hits from the rising food base - WINDOW-balanced, not steady-state, blocked by the paradox of enrichment under non-stationary K.
+
+The clean rate-knob search is DONE. Long-run steady-state balance is a Kevin design fork (above).
