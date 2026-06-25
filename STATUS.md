@@ -81,6 +81,12 @@ vs 25%) - the standard harness's 17%/50% was an RNG-reshuffle artifact (flora id
 Lessons. Kevin signed off on the in-browser look (gate-blind: rivers absent from the harness). Full gate
 green (typecheck + 7 tests + lint + build). New instruments: harness flora-distribution block + `flora-ab.mjs`.
 
+**River density (2026-06-24, follow-up):** Kevin saw too few rivers - root cause was under-developed preview
+worlds (rivers need ~85-90% land to form; the previews were ~56%), NOT a regression (flora work never touched
+river code). Made the render threshold a CFG knob + live "River Density" slider (Terrain panel) and lowered the
+default 22 -> 14 (river coverage 4.1% -> 6.0% at 88.7% land; also surfaces rivers at lower land). `preview-1000.json`
+is a high-land (88.7%) world for checking the look.
+
 ## NEXT (in order)
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water

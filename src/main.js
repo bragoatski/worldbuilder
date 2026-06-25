@@ -74,7 +74,7 @@ var RIVER_COLOR = '#3aa6e0';
 var LAKE_COLOR = '#1a6b94';
 var RIVER_ARIDITY_EFFECT = 0.6;     // aridity reduction on river tiles
 // Hydrology pipeline tunables (priority-flood -> flow accumulation; tuned for a 6px read).
-var RIVER_ACCUM_THRESHOLD = 22;     // upstream drainage cells before a tile renders as a river
+// River render threshold moved to CFG.riverAccumThreshold (tunable via the River Density slider).
 var RIVER_SMOOTH_PASSES = 3;        // 3x3 blur of elevation BEFORE flow routing (only): on this
                                     // low-relief terrain raw D8 disperses into speckle; smoothing the
                                     // routing surface merges tributaries into longer, curvier channels.
@@ -156,6 +156,7 @@ var WORLD={ muE:3, varMode:0.5, gammaA:4, gammaTheta:400, H0:1.4, Hmax:9.0, k:0.
 var CFG={
   volcanoChancePerTile:0.00005, coastalSpreadBase:0.0030, erosionChanceBase:0.00025,
   hardenRate:0.0025, elevationIntensity:1.0, maxLandCap:0.90,
+  riverAccumThreshold:14,           // upstream drainage cells before a tile renders as a river. LOWER = more/finer rivers that also appear at lower land coverage; HIGHER = only major trunks. Tunable via the River Density slider; re-runs generateRivers live.
   sunlightNeighborMaxDelta:1.0, sunlightIntensity:1.0,
   aridityDistK:0.085, ariditySunCoef:0.18, aridityElevCoef:0.03, aridityHotBoost:0.50,
   clusterSpikeRate:0.025, clusterPlusChance:0.18,
@@ -514,7 +515,9 @@ var SLIDER_SCHEMA=[
   {key:'coastalSpreadBase',min:0,max:0.01,step:0.0001,label:'Coastal Spread'},
   {key:'erosionChanceBase',min:0,max:0.01,step:0.0001,label:'Erosion Rate'},
   {key:'maxLandCap',min:0.2,max:0.9,step:0.01,label:'Max Land Cap'},
-  {key:'elevationIntensity',min:0.5,max:1.5,step:0.05,label:'Elevation Intensity'}
+  {key:'elevationIntensity',min:0.5,max:1.5,step:0.05,label:'Elevation Intensity'},
+  // River Density: inverted (drag right = denser = lower threshold) and regen='rivers' (re-runs generateRivers live).
+  {key:'riverAccumThreshold',min:6,max:40,step:1,label:'River Density',invert:true,regen:true}
 ];
 function decimalsForStep(step){var s=String(step);var dot=s.indexOf('.');return dot>=0?(s.length-dot-1):0;}
 function buildSliders(){
@@ -522,11 +525,11 @@ function buildSliders(){
   SLIDER_SCHEMA.forEach(function(s){
     var row=document.createElement('div');row.className='p-row';
     var lab=document.createElement('label');lab.textContent=s.label;
-    var input=document.createElement('input');input.type='range';input.min=s.min;input.max=s.max;input.step=s.step;input.value=CFG[s.key];
+    var input=document.createElement('input');input.type='range';input.min=s.min;input.max=s.max;input.step=s.step;input.value=s.invert?(s.min+s.max-CFG[s.key]):CFG[s.key];
     var out=document.createElement('span');out.className='val';
     function fmt(v){return Number(v).toFixed(decimalsForStep(s.step));}
     out.textContent=fmt(CFG[s.key]);
-    input.addEventListener('input',function(e){var val=parseFloat(e.target.value);CFG[s.key]=val;out.textContent=fmt(val);if(s.key==='elevationIntensity')applyElevationIntensity();draw();});
+    input.addEventListener('input',function(e){var raw=parseFloat(e.target.value);var val=s.invert?(s.min+s.max-raw):raw;CFG[s.key]=val;out.textContent=fmt(val);if(s.key==='elevationIntensity')applyElevationIntensity();if(s.regen&&riverGenerated){generateRivers();computeAridity();reclassTerrain();}draw();});
     row.appendChild(lab);row.appendChild(input);row.appendChild(out);host.appendChild(row);
   });
 }
@@ -720,7 +723,7 @@ function generateRivers(){
   for(var i=0;i<N;i++){
     if(grid[i]===T.OCEAN)continue;
     var lake=isLake[i]===1;
-    var river=acc[i]>=RIVER_ACCUM_THRESHOLD;
+    var river=acc[i]>=CFG.riverAccumThreshold;
     if(!lake&&!river)continue;
 
     var rc2=recv[i];
@@ -739,14 +742,14 @@ function generateRivers(){
       for(var ud=0;ud<8;ud++){
         var qx=px+DIR_DX[ud],qy=py+DIR_DY[ud];if(!inb(qx,qy))continue;
         var q=qy*W+qx;
-        if(recv[q]===i&&(acc[q]>=RIVER_ACCUM_THRESHOLD||isLake[q])&&acc[q]>bestAcc){bestAcc=acc[q];bestUp=ud;}
+        if(recv[q]===i&&(acc[q]>=CFG.riverAccumThreshold||isLake[q])&&acc[q]>bestAcc){bestAcc=acc[q];bestUp=ud;}
       }
       if(bestUp>=0)entryDir=bestUp;else if(river)sourcePool=true;
     }
 
     // Width: grows with sqrt of drainage area so a river visibly widens as it gathers tributaries
     // downstream (volume 1 at a headwater .. ~12 on a continental trunk).
-    var ratio=acc[i]/RIVER_ACCUM_THRESHOLD;if(ratio<1)ratio=1;
+    var ratio=acc[i]/CFG.riverAccumThreshold;if(ratio<1)ratio=1;
     var volume=Math.round(1+Math.sqrt(ratio-1)*2.2);if(volume<1)volume=1;else if(volume>12)volume=12;
 
     riverData[i]={entryDir:entryDir,exitDir:exitDir,volume:volume,
