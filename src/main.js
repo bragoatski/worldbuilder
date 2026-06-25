@@ -88,11 +88,6 @@ var SOURCE_LAKE_R_MAX = 3.6;        // radius varies per lake so they differ in 
 var SOURCE_LAKE_SPACING = 15;       // min manhattan distance between source lakes (spread them out)
 var DELTA_MIN_VOL = 5;              // wide rivers (>= this width) occasionally braid into a delta mouth
 
-// ===== Beach System (erosion process) =====
-var beachLevel;       // Float32Array of W*H, 0.0 = no beach, 1.0 = fully eroded
-var BEACH_SAND_COLOR = [226,204,143];  // RGB for sand
-var BEACH_OCEAN_COLOR = [7,58,83];     // RGB for ocean encroachment
-
 // ===== Seeded PRNG (Mulberry32) =====
 var _seed = 0;
 function mulberry32(a) {
@@ -104,7 +99,7 @@ function mulberry32(a) {
   };
 }
 var sRng = Math.random; // replaced in init() with seeded version
-var eRng = Math.random; // seeded DYNAMICS stream (ecology/climate-drift/beach); set in initWorld. Kept separate from sRng so terrain generation is byte-identical.
+var eRng = Math.random; // seeded DYNAMICS stream (ecology/climate-drift); set in initWorld. Kept separate from sRng so terrain generation is byte-identical.
 // Seeded random helpers for generation pipeline
 function sRandn(){var u=0,v=0;while(u===0)u=sRng();while(v===0)v=sRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function sTruncNorm(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*sRandn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
@@ -171,17 +166,6 @@ var CFG={
   climateIntensity:1.0, climateSeasonLength:10000,
   anomalySpeed:0.0005, anomalyWavelength:40.0, anomalyBlobCount:3, anomalyBlobRadius:25,
   biomeStabilityThreshold:20,
-  // Beach erosion process
-  beachCapPct:0.07,             // max % of land tiles that can be beach (slider: 0-0.20)
-  beachMinTick:1000,            // ticks before beaches start forming
-  beachGrowRate:0.001,          // beachLevel increase per tick for qualifying tiles
-  beachSpreadChance:0.003,      // chance per tick a beach tile spreads to neighbor
-  beachSpreadAmount:0.15,       // initial beachLevel when spreading
-  beachErosionThreshold:0.85,   // beachLevel above which elevation erodes
-  beachErosionRate:0.002,       // elevation loss per tick when eroding
-  beachOceanThreshold:0.95,     // beachLevel above which tile converts to ocean
-  beachMaxElev:2.5,             // max elevation for beach formation
-  beachMinTemp:3.5,             // min temperature for beach formation
   ecoActive:true, ecoRender:true,
   floraSpawnChance:0.010, floraMutationChance:0.07, floraMutationMag:0.8,
   floraWaterWeight:0.03,            // placement desert-avoid (aridity term, secondary to floraWaterDistK). 0 = off.
@@ -195,7 +179,6 @@ var CFG={
   floraWaterDistPenalty:0.12,       // SURVIVAL clustering: health brake growing with (waterDist - free)^2, so flora far from any water thins out -> leaves the interior barer (this is the lever for 'less of the map covered'). 0 = off.
   floraBaseMaxAge:700, floraSpreadBase:0.07, floraMaxPop:0, floraToleranceBase:2.5,
   floraPerTileMax:4,               // carrying capacity per tile
-  ecotoneBlend:true,               // biome transition blending
   ecotoneFloraBoost:1.6,           // flora spread multiplier at biome edges
   faunaSpawnChance:0.001, faunaMutationChance:0.07, faunaMutationMag:0.6,
   faunaMaxPop:400, faunaBaseMaxAge:500,
@@ -261,8 +244,6 @@ function syncUIToConfig(){
   if(muEl){muEl.value=CFG.floraMutationChance;if(muOut)muOut.textContent=Math.round(CFG.floraMutationChance*100)+'%';}
   var mbEl=document.getElementById('mutBiasSlider'),mbOut=document.getElementById('mutBiasOut');
   if(mbEl){mbEl.value=CFG.floraMutationBias;if(mbOut)mbOut.textContent=Math.round(CFG.floraMutationBias*100)+'%';}
-  var bcEl=document.getElementById('beachCapSlider'),bcOut=document.getElementById('beachCapOut');
-  if(bcEl){bcEl.value=CFG.beachCapPct;if(bcOut)bcOut.textContent=Math.round(CFG.beachCapPct*100)+'%';}
   // Preset selector
   var psEl=document.getElementById('presetSelect');if(psEl)psEl.value=activePreset;
 }
@@ -453,7 +434,6 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 (function(){
   var ecoEl=document.getElementById('ecoToggle');if(ecoEl)ecoEl.addEventListener('change',function(e){CFG.ecoActive=e.target.checked;});
   var ecoREl=document.getElementById('ecoRenderToggle');if(ecoREl)ecoREl.addEventListener('change',function(e){CFG.ecoRender=e.target.checked;draw();});
-  var etEl=document.getElementById('ecotoneToggle');if(etEl)etEl.addEventListener('change',function(e){CFG.ecotoneBlend=e.target.checked;draw();});
   var fcEl=document.getElementById('floraTileCapSlider'),fcOut=document.getElementById('floraTileCapOut');
   if(fcEl&&fcOut){fcEl.value=CFG.floraPerTileMax;fcOut.textContent=CFG.floraPerTileMax;fcEl.addEventListener('input',function(e){CFG.floraPerTileMax=parseInt(e.target.value);fcOut.textContent=CFG.floraPerTileMax;});}
   var fsEl=document.getElementById('floraSpawnSlider'),fsOut=document.getElementById('floraSpawnOut');
@@ -470,8 +450,6 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
   if(muEl&&muOut){muEl.value=CFG.floraMutationChance;muOut.textContent=Math.round(CFG.floraMutationChance*100)+'%';muEl.addEventListener('input',function(e){var v=parseFloat(e.target.value);CFG.floraMutationChance=v;CFG.faunaMutationChance=v;muOut.textContent=Math.round(v*100)+'%';});}
   var mbEl=document.getElementById('mutBiasSlider'),mbOut=document.getElementById('mutBiasOut');
   if(mbEl&&mbOut){mbEl.value=CFG.floraMutationBias;mbOut.textContent=Math.round(CFG.floraMutationBias*100)+'%';mbEl.addEventListener('input',function(e){CFG.floraMutationBias=parseFloat(e.target.value);mbOut.textContent=Math.round(CFG.floraMutationBias*100)+'%';});}
-  var bcEl=document.getElementById('beachCapSlider'),bcOut=document.getElementById('beachCapOut');
-  if(bcEl&&bcOut){bcEl.value=CFG.beachCapPct;bcOut.textContent=Math.round(CFG.beachCapPct*100)+'%';bcEl.addEventListener('input',function(e){CFG.beachCapPct=parseFloat(e.target.value);bcOut.textContent=Math.round(CFG.beachCapPct*100)+'%';});}
 })();
 
 // Legend tooltips
@@ -582,7 +560,6 @@ function reclassTerrain(){for(var y=0;y<H;y++)for(var x=0;x<W;x++){var iR=idx(x,
   // Build ecotone boundary cache
   if(!biomeBoundary||biomeBoundary.length!==W*H) biomeBoundary=new Uint8Array(W*H);
   for(var yy=0;yy<H;yy++)for(var xx=0;xx<W;xx++){var ii=idx(xx,yy);var myT=grid[ii];biomeBoundary[ii]=0;if(myT===T.OCEAN)continue;var nb=neighbors4(xx,yy);for(var nn=0;nn<nb.length;nn++){var nj=idx(nb[nn][0],nb[nn][1]);if(grid[nj]!==myT&&grid[nj]!==T.OCEAN){biomeBoundary[ii]=1;break;}}}
-  // Compute beaches on established coasts
 }
 function randn(){var u=0,v=0;while(u===0)u=eRng();while(v===0)v=eRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function truncatedNormal(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*randn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
@@ -908,58 +885,6 @@ function drawRivers(){
     }
   }
 }
-// ======================================================================
-//  BEACH EROSION PROCESS
-// ======================================================================
-var BEACH_EXCLUDED_BIOMES=[T.WETLAND,T.GLACIER,T.VOLCANIC,T.ARCTIC,T.TUNDRA];
-function beachStep(){
-  if(!beachLevel||tick<CFG.beachMinTick)return;
-  if(CFG.beachCapPct<=0)return;
-  var beachCount=0,landCount=0;
-  for(var i=0;i<W*H;i++){if(grid[i]!==T.OCEAN)landCount++;if(beachLevel[i]>0.05)beachCount++;}
-  var cap=Math.max(1,Math.floor(landCount*CFG.beachCapPct));
-  var atCap=(beachCount>=cap);
-  if(tick%3!==0)return;
-  for(var y=0;y<H;y++)for(var x=0;x<W;x++){
-    var i=idx(x,y);
-    if(grid[i]===T.OCEAN)continue;
-    var oceanEdges=0;var nbrs=neighbors4(x,y);
-    for(var n=0;n<nbrs.length;n++){if(grid[idx(nbrs[n][0],nbrs[n][1])]===T.OCEAN)oceanEdges++;}
-    var isCoastal=(oceanEdges>0);
-    if(beachLevel[i]>0.01){
-      if(!isCoastal){beachLevel[i]=Math.max(0,beachLevel[i]-0.0002);continue;}
-      var eL=elev[i]||0;var tM=tempField[i]||0;
-      var growMod=(eL<1.0?1.5:eL<CFG.beachMaxElev?1.0:0.2)*(tM>6?1.3:tM>CFG.beachMinTemp?1.0:0.3);
-      beachLevel[i]=Math.min(1.0,beachLevel[i]+CFG.beachGrowRate*growMod);
-      if(!atCap&&beachLevel[i]>0.15&&eRng()<CFG.beachSpreadChance){
-        var spreadCands=[];
-        for(var sn=0;sn<nbrs.length;sn++){
-          var si=idx(nbrs[sn][0],nbrs[sn][1]);
-          if(grid[si]===T.OCEAN||beachLevel[si]>0.05)continue;
-          var snCoast=false;var sn2=neighbors4(nbrs[sn][0],nbrs[sn][1]);
-          for(var sn3=0;sn3<sn2.length;sn3++){if(grid[idx(sn2[sn3][0],sn2[sn3][1])]===T.OCEAN){snCoast=true;break;}}
-          if(!snCoast)continue;
-          var sSkip=false;for(var se=0;se<BEACH_EXCLUDED_BIOMES.length;se++){if(grid[si]===BEACH_EXCLUDED_BIOMES[se]){sSkip=true;break;}}
-          if(sSkip)continue;
-          var sElev=elev[si]||0;var sTemp=tempField[si]||0;
-          if(sElev<=CFG.beachMaxElev&&sTemp>=CFG.beachMinTemp)spreadCands.push(si);
-        }
-        if(spreadCands.length>0){var pick=spreadCands[(eRng()*spreadCands.length)|0];beachLevel[pick]=CFG.beachSpreadAmount;}
-      }
-      if(beachLevel[i]>CFG.beachErosionThreshold){elev[i]=Math.max(0,elev[i]-CFG.beachErosionRate);}
-      if(beachLevel[i]>=CFG.beachOceanThreshold&&elev[i]<0.3){grid[i]=T.OCEAN;beachLevel[i]=0;elev[i]=0;}
-    }
-    else if(isCoastal&&!atCap){
-      var skip=false;for(var be=0;be<BEACH_EXCLUDED_BIOMES.length;be++){if(grid[i]===BEACH_EXCLUDED_BIOMES[be]){skip=true;break;}}
-      if(skip)continue;
-      var eL2=elev[i]||0;var tM2=tempField[i]||0;
-      if(eL2>CFG.beachMaxElev||tM2<CFG.beachMinTemp)continue;
-      var seedChance=0.00001*(eL2<1.0?2.0:1.0)*(tM2>6?1.5:1.0)*(oceanEdges>1?1.5:1.0);
-      if(eRng()<seedChance){beachLevel[i]=0.02;}
-    }
-  }
-}
-function clearBeaches(){beachLevel=new Float32Array(W*H);}
 
 // ======================================================================
 //  SPECIES NAMING SYSTEM
@@ -1175,11 +1100,6 @@ function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIn
 // ======================================================================
 //  RENDERING
 // ======================================================================
-// Color blending for ecotones
-function hexToRGB(hex){var c=parseInt(hex.slice(1),16);return[(c>>16)&255,(c>>8)&255,c&255];}
-function rgbToHex(r,g,b){return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);}
-function blendColors(hex1,hex2,t){var a=hexToRGB(hex1),b=hexToRGB(hex2);return rgbToHex(Math.round(a[0]+(b[0]-a[0])*t),Math.round(a[1]+(b[1]-a[1])*t),Math.round(a[2]+(b[2]-a[2])*t));}
-
 function draw(){
   if(!ctx||!grid||!elev)return;ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
   for(var y=0;y<H;y++)for(var x=0;x<W;x++){
@@ -1189,70 +1109,24 @@ function draw(){
     else if(overlayMode==='clim-te'){var Tt=tempField[i]||0;var r5,g5,b5;if(Tt<=5){var kk=Math.max(0,Math.min(1,(Tt-1)/4));r5=Math.floor(128*kk);g5=0;b5=Math.floor(255+(128-255)*kk);}else{var k2=Math.max(0,Math.min(1,(Tt-5)/5));r5=Math.floor(128+(255-128)*k2);g5=0;b5=Math.floor(128-128*k2);}col='rgb('+r5+','+g5+','+b5+')';}
     else if(overlayMode==='clim-su'){var vs=(sunlight[i]||0)/10;col='rgb('+Math.floor(255*vs)+','+Math.floor(180*vs)+','+Math.floor(60*(1-vs)+10)+')';}
     else if(overlayMode==='climate'){if(!modTempSeasonal||!modTempAnom||!modTempVolc){col='rgb(80,60,100)';ctx.fillStyle=col;ctx.fillRect(x*PIX,y*PIX,PIX,PIX);continue;}var ci=CFG.climateIntensity||1;var dT=((modTempSeasonal[i]||0)+(modTempAnom[i]||0)+(modTempVolc[i]||0))*ci;var dA2=((modAridSeasonal[i]||0)+(modAridAnom[i]||0)+(modAridVolc[i]||0))*ci;var tN=Math.max(0,Math.min(1,(dT+0.007)/0.008));var ll2=20+tN*60;var aN=Math.max(0,Math.min(1,(dA2+0.005)/0.006));var ss2=20+aN*60;var hh2=270,sF=ss2/100,lF=ll2/100;var cC=(1-Math.abs(2*lF-1))*sF;var xC=cC*(1-Math.abs(((hh2/60)%2)-1));var mM=lF-cC/2;col='rgb('+Math.floor((xC+mM)*255)+','+Math.floor(mM*255)+','+Math.floor((cC+mM)*255)+')';}
-    else if(overlayMode==='eco'){if(terr===T.OCEAN){col='#073a53';}else{var fC=0;for(var ef=0;ef<flora.length;ef++){if(flora[ef]&&flora[ef].x===x&&flora[ef].y===y)fC++;}var gB=Math.min(1,fC*0.3);col='rgb('+Math.floor(30+40*gB)+','+Math.floor(50+150*gB)+',30)';}}
-    else if(overlayMode==='ecotone'){if(terr===T.OCEAN){col='#073a53';}else if(biomeBoundary&&biomeBoundary[i]){col='#e8a838';}else{col='#151d28';}}
     else if(overlayMode==='water'){
       if(terr===T.OCEAN){col='#0a2a3f';}
       else{
-        var bLvl=beachLevel?beachLevel[i]:0;var hasRiv=riverData&&riverData[i];
+        var hasRiv=riverData&&riverData[i];
         if(hasRiv&&riverData[i].lake){/* lake is the smooth blob in drawRivers; keep terrain under the shore margin */}
         else if(hasRiv&&riverData[i].sourcePool){col='#1a8ab0';}
         else if(hasRiv){var rv=Math.min(1,riverData[i].volume/9);col='rgb('+Math.round(20+25*rv)+','+Math.round(90+35*rv)+','+Math.round(140+30*rv)+')';}
-        else if(bLvl>0.05){var bs=Math.min(1,bLvl);col='rgb('+Math.round(226*bs+21*(1-bs))+','+Math.round(204*bs+29*(1-bs))+','+Math.round(143*bs+40*(1-bs))+')';}
         else{col='#151d28';}
       }
     }
-    // Ecotone blending: soften biome boundaries in terrain view
-    else if(CFG.ecotoneBlend&&overlayMode==='none'&&biomeBoundary&&biomeBoundary[i]&&terr!==T.OCEAN){
-      var nb=neighbors4(x,y);var rSum=0,gSum=0,bSum=0,nCnt=0;var myRGB=hexToRGB(col);
-      for(var en=0;en<nb.length;en++){var nIdx=idx(nb[en][0],nb[en][1]);var nTerr=grid[nIdx];if(nTerr!==terr&&nTerr!==T.OCEAN){var nCol=TERRAIN_COLORS[nTerr]||'#222';var nRGB=hexToRGB(nCol);rSum+=nRGB[0];gSum+=nRGB[1];bSum+=nRGB[2];nCnt++;}}
-      if(nCnt>0){var blend=0.25;col=rgbToHex(Math.round(myRGB[0]*(1-blend)+(rSum/nCnt)*blend),Math.round(myRGB[1]*(1-blend)+(gSum/nCnt)*blend),Math.round(myRGB[2]*(1-blend)+(bSum/nCnt)*blend));}
-    }
     ctx.fillStyle=col;ctx.fillRect(x*PIX,y*PIX,PIX,PIX);}
-  // Beach render: sand on ocean-facing side only, ocean encroachment at high levels
-  if(overlayMode==='none'&&beachLevel){
-    for(var by=0;by<H;by++)for(var bx=0;bx<W;bx++){
-      var bi=idx(bx,by);var bl=beachLevel[bi];if(bl<0.05)continue;
-      var bpx=bx*PIX,bpy=by*PIX;var mid=PIX/2;
-      // Pick ONE primary ocean-facing edge (seeded per tile for consistency)
-      var eDirs=[[0,-1],[1,0],[0,1],[-1,0]];
-      var oceanEdgeList=[];
-      for(var bd=0;bd<4;bd++){var bnx=bx+eDirs[bd][0],bny=by+eDirs[bd][1];if(inb(bnx,bny)&&grid[idx(bnx,bny)]===T.OCEAN)oceanEdgeList.push(bd);}
-      if(!oceanEdgeList.length)continue;
-      var primaryEdge=oceanEdgeList[(bi*37)%oceanEdgeList.length]; // seeded pick
-      var curve=(((bi*31+17)%100)/100-0.5)*PIX*0.3;
-      var bd=primaryEdge;
-      {
-        // Sand strip: fills from ocean edge inward, width based on beachLevel
-        var sandW=clamp(bl*0.7,0.05,0.6)*PIX;
-        ctx.fillStyle='rgb('+BEACH_SAND_COLOR[0]+','+BEACH_SAND_COLOR[1]+','+BEACH_SAND_COLOR[2]+')';
-        ctx.beginPath();
-        if(bd===0){ctx.moveTo(bpx,bpy);ctx.lineTo(bpx+PIX,bpy);ctx.lineTo(bpx+PIX,bpy+sandW);ctx.quadraticCurveTo(bpx+mid,bpy+sandW+curve,bpx,bpy+sandW);}
-        else if(bd===1){ctx.moveTo(bpx+PIX,bpy);ctx.lineTo(bpx+PIX,bpy+PIX);ctx.lineTo(bpx+PIX-sandW,bpy+PIX);ctx.quadraticCurveTo(bpx+PIX-sandW-curve,bpy+mid,bpx+PIX-sandW,bpy);}
-        else if(bd===2){ctx.moveTo(bpx,bpy+PIX);ctx.lineTo(bpx+PIX,bpy+PIX);ctx.lineTo(bpx+PIX,bpy+PIX-sandW);ctx.quadraticCurveTo(bpx+mid,bpy+PIX-sandW-curve,bpx,bpy+PIX-sandW);}
-        else{ctx.moveTo(bpx,bpy);ctx.lineTo(bpx,bpy+PIX);ctx.lineTo(bpx+sandW,bpy+PIX);ctx.quadraticCurveTo(bpx+sandW+curve,bpy+mid,bpx+sandW,bpy);}
-        ctx.closePath();ctx.fill();
-        // Ocean encroachment at high beach levels
-        if(bl>0.7){
-          var oceanW=clamp((bl-0.7)/0.25,0,0.5)*PIX*0.5;
-          ctx.fillStyle='rgb('+BEACH_OCEAN_COLOR[0]+','+BEACH_OCEAN_COLOR[1]+','+BEACH_OCEAN_COLOR[2]+')';
-          ctx.beginPath();
-          if(bd===0){ctx.moveTo(bpx,bpy);ctx.lineTo(bpx+PIX,bpy);ctx.lineTo(bpx+PIX,bpy+oceanW);ctx.quadraticCurveTo(bpx+mid,bpy+oceanW-curve*0.5,bpx,bpy+oceanW);}
-          else if(bd===1){ctx.moveTo(bpx+PIX,bpy);ctx.lineTo(bpx+PIX,bpy+PIX);ctx.lineTo(bpx+PIX-oceanW,bpy+PIX);ctx.quadraticCurveTo(bpx+PIX-oceanW+curve*0.5,bpy+mid,bpx+PIX-oceanW,bpy);}
-          else if(bd===2){ctx.moveTo(bpx,bpy+PIX);ctx.lineTo(bpx+PIX,bpy+PIX);ctx.lineTo(bpx+PIX,bpy+PIX-oceanW);ctx.quadraticCurveTo(bpx+mid,bpy+PIX-oceanW+curve*0.5,bpx,bpy+PIX-oceanW);}
-          else{ctx.moveTo(bpx,bpy);ctx.lineTo(bpx,bpy+PIX);ctx.lineTo(bpx+oceanW,bpy+PIX);ctx.quadraticCurveTo(bpx+oceanW-curve*0.5,bpy+mid,bpx+oceanW,bpy);}
-          ctx.closePath();ctx.fill();
-        }
-      }
-    }
-  }
-  // River render (after beach, before ecology)
+  // River render
   if(overlayMode==='none'||overlayMode==='elev')drawRivers();
   // Flora render
-  if(CFG.ecoRender&&overlayMode!=='eco'){for(var fi=0;fi<flora.length;fi++){var f=flora[fi];if(!f)continue;var fw=riverData&&riverData[idx(f.x,f.y)];if(fw&&fw.lake)continue;var brightness=0.4+0.6*f.health;var fCol=hsv2hex(f.hue,f.sat*(0.3+0.7*f.health),f.val*brightness);ctx.fillStyle=fCol;var px=f.x*PIX,py=f.y*PIX;var sz=Math.max(1,PIX<6?1:2);var off=((PIX-sz)/2)|0;
+  if(CFG.ecoRender){for(var fi=0;fi<flora.length;fi++){var f=flora[fi];if(!f)continue;var fw=riverData&&riverData[idx(f.x,f.y)];if(fw&&fw.lake)continue;var brightness=0.4+0.6*f.health;var fCol=hsv2hex(f.hue,f.sat*(0.3+0.7*f.health),f.val*brightness);ctx.fillStyle=fCol;var px=f.x*PIX,py=f.y*PIX;var sz=Math.max(1,PIX<6?1:2);var off=((PIX-sz)/2)|0;
     if(f.shape==='dot'){ctx.fillRect(px+off,py+off,sz,sz);}else if(f.shape==='plus'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='x'){ctx.fillRect(px+off-1,py+off-1,1,1);ctx.fillRect(px+off+sz,py+off-1,1,1);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off-1,py+off+sz,1,1);ctx.fillRect(px+off+sz,py+off+sz,1,1);}else if(f.shape==='ring'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='diamond'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,sz+2,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else{ctx.fillRect(px+off,py+off,sz,sz);}}}
   // Fauna render
-  if(CFG.ecoRender&&overlayMode!=='eco'){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var isH=(a.type==='herbivore');var aBright=0.4+0.6*(a.energy/a.maxEnergy);var faunaCol=hsv2hex(a.hue,a.sat,a.val*aBright);var apx=a.x*PIX,apy=a.y*PIX;
+  if(CFG.ecoRender){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var isH=(a.type==='herbivore');var aBright=0.4+0.6*(a.energy/a.maxEnergy);var faunaCol=hsv2hex(a.hue,a.sat,a.val*aBright);var apx=a.x*PIX,apy=a.y*PIX;
     // Vivid glow: draw 1px bright halo behind vivid fauna
     if(a.vivid){ctx.fillStyle=hsv2hex(a.hue,Math.min(1,a.sat*1.3),Math.min(1,a.val*1.2));var gsz=Math.max(3,Math.min(5,PIX));var goff=((PIX-gsz)/2)|0;ctx.fillRect(apx+goff,apy+goff,gsz,gsz);}
     ctx.fillStyle=faunaCol;
@@ -1383,11 +1257,11 @@ function initWorld(seedOverride){
   if(seedOverride!==undefined&&seedOverride!==null&&seedOverride!==''&&!isNaN(parseInt(seedOverride))){_seed=parseInt(seedOverride);}else{_seed=Math.floor(Math.random()*2147483647);}
   sRng=mulberry32(_seed);
   // Dynamics stream: seeded deterministically from _seed but on a distinct offset, so a given
-  // seed reproduces the same ECOLOGY run (flora/fauna/climate-drift/beach), not just the terrain.
+  // seed reproduces the same ECOLOGY run (flora/fauna/climate-drift), not just the terrain.
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
   tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
-  popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};placeMode='none';clearRivers();clearBeaches();resetZoomPan();
+  popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};placeMode='none';clearRivers();resetZoomPan();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyElevationIntensity();
 }
@@ -1406,7 +1280,7 @@ function step(){
   for(var ci=0;ci<W*H;ci++){if(grid[ci]===T.COAST&&coastTTL[ci]>0)coastTTL[ci]--;}
   clusterSpikePass();mountainFringePass();isolatedHillDecayPass();eruptionPromotionPass();
   var anyC=CFG.seasonalTilt||CFG.anomalies||CFG.volcanoAsh;if(genesisChanged||(!anyC&&tick%20===1)){computeTemperature();computeAridity();}
-  climateStep();applyClimateIfEnabled();reclassTerrain();beachStep();floraStep();faunaStep();
+  climateStep();applyClimateIfEnabled();reclassTerrain();floraStep();faunaStep();
 }
 function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
@@ -1455,7 +1329,6 @@ function runAssertions(){
       t('5 flora created for test',testFlora.length===5);
     }
   })();
-  t('Ecotone blend setting',typeof CFG.ecotoneBlend==='boolean');
   t('Ecotone flora boost',CFG.ecotoneFloraBoost>1.0);
   t('BiomeBoundary allocated',biomeBoundary&&biomeBoundary.length===W*H);
   // Pop history tests
@@ -1549,8 +1422,8 @@ function snapshotState(){
     modTempSeasonal:modTempSeasonal, modTempAnom:modTempAnom, modTempVolc:modTempVolc,
     modAridSeasonal:modAridSeasonal, modAridAnom:modAridAnom, modAridVolc:modAridVolc,
     modArid:modArid, anomalyBlobs:anomalyBlobs,
-    // rivers + beaches
-    riverData:riverData, beachLevel:beachLevel,
+    // rivers
+    riverData:riverData,
     // ecology lists
     flora:flora, fauna:fauna, floraRemnants:floraRemnants, deathParticles:deathParticles,
   });
@@ -1573,7 +1446,7 @@ function restoreState(snap){
   modTempSeasonal=s.modTempSeasonal; modTempAnom=s.modTempAnom; modTempVolc=s.modTempVolc;
   modAridSeasonal=s.modAridSeasonal; modAridAnom=s.modAridAnom; modAridVolc=s.modAridVolc;
   modArid=s.modArid; anomalyBlobs=s.anomalyBlobs;
-  riverData=s.riverData; beachLevel=s.beachLevel;
+  riverData=s.riverData;
   flora=s.flora; fauna=s.fauna; floraRemnants=s.floraRemnants; deathParticles=s.deathParticles;
   computeWaterDist(); // derive from the restored grid so snapshot replays use a consistent water field
 }
