@@ -71,22 +71,21 @@ var riverData;       // array of W*H, null or river object
 var riverGenerated = false;
 var lakeShapes = [];  // [{cx,cy,r,seed}] smooth lake outlines (tile units) for a curved shore render
 var RIVER_COLOR = '#3aa6e0';
-var LAKE_COLOR = '#1a6b94';
+var LAKE_COLOR = '#3aa6e0';         // unified with RIVER_COLOR so lakes + rivers read as one water body
 var RIVER_ARIDITY_EFFECT = 0.6;     // aridity reduction on river tiles
 // Hydrology pipeline tunables (priority-flood -> flow accumulation; tuned for a 6px read).
 // River render threshold moved to CFG.riverAccumThreshold (tunable via the River Density slider).
-var RIVER_SMOOTH_PASSES = 3;        // 3x3 blur of elevation BEFORE flow routing (only): on this
+var RIVER_SMOOTH_PASSES = 6;        // 3x3 blur of elevation BEFORE flow routing (only): on this
                                     // low-relief terrain raw D8 disperses into speckle; smoothing the
                                     // routing surface merges tributaries into longer, curvier channels.
 var LAKE_MIN_DEPTH = 0.06;          // fill depth (filled - routing elev) for a tile to count as lake
-var LAKE_MIN_CELLS = 12;            // drop small filled pits; keep only fewer, bigger lakes
+var LAKE_MIN_CELLS = 18;            // drop small filled pits; keep only fewer, bigger lakes
 var LAKE_MIN_ELEV_FRAC = 0.45;      // keep natural fill lakes only in the upper elevation band (not low
                                     // coastal ponds); on this terrain that leaves ~none, so:
-var SOURCE_LAKE_COUNT = 6;          // big lakes placed at the highest, well-spaced river heads, so a
-var SOURCE_LAKE_R_MIN = 1.6;        // river springs from a lake near its source rather than nowhere;
-var SOURCE_LAKE_R_MAX = 3.6;        // radius varies per lake so they differ in size
+var SOURCE_LAKE_COUNT = 3;          // a few SMALL lakes at the highest, well-spaced river heads
+var SOURCE_LAKE_R_MIN = 1.0;        // (kept small + ocean-clipped below so they never bleed into the
+var SOURCE_LAKE_R_MAX = 2.0;        // sea); radius varies per lake so they differ in size
 var SOURCE_LAKE_SPACING = 15;       // min manhattan distance between source lakes (spread them out)
-var DELTA_MIN_VOL = 5;              // wide rivers (>= this width) occasionally braid into a delta mouth
 
 // ===== Seeded PRNG (Mulberry32) =====
 var _seed = 0;
@@ -764,6 +763,15 @@ function generateRivers(){
       f*=(1-elong*0.5*Math.cos(2*(ang-erot)));
       var rv2=Math.max(lr*0.4,lr*f);radii[an]=rv2;if(rv2>maxR)maxR=rv2;}
     var rmark=Math.ceil(maxR+1);
+    // Reject this lake if its blob (radius maxR) would touch the sea or map edge - a source lake must
+    // never bleed into the ocean. Scan the footprint; on any ocean/OOB cell within the blob, skip it.
+    var touchesSea=false;
+    for(var sy0=-rmark;sy0<=rmark&&!touchesSea;sy0++)for(var sx0=-rmark;sx0<=rmark;sx0++){
+      if(Math.sqrt(sx0*sx0+sy0*sy0)>maxR+1)continue;
+      var sxx0=lcx+sx0,syy0=lcy+sy0;
+      if(!inb(sxx0,syy0)||grid[syy0*W+sxx0]===T.OCEAN){touchesSea=true;break;}
+    }
+    if(touchesSea)continue;
     for(var oy=-rmark;oy<=rmark;oy++)for(var ox=-rmark;ox<=rmark;ox++){
       var oxx=lcx+ox,oyy=lcy+oy;if(!inb(oxx,oyy))continue;var oii=oyy*W+oxx;if(grid[oii]===T.OCEAN)continue;
       var dist=Math.sqrt(ox*ox+oy*oy);if(dist>maxR+1)continue;
@@ -846,13 +854,6 @@ function drawRivers(){
     var i=idx(x,y);var rd=riverData[i];if(!rd)continue;
     var px=x*PIX,py=y*PIX;var mid=PIX/2;
 
-    // Small spring pool at a headwater that has no source lake (lakes are the smooth blobs above).
-    if(rd.sourcePool&&!rd.lake){
-      ctx.fillStyle=LAKE_COLOR;
-      var radius=Math.max(1.5,PIX*rd.poolSize);
-      ctx.beginPath();ctx.arc(px+mid,py+mid,radius,0,Math.PI*2);ctx.fill();
-    }
-
     // River line (never drawn inside a lake - lakes render as the smooth blob only; the inflow/outflow
     // rivers draw on the adjacent land cells, so the river emerges from the lake's edge).
     if(rd.exitDir>=0&&!rd.lake){
@@ -860,27 +861,18 @@ function drawRivers(){
       if(rd.entryDir>=0){ex=px+mid+DIR_DX[rd.entryDir]*mid;ey=py+mid+DIR_DY[rd.entryDir]*mid;}
       else{ex=px+mid;ey=py+mid;}
       var lineW=Math.max(1.2,Math.min(PIX*0.85,0.8+rd.volume*0.5));
-      // Stop a river at land's end: an estuary's exit edge faces the ocean, so pull the endpoint back
-      // by half the stroke so the round cap ends exactly at the coast (no blue bleeding over the sea).
-      var reach=rd.estuary?Math.max(mid*0.15,mid-lineW*0.5):mid;
-      var ox=px+mid+DIR_DX[rd.exitDir]*reach;
-      var oy=py+mid+DIR_DY[rd.exitDir]*reach;
-      var cpx=px+mid+rd.curveOffset*PIX;
-      var cpy=py+mid+(rd.curveOffset*0.6)*PIX;
-      ctx.strokeStyle=RIVER_COLOR;ctx.lineWidth=lineW;ctx.lineCap='round';
-      ctx.beginPath();ctx.moveTo(ex,ey);ctx.quadraticCurveTo(cpx,cpy,ox,oy);ctx.stroke();
-
-      // Braided delta: a wide river occasionally splits into side distributaries at its mouth, each
-      // also stopping at the coast (no ocean bleed). Deterministic hash -> only some wide mouths braid.
-      if(rd.estuary&&rd.volume>=DELTA_MIN_VOL&&((i*2654435761)>>>0)%2===0){
-        var perpx=-DIR_DY[rd.exitDir],perpy=DIR_DX[rd.exitDir];
-        var apx=px+mid+DIR_DX[rd.exitDir]*mid*0.15,apy=py+mid+DIR_DY[rd.exitDir]*mid*0.15;
-        ctx.lineWidth=Math.max(1,lineW*0.6);
-        for(var sgn=-1;sgn<=1;sgn+=2){
-          var endx=px+mid+DIR_DX[rd.exitDir]*reach+perpx*mid*0.6*sgn;
-          var endy=py+mid+DIR_DY[rd.exitDir]*reach+perpy*mid*0.6*sgn;
-          ctx.beginPath();ctx.moveTo(apx,apy);ctx.lineTo(endx,endy);ctx.stroke();
-        }
+      ctx.strokeStyle=RIVER_COLOR;ctx.lineWidth=lineW;
+      if(rd.estuary){
+        // At the coast: stop the river INSIDE its own land cell with a flat (butt) cap and a straight
+        // final segment pulled back past the stroke half-width, so no blue ever bleeds over the sea.
+        var reachE=Math.max(0,mid-lineW*0.6);
+        ctx.lineCap='butt';
+        ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(px+mid+DIR_DX[rd.exitDir]*reachE,py+mid+DIR_DY[rd.exitDir]*reachE);ctx.stroke();
+      }else{
+        var ox=px+mid+DIR_DX[rd.exitDir]*mid,oy=py+mid+DIR_DY[rd.exitDir]*mid;
+        var cpx=px+mid+rd.curveOffset*PIX,cpy=py+mid+(rd.curveOffset*0.6)*PIX;
+        ctx.lineCap='round';
+        ctx.beginPath();ctx.moveTo(ex,ey);ctx.quadraticCurveTo(cpx,cpy,ox,oy);ctx.stroke();
       }
     }
   }
