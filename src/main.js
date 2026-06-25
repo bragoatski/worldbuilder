@@ -184,16 +184,16 @@ var CFG={
   herbivoreSpeed:20, carnivoreSpeed:16,
   herbivoreEatSpeed:20,             // ticks between grazing
   carnivoreEatSpeed:18,             // ticks between hunting
-  herbivoreEatGain:12, carnivoreEatGain:40,
+  herbivoreEatGain:12, carnivoreEatGain:55,
   floraRegrowthChance:0.4,         // chance eaten flora drops a root remnant
   floraRegrowthDelay:10,           // ticks before remnant sprouts
   floraMutationBias:0.45,          // how strongly mutations pull toward local tile conditions (0=random, 1=full)
   faunaMoveCost:0.5, faunaIdleCost:0.1, faunaClimatePenalty:0.5,
   faunaReproThreshold:95, faunaReproCost:60,
   carnivoreReproThreshold:80, carnivoreReproCost:40,
-  carnivoreRescueRate:0.00005,      // knob D: per-herbivore per-tick carnivore immigration prob
-  carnivoreRescueMinPrey:30,        // need an ABUNDANT herd before predators re-immigrate (preserves prey rebound refuge)
-  carnivoreRescueCarnCap:4,         // stop rescuing once predators are established (rescue, not subsidy)
+  carnivoreRescueRate:0.0001,       // knob D: per-herbivore per-tick carnivore immigration prob
+  carnivoreRescueMinPrey:20,        // need an ABUNDANT herd before predators re-immigrate (preserves prey rebound refuge)
+  carnivoreRescueCarnCap:6,         // stop rescuing once predators are established (rescue, not subsidy)
   herbivoreCrowding:2.0,            // knob C: herbivores avoid tiles crowded with conspecifics (fragments the herd; adds local density-dependence)
   herbivoreStartEnergy:50, carnivoreStartEnergy:75,
   herbivoreMaxEnergy:100, carnivoreMaxEnergy:120
@@ -1017,7 +1017,7 @@ function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tem
   else if(vivid){hue=VIVID_HUES[(eRng()*VIVID_HUES.length)|0]+randn()*8;sat=0.75+eRng()*0.2;val=0.8+eRng()*0.15;}
   else if(isH){hue=35+eRng()*15;sat=0.05+eRng()*0.1;val=0.78+eRng()*0.17;} // warm cream/white
   else{hue=210+eRng()*30;sat=0.05+eRng()*0.1;val=0.2+eRng()*0.18;} // charcoal/slate
-  return{id:++faunaIdCounter,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,vivid?0.65:0.03,vivid?0.95:0.2),val:clamp(val,vivid?0.7:(isH?0.75:0.18),vivid?0.95:(isH?0.95:0.4)),vivid:vivid,energy:isH?CFG.herbivoreStartEnergy:CFG.carnivoreStartEnergy,maxEnergy:isH?CFG.herbivoreMaxEnergy:CFG.carnivoreMaxEnergy,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:0,eatCD:0};}
+  return{id:++faunaIdCounter,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,vivid?0.65:0.03,vivid?0.95:0.2),val:clamp(val,vivid?0.7:(isH?0.75:0.18),vivid?0.95:(isH?0.95:0.4)),vivid:vivid,energy:isH?CFG.herbivoreStartEnergy:CFG.carnivoreStartEnergy,maxEnergy:isH?CFG.herbivoreMaxEnergy:CFG.carnivoreMaxEnergy,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:isH?(x*7+y*13)%CFG.herbivoreSpeed:0,eatCD:isH?(x*11+y*5)%CFG.herbivoreEatSpeed:0};}
 function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;return Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));}
 function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
 function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
@@ -1049,8 +1049,8 @@ function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]
     // Carnivore prey tracking: immediate tile (strong), ring 1 (medium), ring 2-3 (scent)
     var hH=_herbAtTile[ti];if(hH)score+=Math.min(hH.length,3)*3;
     var adj2=neighbors4(tx,ty);for(var j=0;j<adj2.length;j++){var hA=_herbAtTile[idx(adj2[j][0],adj2[j][1])];if(hA)score+=hA.length*1.5;}
-    // Scent range: scan ring 2-3 for herbivore clusters (diminishing signal)
-    for(var sdy=-3;sdy<=3;sdy++){for(var sdx=-3;sdx<=3;sdx++){var sd=Math.abs(sdx)+Math.abs(sdy);if(sd<2||sd>3)continue;var sx=tx+sdx,sy=ty+sdy;if(!inb(sx,sy))continue;var sH=_herbAtTile[idx(sx,sy)];if(sH)score+=sH.length*(sd===2?0.6:0.3);}}
+    // Scent range: scan ring 2-5 for herbivore clusters (extended so carnivores lock onto DISPERSED prey; diminishing signal)
+    for(var sdy=-5;sdy<=5;sdy++){for(var sdx=-5;sdx<=5;sdx++){var sd=Math.abs(sdx)+Math.abs(sdy);if(sd<2||sd>5)continue;var sx=tx+sdx,sy=ty+sdy;if(!inb(sx,sy))continue;var sH=_herbAtTile[idx(sx,sy)];if(sH)score+=sH.length*(sd===2?0.7:sd===3?0.45:sd===4?0.28:0.16);}}
   }return score;}
 function mutateFaunaChild(parent,cx,cy){var mag=CFG.faunaMutationMag;
   // Vivid inheritance: 50% from vivid parent, 2% spontaneous
