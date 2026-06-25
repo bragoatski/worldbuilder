@@ -36,29 +36,93 @@
   /* === MAIN GRID === */
   .app { display:grid; grid-template-rows:auto auto 1fr; height:100vh; }
 
-  /* === TOOLBAR === */
-  .toolbar {
-    display:flex; align-items:center; gap:0; padding:0 10px;
+  /* === CONTROL DECK (two-tier toolbar) === */
+  .deck {
+    display:flex; align-items:center; gap:9px; padding:0 12px;
     background:var(--bg-raised); border-bottom:1px solid var(--border);
-    height:44px; flex-shrink:0; overflow-x:auto; overflow-y:hidden;
-  }
-  .tb-group {
-    display:flex; align-items:center; gap:5px; padding:0 10px;
-    border-right:1px solid var(--border); height:100%;
     flex-shrink:0;
   }
-  .tb-group:last-child { border-right:none; }
-  .tb-group.logo { padding-left:4px; padding-right:14px; gap:8px; }
-  .tb-group.logo .mark {
+  .deck-primary { height:42px; }
+  .deck-setup {
+    background:var(--bg-panel); flex-wrap:wrap; gap:5px 10px;
+    padding:6px 12px; min-height:38px; row-gap:6px;
+  }
+  .deck-brand { display:flex; align-items:center; gap:8px; padding-right:2px; }
+  .deck-brand .mark {
     width:22px; height:22px; border-radius:6px; flex-shrink:0;
     background:linear-gradient(135deg, #1a6b4a 0%, #2a9d6a 50%, #38c8b0 100%);
     box-shadow: 0 0 8px rgba(56,200,176,0.25);
   }
-  .tb-group.logo span {
+  .deck-brand span {
     font-family:var(--mono); font-weight:600; font-size:13px;
     letter-spacing:0.5px; color:var(--fg);
   }
-  .tb-lbl { font-size:11px; color:var(--fg-dim); font-weight:500; white-space:nowrap; }
+  .deck-sep { width:1px; height:22px; background:var(--border); flex-shrink:0; }
+  .deck-lbl { font-size:11px; color:var(--fg-dim); font-weight:500; white-space:nowrap; }
+  .deck-field { display:flex; align-items:center; gap:6px; }
+
+  /* Transport glyph cluster */
+  .transport { display:flex; align-items:center; gap:3px; }
+  .tbtn {
+    display:flex; align-items:center; justify-content:center;
+    width:28px; height:28px; padding:0; border-radius:5px;
+    border:1px solid var(--border); background:var(--bg-input);
+    color:var(--fg-dim); cursor:pointer; transition:all .12s ease;
+  }
+  .tbtn svg { width:13px; height:13px; display:block; }
+  .tbtn:hover { border-color:var(--border-hi); color:var(--fg); background:#1a2435; }
+  .tbtn.btn-play { color:var(--green); border-color:var(--green-dim); }
+  .tbtn.btn-play:hover { background:var(--green-dim); border-color:var(--green); }
+  .tbtn.btn-warn { color:var(--amber); border-color:var(--amber-dim); }
+  .tbtn.btn-warn:hover { background:var(--amber-dim); border-color:var(--amber); }
+  .tbtn.btn-danger { color:var(--red); border-color:var(--red-dim); }
+  .tbtn.btn-danger:hover { background:var(--red-dim); border-color:var(--red); }
+
+  /* Small square icon button (seed reroll) */
+  .ibtn {
+    display:flex; align-items:center; justify-content:center;
+    width:26px; height:26px; padding:0; border-radius:5px;
+    border:1px solid var(--border); background:var(--bg-input);
+    color:var(--fg-dim); cursor:pointer; transition:all .12s ease; flex-shrink:0;
+  }
+  .ibtn svg { width:13px; height:13px; display:block; }
+  .ibtn:hover { border-color:var(--accent); color:var(--accent); background:#1a2435; }
+
+  /* Live telemetry strip (right of primary deck) */
+  .telemetry { display:flex; align-items:center; gap:5px; margin-left:auto; }
+  .chip {
+    display:flex; align-items:center; gap:5px; height:24px; padding:0 9px;
+    border-radius:5px; border:1px solid var(--border); background:var(--bg-input);
+    font-family:var(--mono); font-size:11px; color:var(--fg-dim); white-space:nowrap;
+  }
+  .chip b { color:var(--fg); font-weight:500; }
+  .chip .chip-k { color:var(--fg-faint); }
+  .chip .dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .chip .dot.running { background:var(--green); box-shadow:0 0 6px rgba(63,207,106,0.4); }
+  .chip .dot.paused { background:var(--amber); }
+  .chip .cdot { width:8px; height:8px; border-radius:2px; flex-shrink:0; }
+  .chip-flora .cdot { background:#3fcf6a; }
+  .chip-herb  .cdot { background:#5bb8f0; }
+  .chip-carn  .cdot { background:#e85454; }
+
+  /* Setup-deck labeled segments */
+  .seg {
+    display:flex; align-items:center; gap:6px;
+    padding-right:11px; border-right:1px solid var(--border);
+  }
+  .seg:last-child { border-right:none; padding-right:0; }
+  .seg-lbl {
+    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:0.6px;
+    text-transform:uppercase; color:var(--fg-faint); margin-right:1px; white-space:nowrap;
+  }
+  .seg-div { width:1px; height:16px; background:var(--border); margin:0 1px; flex-shrink:0; }
+  .seed-input {
+    width:74px; font-family:var(--mono); font-size:11px; padding:4px 6px;
+    border-radius:4px; border:1px solid var(--border);
+    background:var(--bg-input); color:var(--fg); outline:none; transition:border-color .12s;
+  }
+  .seed-input:hover { border-color:var(--border-hi); }
+  .seed-input:focus { border-color:var(--accent); }
 
   /* Buttons */
   .btn {
@@ -89,24 +153,18 @@
   select:focus, input[type="number"]:focus { border-color:var(--accent); }
   input[type="range"] { accent-color:var(--accent); height:3px; }
 
-  /* === STATUS BAR === */
-  .status-bar {
-    display:flex; align-items:center; gap:0; padding:0 10px;
-    background:var(--bg); border-bottom:1px solid var(--border);
-    height:28px; flex-shrink:0; overflow:hidden;
+  /* === SIDEBAR WORLD AVERAGES (relocated from old status bar) === */
+  .world-avgs {
+    display:flex; gap:6px; margin-bottom:8px;
   }
-  .stat {
-    display:flex; align-items:center; gap:5px;
-    padding:0 12px; height:100%;
-    border-right:1px solid rgba(28,38,54,0.5);
-    font-family:var(--mono); font-size:11px; font-weight:400;
-    color:var(--fg-dim); white-space:nowrap;
+  .world-avgs span {
+    flex:1; display:flex; flex-direction:column; gap:1px;
+    padding:5px 8px; border-radius:5px;
+    background:var(--bg-input); border:1px solid var(--border);
+    font-family:var(--mono); font-size:10px; color:var(--fg-faint);
+    text-transform:uppercase; letter-spacing:0.4px;
   }
-  .stat:last-child { border-right:none; }
-  .stat b { color:var(--fg); font-weight:500; }
-  .stat .dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
-  .stat .dot.running { background:var(--green); box-shadow:0 0 6px rgba(63,207,106,0.4); }
-  .stat .dot.paused { background:var(--amber); }
+  .world-avgs span b { font-size:13px; color:var(--fg); font-weight:500; letter-spacing:0; }
 
   /* === LAYOUT === */
   .layout { display:grid; grid-template-columns:1fr 380px; min-height:0; }
@@ -459,32 +517,70 @@
 
 <div class="app">
 
-  <!-- ===== TOOLBAR ===== -->
-  <div class="toolbar">
-    <div class="tb-group logo">
+  <!-- ===== PRIMARY DECK (run + watch) ===== -->
+  <div class="deck deck-primary">
+    <div class="deck-brand">
       <div class="mark"></div>
       <span>Worldbuilder</span>
     </div>
 
-    <div class="tb-group">
-      <button class="btn btn-play" id="btnStart" title="Start [Space]">▶ Start</button>
-      <button class="btn" id="btnPause" title="Pause [Space]">⏸ Pause</button>
-      <button class="btn" id="btnStep" title="Single step [S]">⏭ Step</button>
-      <button class="btn btn-danger" id="btnReset" title="Reset world [R]">↺ Reset</button>
-      <button class="btn btn-warn" id="btnForceStart" title="Force restart [F]">⚡ Force</button>
+    <div class="deck-sep"></div>
+
+    <div class="transport">
+      <button class="tbtn btn-play" id="btnStart" title="Start [Space]" aria-label="Start">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>
+      </button>
+      <button class="tbtn" id="btnPause" title="Pause [Space]" aria-label="Pause">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      </button>
+      <button class="tbtn" id="btnStep" title="Single step [S]" aria-label="Step">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5l10 7-10 7z"/><rect x="17" y="5" width="3" height="14" rx="1"/></svg>
+      </button>
+      <button class="tbtn btn-danger" id="btnReset" title="Reset world [R]" aria-label="Reset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
+      </button>
+      <button class="tbtn btn-warn" id="btnForceStart" title="Force restart [F]" aria-label="Force restart">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>
+      </button>
     </div>
 
-    <div class="tb-group">
-      <span class="tb-lbl">Speed</span>
-      <input id="speed" type="range" min="1" max="60" value="18" style="width:80px;"/>
-      <span class="tb-lbl">Map</span>
-      <select id="mapSize" style="width:68px;">
+    <div class="deck-sep"></div>
+
+    <div class="deck-field">
+      <span class="deck-lbl">Speed</span>
+      <input id="speed" type="range" min="1" max="60" value="18" style="width:96px;"/>
+    </div>
+
+    <div class="telemetry">
+      <div class="chip"><span class="dot running" id="statusDot"></span><span class="chip-k">t</span><b id="hTick">0</b></div>
+      <div class="chip"><span class="chip-k">Seed</span><b id="hSeed" style="cursor:pointer;" title="Click to copy">—</b></div>
+      <div class="chip"><span class="chip-k">Land</span><b id="hLand">0%</b></div>
+      <div class="chip chip-flora"><span class="cdot"></span><b id="hFlora">0</b></div>
+      <div class="chip chip-herb"><span class="cdot"></span><b id="hHerb">0</b></div>
+      <div class="chip chip-carn"><span class="cdot"></span><b id="hCarn">0</b></div>
+      <div class="chip" id="hSeasonWrap" style="display:none;"><span class="chip-k">Season</span><b id="hSeason">—</b></div>
+      <div class="chip" id="hZoomWrap" style="display:none;"><span class="chip-k">Zoom</span><b id="hZoom">100%</b></div>
+    </div>
+  </div>
+
+  <!-- ===== SETUP DECK (configure + act) ===== -->
+  <div class="deck deck-setup">
+    <div class="seg">
+      <span class="seg-lbl">World</span>
+      <span class="deck-lbl">Seed</span>
+      <input id="seedInput" class="seed-input" type="text" placeholder="random"/>
+      <button class="ibtn" id="btnRollSeed" title="Random seed" aria-label="Random seed">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>
+      </button>
+      <span class="deck-lbl">Map</span>
+      <select id="mapSize" style="width:66px;">
         <option value="64">64²</option>
         <option value="96" selected>96²</option>
         <option value="128">128²</option>
       </select>
-      <span class="tb-lbl">Px</span>
+      <span class="deck-lbl">Px</span>
       <input id="pix" type="number" min="4" max="12" step="1" value="6" style="width:44px;"/>
+      <span class="deck-lbl">Preset</span>
       <select id="presetSelect" style="width:100px;">
         <option value="balanced" selected>Balanced</option>
         <option value="desert">Desert</option>
@@ -495,45 +591,29 @@
         <option value="archipelago">Archipelago</option>
         <option value="pangaea">Pangaea</option>
       </select>
+      <span class="seg-div"></span>
+      <button class="btn btn-seed" id="btnRivers" title="Generate rivers">Rivers</button>
     </div>
 
-    <div class="tb-group">
-      <span class="tb-lbl">Seed</span>
-      <input id="seedInput" type="text" placeholder="random" style="width:76px;font-family:var(--mono);font-size:11px;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--fg);outline:none;"/>
-      <button class="btn" id="btnRollSeed" title="Random seed">🎲</button>
-    </div>
-
-    <div class="tb-group">
-      <button class="btn btn-seed" id="btnSpawnFlora" title="Seed 15 flora">🌿 Flora</button>
-      <button class="btn btn-seed" id="btnSpawnHerb" title="Seed 8 herbivores">🐇 Herb</button>
-      <button class="btn btn-seed" id="btnSpawnCarn" title="Seed 4 carnivores">🐺 Carn</button>
-      <button class="btn" id="btnPlaceHerb" title="Click map to place herbivore">📍🐇</button>
-      <button class="btn" id="btnPlaceCarn" title="Click map to place carnivore">📍🐺</button>
+    <div class="seg">
+      <span class="seg-lbl">Populate</span>
+      <button class="btn btn-seed" id="btnSpawnFlora" title="Seed 15 flora">Flora</button>
+      <button class="btn btn-seed" id="btnSpawnHerb" title="Seed 8 herbivores">Herb</button>
+      <button class="btn btn-seed" id="btnSpawnCarn" title="Seed 4 carnivores">Carn</button>
+      <span class="seg-div"></span>
+      <span class="deck-lbl">Place</span>
+      <button class="btn" id="btnPlaceHerb" title="Click map to place herbivore">Herb</button>
+      <button class="btn" id="btnPlaceCarn" title="Click map to place carnivore">Carn</button>
       <span class="place-banner" id="placeBanner">Click tile…</span>
-      <button class="btn btn-seed" id="btnRivers" title="Generate rivers">💧 Rivers</button>
     </div>
 
-    <div class="tb-group">
-      <button class="btn" id="btnExport" title="Export map as PNG">📷 PNG</button>
-      <button class="btn" id="btnExportJSON" title="Export snapshot">💾 Save</button>
-      <button class="btn" id="btnImportJSON" title="Import snapshot">📂 Load</button>
-      <button class="btn" id="btnRunTests" title="Run tests [T]">🧪 Test</button>
+    <div class="seg">
+      <span class="seg-lbl">Data</span>
+      <button class="btn" id="btnExport" title="Export map as PNG">PNG</button>
+      <button class="btn" id="btnExportJSON" title="Export snapshot">Save</button>
+      <button class="btn" id="btnImportJSON" title="Import snapshot">Load</button>
+      <button class="btn" id="btnRunTests" title="Run tests [T]">Test</button>
     </div>
-  </div>
-
-  <!-- ===== STATUS BAR ===== -->
-  <div class="status-bar" id="statusBar">
-    <div class="stat"><div class="dot running" id="statusDot"></div> <b id="hTick">0</b></div>
-    <div class="stat">Seed <b id="hSeed" style="cursor:pointer;" title="Click to copy">—</b></div>
-    <div class="stat">Land <b id="hLand">0%</b></div>
-    <div class="stat">⌀ Elev <b id="hElev">—</b></div>
-    <div class="stat">⌀ Arid <b id="hArid">—</b></div>
-    <div class="stat">⌀ Sun <b id="hSun">—</b></div>
-    <div class="stat">🌿 <b id="hFlora">0</b></div>
-    <div class="stat">🐇 <b id="hHerb">0</b></div>
-    <div class="stat">🐺 <b id="hCarn">0</b></div>
-    <div class="stat" id="hSeasonWrap" style="display:none;">Season <b id="hSeason">—</b></div>
-    <div class="stat" id="hZoomWrap" style="display:none;">🔍 <b id="hZoom">100%</b></div>
   </div>
 
   <!-- ===== LAYOUT ===== -->
@@ -667,6 +747,11 @@
             <h3>Population</h3>
           </div>
           <div class="panel-body">
+            <div class="world-avgs">
+              <span>Elev <b id="hElev">—</b></span>
+              <span>Arid <b id="hArid">—</b></span>
+              <span>Sun <b id="hSun">—</b></span>
+            </div>
             <div class="pop-graph-wrap">
               <canvas class="pop-graph-canvas" id="popGraph" width="356" height="120"></canvas>
               <div class="pop-graph-legend">
