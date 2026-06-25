@@ -87,6 +87,13 @@ river code). Made the render threshold a CFG knob + live "River Density" slider 
 default 22 -> 14 (river coverage 4.1% -> 6.0% at 88.7% land; also surfaces rivers at lower land). `preview-1000.json`
 is a high-land (88.7%) world for checking the look.
 
+## 2026-06-25 session - menu + cleanup + river-feel + herbivore desync (ALL DEPLOYED, live bundle index-Cc5Q1Q42.js)
+- **Control Deck menu** (`index.html`, 2eb4949): two-tier deck - icon transport (play/pause/step/reset/force) + live telemetry chips (tick + flora/herb/carn) + labeled setup deck (World/Populate/Data); world-averages moved to the sidebar. Replaces the old single toolbar+status bar (top scrollbar / left-stretched look).
+- **Removed beaches + ecotone/ecology overlays** (54d2c54): the whole beach erosion sim (beachStep, render, ~12 CFG.beach*, the cap slider) is GONE; the Ecotone overlay + Blending toggle and the Ecology overlay button removed. KEPT the 1.6x ecotone flora-edge boost (balance-load-bearing).
+- **River-feel pass** (6a55b45): unified lake/river color (#3aa6e0), removed the tiny per-headwater source pools, source lakes 6->3 + ~half radius, never bleed into ocean (lake ocean-reject + butt-cap clipped river mouths + braided deltas cut), routing smoothing 3->6 for longer continent-stretching flows.
+- **Herbivore desync + carnivore re-balance** (08933c5): herbivores get a position-based move/eat phase so the herd stops growing as a synchronized pulsing ring. Desync alone STARVES carnivores (clustered prey ring = predator food, 83%->0%); compensated (carnivoreEatGain 40->55, scent ring 2-3->2-5, knob-D rescue boost). Harness 10 seeds: **0% extinction / 80% carnivore-persistence = C2**. See Engineering Lessons (Fauna distribution vs the balance).
+- **GATE-BLIND visual confirmations still open** (shipped to live for Kevin): (1) rivers look right on a high-land world (bump the land slider to ~85-90% so rivers show); (2) the herbivore pulsing ring is actually broken.
+
 ## NEXT (in order)
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
@@ -96,7 +103,7 @@ is a high-land (88.7%) world for checking the look.
    The 2026-06-24 FLORA work now provides reusable pieces: the `waterDist` field (for a fauna water-attraction
    that won't need its own BFS) and the LAND-ADAPTIVE pattern (`floraLandThin`) for changing high-land
    behavior without disturbing the low-land C2 balance.
-2. **Beaches:** cut or cosmetic-only coastline pass; lowest priority.
+2. ~~**Beaches:** cut or cosmetic-only coastline pass~~ DONE 2026-06-25: beaches removed entirely (Kevin's call).
 3. **Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js` (removes the interim DOM stub, enables strict per-module TS). Touches the render/UI shell the gate can't see, so it needs its own browser verify + redeploy - a focused follow-up, not reflexive.
 
 ## Known gaps
