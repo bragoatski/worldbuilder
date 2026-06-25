@@ -141,6 +141,54 @@ function herbDispersion() {
   return { clusters: buckets.size, meanDist: cnt ? sum / cnt : 0, n: herbs.length };
 }
 
+// Flora distribution diagnostic (the instrument for the "fewer / cluster on water / rare in desert"
+// task). Measured on the final state against the LAND baseline so selectivity is legible: a metric is
+// only meaningful relative to what is AVAILABLE (e.g. 3% of flora on desert when 30% of land is desert
+// = strong avoidance). Reads sim.flora + the exported aridity/grid/riverData fields.
+function floraDistribution() {
+  const W = sim.W, H = sim.H, N = W * H, T = sim.T;
+  const grid = sim.grid, arid = sim.aridity, rd = sim.riverData;
+  const isWater = (i) => grid[i] === T.OCEAN || grid[i] === T.COAST || (rd && rd[i]);
+  const nearWater = (x, y) => {
+    const i = y * W + x;
+    if (rd && rd[i]) return true; // a river/lake runs over this tile
+    if (x > 0 && isWater(i - 1)) return true;
+    if (x < W - 1 && isWater(i + 1)) return true;
+    if (y > 0 && isWater(i - W)) return true;
+    if (y < H - 1 && isWater(i + W)) return true;
+    return false;
+  };
+  // Habitable land baseline = the placement-eligible set (excludes ocean/mountain/volcanic).
+  let landN = 0, landAridSum = 0, landDesert = 0, landNearW = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, g = grid[i];
+    if (g === T.OCEAN || g === T.MOUNTAIN || g === T.VOLCANIC) continue;
+    landN++; landAridSum += arid[i] || 0;
+    if (g === T.DESERT) landDesert++;
+    if (nearWater(x, y)) landNearW++;
+  }
+  // Flora-occupied set (distinct tiles for coverage; per-plant for the share metrics).
+  const tiles = new Set();
+  let fAridSum = 0, fDesert = 0, fNearW = 0, fN = 0;
+  for (const f of sim.flora) {
+    if (!f) continue;
+    const i = f.y * W + f.x;
+    tiles.add(i); fN++;
+    fAridSum += arid[i] || 0;
+    if (grid[i] === T.DESERT) fDesert++;
+    if (nearWater(f.x, f.y)) fNearW++;
+  }
+  return {
+    coverage: landN ? tiles.size / landN : 0,        // distinct flora tiles / habitable land
+    floraArid: fN ? fAridSum / fN : 0,                // mean aridity where flora actually is
+    landArid: landN ? landAridSum / landN : 0,        // mean aridity of available land (reference)
+    floraDesertPct: fN ? fDesert / fN : 0,            // share of flora sitting in desert
+    landDesertPct: landN ? landDesert / landN : 0,    // share of land that IS desert (reference)
+    floraNearWaterPct: fN ? fNearW / fN : 0,          // share of flora within 1 tile of water
+    landNearWaterPct: landN ? landNearW / landN : 0,  // share of land within 1 tile of water (reference)
+  };
+}
+
 // Warm the slow terrain genesis for a seed (no ecology seeded yet).
 function warm(seed, o) {
   sim.initWorld(seed);
@@ -181,8 +229,10 @@ function measureWindow(seed, o) {
   const carnPer = dominantPeriod(carnS, minPer, maxPer) * o.sample;
   const herbTrend = ampTrend(herbS);
   const disp = herbDispersion();
+  const fdist = floraDistribution();
 
   return {
+    fdist,
     seed, land: sim.landCoverage(), flora: sim.flora.length,
     herb: herbCount(), carn: carnCount(), fauna: sim.fauna.length,
     minFauna: minFauna === Infinity ? 0 : minFauna, maxFauna, extinctAt,
@@ -225,6 +275,8 @@ for (let s = 0; s < o.seeds; s++) {
   console.log(`  seed ${pad(r.seed, 5)} land ${pad((r.land * 100).toFixed(1) + '%', 7)} flora ${pad(r.flora, 5)} fauna ${pad(r.fauna, 4)} [min ${pad(r.minFauna, 4)} max ${pad(r.maxFauna, 4)}]  ${status}`);
   console.log(`        cycle: phase-lag ${pad((r.phaseLagTicks >= 0 ? '+' : '') + r.phaseLagTicks + 't', 6)} (r=${r.phaseCorr.toFixed(2)})  herb[per ${r.herbPeriod || '--'}t amp ${r.herbAmp.toFixed(0)}]  carn[per ${r.carnPeriod || '--'}t amp ${r.carnAmp.toFixed(0)}]  cycles ${r.cycles}`);
   console.log(`        floor: minHerb ${pad(r.minHerb, 4)} minCarn ${pad(r.minCarn, 4)}  amp-trend ${r.ampFirst.toFixed(0)}->${r.ampSecond.toFixed(0)}  disp: clusters ${pad(r.clusters, 3)} meanDist ${r.meanDist.toFixed(1)}  cap-hits ${r.capHits}`);
+  const fd = r.fdist;
+  console.log(`        flora-dist: coverage ${pad((fd.coverage * 100).toFixed(1) + '%', 6)} arid ${fd.floraArid.toFixed(1)}/${fd.landArid.toFixed(1)}(land)  desert ${(fd.floraDesertPct * 100).toFixed(1)}%/${(fd.landDesertPct * 100).toFixed(1)}%(land)  nearWater ${(fd.floraNearWaterPct * 100).toFixed(1)}%/${(fd.landNearWaterPct * 100).toFixed(1)}%(land)`);
   if (o.traj) {
     const stride = Math.max(1, (50 / o.sample) | 0);
     for (let i = 0; i < r.herbS.length; i += stride) {
@@ -258,6 +310,10 @@ console.log(`  cap-hits (total)       ${totalCapHits}  (MUST be 0; a cap-hit is 
 console.log(`  final fauna            mean ${mean(finalFauna).toFixed(1)}  sd ${stdev(finalFauna).toFixed(1)}  range ${Math.min(...finalFauna)}..${Math.max(...finalFauna)}`);
 if (survived.length) console.log(`  final fauna (survivors)  mean ${mean(survived.map((r) => r.fauna)).toFixed(1)}`);
 console.log(`  final flora            mean ${mean(finalFlora).toFixed(1)}  sd ${stdev(finalFlora).toFixed(1)}`);
+console.log(`  flora coverage         mean ${(mean(rows.map((r) => r.fdist.coverage)) * 100).toFixed(1)}%  (distinct flora tiles / habitable land)`);
+console.log(`  flora mean aridity     ${mean(rows.map((r) => r.fdist.floraArid)).toFixed(2)}  vs land ${mean(rows.map((r) => r.fdist.landArid)).toFixed(2)}  (lower = wetter; gap = water-clustering)`);
+console.log(`  flora in desert        ${(mean(rows.map((r) => r.fdist.floraDesertPct)) * 100).toFixed(1)}%  vs land ${(mean(rows.map((r) => r.fdist.landDesertPct)) * 100).toFixed(1)}% desert  (lower flora% = desert-avoidance)`);
+console.log(`  flora near water       ${(mean(rows.map((r) => r.fdist.floraNearWaterPct)) * 100).toFixed(1)}%  vs land ${(mean(rows.map((r) => r.fdist.landNearWaterPct)) * 100).toFixed(1)}%  (higher flora% = water-clustering)`);
 console.log(`  fauna oscillation      mean ${mean(osc).toFixed(1)} (max-min within a run)`);
 if (o.snapshot || o.repeat > 1) {
   console.log(`  runtime split          warmup ${(tWarm / 1000).toFixed(1)}s  measured ${(tMeasure / 1000).toFixed(1)}s` +

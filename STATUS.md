@@ -61,8 +61,25 @@ fauna scoring is what knob C uses to disperse the herd (see Engineering Lessons)
 harness-tuned loop, NOT a quick add. The branch's ecology is back to C2 (only the render suppression of
 fauna/flora ON lakes is kept - balance-neutral).
 
-Deployed 2026-06-23 (Kevin's call: ship rivers/lakes; fauna as a separate task). main == ecology-balance
-== `5ee98df`, live. Open follow-ups: the `maxLandCap=0.90` ecology tradeoff; richer braided deltas.
+Deployed 2026-06-23 (Kevin's call: ship rivers/lakes; fauna as a separate task). Open follow-ups: the
+`maxLandCap=0.90` ecology tradeoff; richer braided deltas.
+
+## Flora distribution + clustering (2026-06-24) - DONE + deploying to Pages
+Kevin: flora overran the map; make it fewer / cluster on rivers+lakes / struggle in deserts, then re-balance.
+Shipped two flora-only mechanisms (biomes/terrain untouched), behind CFG knobs + live Ecology sliders
+(Flora Thinning / Water Clustering / Desert Harshness):
+- **Clustering** - new `waterDist` field (BFS to ocean/coast/river/lake) drives flora placement + a survival
+  brake; an aridity brake clears deserts. Flora hugs water + (in-browser, with rivers) the river network.
+- **Maturity thinning** - `floraLandThin` scales flora spread/spawn down as land fills, INERT below 40%
+  land. This is what "balances the rest": the low-land C2 balance (tuned at ~24% land) is preserved while
+  the matured ~90%-land world stops being carpeted.
+
+Measured (`scripts/flora-ab.mjs`, warm-per-variant): high land ~76% coverage **66% -> 41%** (flora ~halved),
+flora now clusters wetter-than-land + near-water, **desert share 1.6% -> 0%**, predator-prey cycle held (0%
+extinction, carnivores persist). Low land (8-seed clean A/B): balance **neutral-to-better** (extinction 13%
+vs 25%) - the standard harness's 17%/50% was an RNG-reshuffle artifact (flora identical), see Engineering
+Lessons. Kevin signed off on the in-browser look (gate-blind: rivers absent from the harness). Full gate
+green (typecheck + 7 tests + lint + build). New instruments: harness flora-distribution block + `flora-ab.mjs`.
 
 ## NEXT (in order)
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
@@ -70,6 +87,9 @@ Deployed 2026-06-23 (Kevin's call: ship rivers/lakes; fauna as a separate task).
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence
    because that score is knob C's dispersion lever (see Engineering Lessons - Fauna distribution vs the
    balance). Needs the harness measure->A/B->keep-if-better loop, ideally at the new high-land regime.
+   The 2026-06-24 FLORA work now provides reusable pieces: the `waterDist` field (for a fauna water-attraction
+   that won't need its own BFS) and the LAND-ADAPTIVE pattern (`floraLandThin`) for changing high-land
+   behavior without disturbing the low-land C2 balance.
 2. **Beaches:** cut or cosmetic-only coastline pass; lowest priority.
 3. **Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js` (removes the interim DOM stub, enables strict per-module TS). Touches the render/UI shell the gate can't see, so it needs its own browser verify + redeploy - a focused follow-up, not reflexive.
 

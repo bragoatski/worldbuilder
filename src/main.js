@@ -25,6 +25,8 @@ var started=false, running=true, tick=0; var W=96,H=96,PIX=6,speed=18; var overl
 if(!Number.isFinite(PIX) || PIX<=0) PIX=6;
 var loopTimer=null;
 var grid, elev, aridity, tempField, sunlight, adjCooldown, ringDone, hillDecayCount, peakVolcano, volcanoRing, volcanoCenters;
+var waterDist; // tiles to nearest water (ocean/coast + rivers/lakes when present); drives flora clustering on water (flora-only, recomputed in computeWaterDist)
+var floraLandVigor=1; // maturity-thinning multiplier on flora spread/spawn (1 at low land, down to 1-floraLandThin at full land); refreshed each floraStep
 var coastTTL; var lastClick=null;
 var volcActive, volcAge, volcLife;
 var modTempSeasonal, modTempAnom, modTempVolc, modAridSeasonal, modAridAnom, modAridVolc, modArid;
@@ -180,7 +182,16 @@ var CFG={
   beachMaxElev:2.5,             // max elevation for beach formation
   beachMinTemp:3.5,             // min temperature for beach formation
   ecoActive:true, ecoRender:true,
-  floraSpawnChance:0.012, floraMutationChance:0.07, floraMutationMag:0.8,
+  floraSpawnChance:0.010, floraMutationChance:0.07, floraMutationMag:0.8,
+  floraWaterWeight:0.03,            // placement desert-avoid (aridity term, secondary to floraWaterDistK). 0 = off.
+  floraLandThin:0.55,               // MATURITY thinning: flora spread + spawn are scaled down as the world fills with land (the overrun regime), up to this fraction at 100% land. Land-adaptive: ZERO effect below floraLandThinStart, so the low-land C2 balance (tuned at ~24% land) is preserved while a matured ~90%-land world stops being carpeted. 0 = off.
+  floraLandThinStart:0.4,           // land coverage at which maturity thinning begins ramping (below this, flora is at full vigor - lush early islands).
+  floraPlaceSamples:10,             // candidate tiles drawn per placement; the wettest is chosen PROPORTIONALLY. Fixed count => no RNG-stream reshuffle when tuning floraWaterWeight (clean A/B).
+  floraMoisturePenalty:0.25,        // ABSOLUTE dryness brake on flora health (independent of the plant's own aridity preference). Makes dry-adapted flora still struggle: it spreads slower (health^2) + dies sooner, so flora retreats to water + dies back in deserts. 0 = off (old behavior). Secondary to floraWaterDist* below; mainly guarantees desert -> ~0 flora.
+  floraAridTolerance:3.5,           // aridity below which there is NO moisture penalty (well-watered ground). The penalty grows with (aridity - this)^2 above it.
+  floraWaterDistK:0.2,              // PLACEMENT clustering: candidate tiles weighted by exp(-waterDist*this), so new flora favors tiles close to water (coast + rivers/lakes). 0 = off.
+  floraWaterDistFree:2,             // tiles-from-water within which there is NO health penalty (riparian/coastal band stays lush).
+  floraWaterDistPenalty:0.12,       // SURVIVAL clustering: health brake growing with (waterDist - free)^2, so flora far from any water thins out -> leaves the interior barer (this is the lever for 'less of the map covered'). 0 = off.
   floraBaseMaxAge:700, floraSpreadBase:0.07, floraMaxPop:0, floraToleranceBase:2.5,
   floraPerTileMax:4,               // carrying capacity per tile
   ecotoneBlend:true,               // biome transition blending
@@ -237,6 +248,12 @@ function syncUIToConfig(){
   if(fcEl){fcEl.value=CFG.floraPerTileMax;if(fcOut)fcOut.textContent=CFG.floraPerTileMax;}
   var fsEl=document.getElementById('floraSpawnSlider'),fsOut=document.getElementById('floraSpawnOut');
   if(fsEl){fsEl.value=CFG.floraSpawnChance;if(fsOut)fsOut.textContent=CFG.floraSpawnChance.toFixed(3);}
+  var ftEl=document.getElementById('floraThinSlider'),ftOut=document.getElementById('floraThinOut');
+  if(ftEl){ftEl.value=CFG.floraLandThin;if(ftOut)ftOut.textContent=Math.round(CFG.floraLandThin*100)+'%';}
+  var fwEl=document.getElementById('floraWaterSlider'),fwOut=document.getElementById('floraWaterOut');
+  if(fwEl){fwEl.value=CFG.floraWaterDistPenalty;if(fwOut)fwOut.textContent=CFG.floraWaterDistPenalty.toFixed(2);}
+  var fdEl=document.getElementById('floraDesertSlider'),fdOut=document.getElementById('floraDesertOut');
+  if(fdEl){fdEl.value=CFG.floraMoisturePenalty;if(fdOut)fdOut.textContent=CFG.floraMoisturePenalty.toFixed(2);}
   var faEl=document.getElementById('faunaSpawnSlider'),faOut=document.getElementById('faunaSpawnOut');
   if(faEl){faEl.value=CFG.faunaSpawnChance;if(faOut)faOut.textContent=CFG.faunaSpawnChance.toFixed(3);}
   var muEl=document.getElementById('mutationSlider'),muOut=document.getElementById('mutationOut');
@@ -440,6 +457,12 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
   if(fcEl&&fcOut){fcEl.value=CFG.floraPerTileMax;fcOut.textContent=CFG.floraPerTileMax;fcEl.addEventListener('input',function(e){CFG.floraPerTileMax=parseInt(e.target.value);fcOut.textContent=CFG.floraPerTileMax;});}
   var fsEl=document.getElementById('floraSpawnSlider'),fsOut=document.getElementById('floraSpawnOut');
   if(fsEl&&fsOut){fsEl.value=CFG.floraSpawnChance;fsOut.textContent=CFG.floraSpawnChance.toFixed(3);fsEl.addEventListener('input',function(e){CFG.floraSpawnChance=parseFloat(e.target.value);fsOut.textContent=CFG.floraSpawnChance.toFixed(3);});}
+  var ftEl=document.getElementById('floraThinSlider'),ftOut=document.getElementById('floraThinOut');
+  if(ftEl&&ftOut){ftEl.value=CFG.floraLandThin;ftOut.textContent=Math.round(CFG.floraLandThin*100)+'%';ftEl.addEventListener('input',function(e){CFG.floraLandThin=parseFloat(e.target.value);ftOut.textContent=Math.round(CFG.floraLandThin*100)+'%';draw();});}
+  var fwEl=document.getElementById('floraWaterSlider'),fwOut=document.getElementById('floraWaterOut');
+  if(fwEl&&fwOut){fwEl.value=CFG.floraWaterDistPenalty;fwOut.textContent=CFG.floraWaterDistPenalty.toFixed(2);fwEl.addEventListener('input',function(e){CFG.floraWaterDistPenalty=parseFloat(e.target.value);fwOut.textContent=CFG.floraWaterDistPenalty.toFixed(2);draw();});}
+  var fdEl=document.getElementById('floraDesertSlider'),fdOut=document.getElementById('floraDesertOut');
+  if(fdEl&&fdOut){fdEl.value=CFG.floraMoisturePenalty;fdOut.textContent=CFG.floraMoisturePenalty.toFixed(2);fdEl.addEventListener('input',function(e){CFG.floraMoisturePenalty=parseFloat(e.target.value);fdOut.textContent=CFG.floraMoisturePenalty.toFixed(2);draw();});}
   var faEl=document.getElementById('faunaSpawnSlider'),faOut=document.getElementById('faunaSpawnOut');
   if(faEl&&faOut){faEl.value=CFG.faunaSpawnChance;faOut.textContent=CFG.faunaSpawnChance.toFixed(3);faEl.addEventListener('input',function(e){CFG.faunaSpawnChance=parseFloat(e.target.value);faOut.textContent=CFG.faunaSpawnChance.toFixed(3);});}
   var muEl=document.getElementById('mutationSlider'),muOut=document.getElementById('mutationOut');
@@ -538,6 +561,18 @@ function computeAridity(){
   var c2=new Float32Array(aridity);for(var y4=0;y4<H;y4++)for(var x4=0;x4<W;x4++){var sum2=0,n2=0;neighbors4(x4,y4).forEach(function(p){sum2+=c2[idx(p[0],p[1])];n2++;});aridity[idx(x4,y4)]=clamp((c2[idx(x4,y4)]+sum2)/(n2+1),0,10);}
   // River moisture effect: reduce aridity on river tiles and neighbors
   if(riverData&&riverGenerated){for(var rk=0;rk<W*H;rk++){if(riverData[rk]){aridity[rk]=clamp(aridity[rk]-RIVER_ARIDITY_EFFECT,0,10);var rx=rk%W,ry=(rk/W)|0;var rn=neighbors4(rx,ry);for(var rni=0;rni<rn.length;rni++){var rnj=idx(rn[rni][0],rn[rni][1]);aridity[rnj]=clamp(aridity[rnj]-RIVER_ARIDITY_EFFECT*0.3,0,10);}}}}
+  computeWaterDist();
+}
+// Distance (in tiles) from every cell to the nearest WATER feature: ocean/coast, plus river + lake tiles
+// once rivers are generated. This is the flora clustering signal (Kevin's call: water-proximity, flora-only)
+// - it leaves aridity and the biome map untouched. In the headless harness rivers are not generated, so it
+// degrades to coast distance (still drives coverage reduction + coast-clustering). BFS via an index-pointer
+// queue (no O(n) shift). Recomputed wherever computeAridity is (genesis change / every 20 ticks) + on restore.
+function computeWaterDist(){
+  if(!waterDist||waterDist.length!==W*H)waterDist=new Float32Array(W*H);
+  var q=new Int32Array(W*H),qn=0;
+  for(var i=0;i<W*H;i++){var isW=(grid[i]===T.OCEAN||grid[i]===T.COAST||(riverGenerated&&riverData&&riverData[i]));if(isW){waterDist[i]=0;q[qn++]=i;}else waterDist[i]=1e9;}
+  for(var h=0;h<qn;h++){var c=q[h],cx=c%W,cy=(c/W)|0,nb=neighbors4(cx,cy);for(var k=0;k<nb.length;k++){var j=idx(nb[k][0],nb[k][1]);if(waterDist[j]>waterDist[c]+1){waterDist[j]=waterDist[c]+1;q[qn++]=j;}}}
 }
 function classifyTile(e,A,Tm,SL){if(e>7)return T.MOUNTAIN;if(e>5.3){if(Tm<=2)return T.GLACIER;if(A>5&&Tm>4)return T.MESA;return T.HILLS;}if(Tm<2)return T.ARCTIC;if(Tm<2.5&&A<2.5)return T.GLACIER;if(Tm<3.2&&A<=3.5)return T.TUNDRA;if(A>5&&Tm>4&&SL>7.3)return T.DESERT;if(Tm>6&&SL>5.2&&A<4.3)return T.JUNGLE;if(Tm>5&&A>3&&A<=5.5)return T.SAVANNA;if(A>3&&Tm<3.5)return T.STEPPE;if(A>2&&A<=6.4&&Tm>2.7&&Tm<=6.6)return T.FOREST;if(e<1&&A<=3)return T.WETLAND;return T.PLAINS;}
 function reclassTerrain(){for(var y=0;y<H;y++)for(var x=0;x<W;x++){var iR=idx(x,y);if(grid[iR]===T.OCEAN||grid[iR]===T.VOLCANIC)continue;if(grid[iR]===T.COAST&&coastTTL[iR]>0)continue;if(volcanoRing&&volcanoRing[iR]===3){grid[iR]=T.MOUNTAIN;continue;}if(volcanoRing&&volcanoRing[iR]===1){grid[iR]=T.MOUNTAIN;continue;}if(volcanoRing&&volcanoRing[iR]===2){grid[iR]=T.HILLS;continue;}grid[iR]=classifyTile(elev[iR]||0,aridity[iR]||0,tempField[iR]||0,sunlight[iR]||0);}
@@ -981,7 +1016,14 @@ BIOME_FLORA_HARSHNESS[T.GLACIER]=0.08;    // near-lifeless ice
 BIOME_FLORA_HARSHNESS[T.TUNDRA]=0.30;    // sparse mosses, lichen
 BIOME_FLORA_HARSHNESS[T.SAVANNA]=0.55;   // scattered trees, dry grass
 BIOME_FLORA_HARSHNESS[T.MESA]=0.15;      // very sparse, hardy scrub
-function computeFloraHealth(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;var base=Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));var harshness=BIOME_FLORA_HARSHNESS[grid[i]];if(harshness===undefined)harshness=1.0;return base*harshness;}
+function computeFloraHealth(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var A=(aridity[i]||5);var dA=A-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;var base=Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));var harshness=BIOME_FLORA_HARSHNESS[grid[i]];if(harshness===undefined)harshness=1.0;
+  // Absolute moisture brake: even a perfectly dry-ADAPTED plant (high climate-fit base) is capped by how
+  // dry the ground actually is, so flora dies back in arid interior / deserts.
+  var dry=Math.max(0,A-CFG.floraAridTolerance),moistFit=1/(1+CFG.floraMoisturePenalty*dry*dry);
+  // Water-proximity brake: flora far from any water (coast/river/lake) is weaker, so it clusters on water
+  // and the deep interior goes barer (the primary 'less of the map' lever). Coast-only in the headless harness.
+  var farW=Math.max(0,(waterDist[i]||0)-CFG.floraWaterDistFree),waterFit=1/(1+CFG.floraWaterDistPenalty*farW*farW);
+  return base*harshness*moistFit*waterFit;}
 function mutateFloraChild(parent,cx,cy){var mag=CFG.floraMutationMag;var bias=CFG.floraMutationBias||0;
   // Adaptive mutation: shift partially toward local tile conditions
   var ci=idx(cx,cy);var tA=(aridity[ci]||5),tT=(tempField[ci]||5),tS=(sunlight[ci]||5);
@@ -991,11 +1033,30 @@ function mutateFloraChild(parent,cx,cy){var mag=CFG.floraMutationMag;var bias=CF
   var shiftS=randn()*mag*(1-bias)+(tS-parent.prefSL)*bias;
   var child=makeFlora(cx,cy,{prefArid:clamp(parent.prefArid+shiftA,0,10),prefTemp:clamp(parent.prefTemp+shiftT,0,10),prefSL:clamp(parent.prefSL+shiftS,0,10),tolerance:clamp(parent.tolerance+randn()*0.3,1.0,5.0),hue:clamp((parent.hue+randn()*12+360)%360,55,155),sat:clamp(parent.sat+(eRng()-0.5)*0.08,0.25,0.7),val:clamp(parent.val+(eRng()-0.5)*0.06,0.3,0.65),gen:parent.gen+1});if(eRng()<0.3)child.shape=FLORA_SHAPES[(eRng()*FLORA_SHAPES.length)|0];return child;}
 function cloneFloraChild(parent,cx,cy){return makeFlora(cx,cy,{prefArid:parent.prefArid,prefTemp:parent.prefTemp,prefSL:parent.prefSL,tolerance:parent.tolerance,hue:parent.hue,sat:parent.sat,val:parent.val,gen:parent.gen});}
-function seedFloraCluster(n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){flora.push(makeFlora(x,y,null));placed++;}}}
+// Moisture suitability for flora PLACEMENT (not survival): 1.0 at wet tiles (aridity 0), decaying as the
+// tile dries, so natural spawn + spread + initial seeding favor coasts/rivers/lakes (low aridity, incl.
+// the river-moisture bonus in computeAridity) and shun deserts (highest aridity). floraWaterWeight=0
+// disables it (uniform placement, old behavior). Survival is still governed by computeFloraHealth /
+// BIOME_FLORA_HARSHNESS; this only biases WHERE new plants are attempted.
+function floraMoistureSuit(i){var s=1;if(CFG.floraWaterDistK>0)s*=Math.exp(-(waterDist[i]||0)*CFG.floraWaterDistK);if(CFG.floraWaterWeight>0){var A=aridity[i]||5;s*=Math.exp(-A*A*CFG.floraWaterWeight);}return s;}
+// Pick a placement tile: draw a FIXED number of random candidates and select one PROPORTIONALLY to its
+// moisture suitability, so wetter (low-aridity) tiles win more often and deserts almost never. The draw
+// count is fixed regardless of floraWaterWeight (K position draws + 1 selection), so changing the knob
+// does NOT shift the RNG stream - tuning A/Bs stay same-world clean. floraWaterWeight=0 => all weights 1
+// => uniform pick among valid candidates (old behavior). Returns a tile index, or -1 if no candidate was land.
+function pickFloraTile(){var K=CFG.floraPlaceSamples||10;var ci=[],cw=[],tw=0;
+  for(var s=0;s<K;s++){var x=(eRng()*W)|0,y=(eRng()*H)|0;var i=idx(x,y),t=grid[i];if(t===T.OCEAN||t===T.MOUNTAIN||t===T.VOLCANIC)continue;var w=floraMoistureSuit(i);ci.push(i);cw.push(w);tw+=w;}
+  if(!ci.length)return -1;var rp=eRng()*tw;for(var c=0;c<ci.length;c++){rp-=cw[c];if(rp<=0)return ci[c];}return ci[ci.length-1];}
+function seedFloraCluster(n){var placed=0,guard=n*30;while(placed<n&&guard-->0){var i=pickFloraTile();if(i>=0){flora.push(makeFlora(i%W,(i/W)|0,null));placed++;}}}
 // Dynamic flora pop cap: 0 = map-size based (tiles x per-tile cap), else use configured value
 function floraPopCap(){return CFG.floraMaxPop>0?CFG.floraMaxPop:(W*H*(CFG.floraPerTileMax||4));}
-function naturalFloraSpawn(){if(flora.length>=floraPopCap())return;if(eRng()>=CFG.floraSpawnChance)return;var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){flora.push(makeFlora(x,y,null));return;}}}
-function floraStep(){if(!CFG.ecoActive)return;naturalFloraSpawn();
+function naturalFloraSpawn(){if(flora.length>=floraPopCap())return;if(eRng()>=CFG.floraSpawnChance*floraLandVigor)return;var i=pickFloraTile();if(i>=0)flora.push(makeFlora(i%W,(i/W)|0,null));}
+function floraStep(){if(!CFG.ecoActive)return;
+  // Maturity thinning: ramp flora vigor down as land fills (overrun regime), zero effect below the start
+  // threshold so the low-land C2 balance is untouched. Scales spread + spawn (NOT health), so flora
+  // STILL clusters on water - there is just less of it once the world has matured into a continent.
+  var _lc=landCoverage();floraLandVigor=1-CFG.floraLandThin*clamp((_lc-CFG.floraLandThinStart)/Math.max(0.01,1-CFG.floraLandThinStart),0,1);
+  naturalFloraSpawn();
   // Process regrowth remnants
   var rKeep=[];for(var ri=0;ri<floraRemnants.length;ri++){var rem=floraRemnants[ri];if(tick>=rem.tickDue){if(flora.length<floraPopCap()){var ti=idx(rem.x,rem.y);if(grid[ti]!==T.OCEAN){flora.push(makeFlora(rem.x,rem.y,rem.prefs));}}}else{rKeep.push(rem);}}floraRemnants=rKeep;
   // Build per-tile flora index for competition checks
@@ -1006,8 +1067,12 @@ function floraStep(){if(!CFG.ecoActive)return;naturalFloraSpawn();
   for(var k=0;k<sampleSize;k++){var fi=(eRng()*flora.length)|0;var f=flora[fi];if(!f)continue;f.health=computeFloraHealth(f);f.age++;var effectiveMaxAge=f.maxAge*(0.3+0.7*f.health);if(f.age>=effectiveMaxAge||f.health<0.05){flora[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){flora[fi]=null;continue;}if(flora.length+newFlora.length>=floraPopCap())continue;
     // Spread chance: base x health^2 x ecotone boost
     var spreadMod=1.0;if(biomeBoundary&&biomeBoundary[idx(f.x,f.y)])spreadMod=CFG.ecotoneFloraBoost||1.0;
-    if(eRng()>=CFG.floraSpreadBase*f.health*f.health*spreadMod)continue;
-    var cands=neighbors8(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(!cands.length)continue;var dest=cands[(eRng()*cands.length)|0];
+    if(eRng()>=CFG.floraSpreadBase*floraLandVigor*f.health*f.health*spreadMod)continue;
+    var cands=neighbors8(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(!cands.length)continue;
+    // Suitability-weighted destination: spread toward the wetter neighbors (one eRng draw, same as a
+    // uniform pick, so draw COUNT is unchanged - clean A/B). floraWaterWeight=0 => all weights 1 => uniform.
+    var _tw=0,_cw=[];for(var _ci=0;_ci<cands.length;_ci++){var _w=floraMoistureSuit(idx(cands[_ci][0],cands[_ci][1]));_cw.push(_w);_tw+=_w;}
+    var _rp=eRng()*_tw;var dest=cands[cands.length-1];for(var _cj=0;_cj<cands.length;_cj++){_rp-=_cw[_cj];if(_rp<=0){dest=cands[_cj];break;}}
     var child=eRng()<CFG.floraMutationChance?mutateFloraChild(f,dest[0],dest[1]):cloneFloraChild(f,dest[0],dest[1]);
     // Competition: check carrying capacity at destination
     var destIdx=idx(dest[0],dest[1]);var existing=_floraTile[destIdx];var cap=CFG.floraPerTileMax||4;
@@ -1318,7 +1383,7 @@ function initWorld(seedOverride){
   // seed reproduces the same ECOLOGY run (flora/fauna/climate-drift/beach), not just the terrain.
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
-  tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
+  tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};placeMode='none';clearRivers();clearBeaches();resetZoomPan();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyElevationIntensity();
@@ -1371,8 +1436,8 @@ function runAssertions(){
   t('Biome stab init',biomeStability&&biomeStability.length===W*H);initAnomalyBlobs();t('Anomaly blobs',anomalyBlobs&&anomalyBlobs.length>0);
   out.push('');out.push('— ECOLOGY —');
   (function(){var tf=makeFlora(10,10,null);t('Flora has prefs',tf.prefArid!==undefined&&tf.prefTemp!==undefined);t('Flora has tolerance',tf.tolerance>=1.0&&tf.tolerance<=5.0);t('Flora has shape',FLORA_SHAPES.indexOf(tf.shape)>=0);})();
-  (function(){var ti=idx(10,10);var _g=grid[ti];grid[ti]=T.PLAINS; // pin a hospitable biome so health depends on climate fit, not on which biome (10,10) randomly became
-    var f=makeFlora(10,10,{prefArid:aridity[ti],prefTemp:tempField[ti],prefSL:sunlight[ti],tolerance:3.0,hue:120,sat:0.7,val:0.8,gen:0});t('Adapted flora hp>0.9',computeFloraHealth(f)>0.9);var f2=makeFlora(10,10,{prefArid:clamp((aridity[ti]||5)+8,0,10),prefTemp:clamp((tempField[ti]||5)+8,0,10),prefSL:clamp((sunlight[ti]||5)+8,0,10),tolerance:1.5,hue:120,sat:0.7,val:0.8,gen:0});t('Maladapted hp<0.3',computeFloraHealth(f2)<0.3);grid[ti]=_g;})();
+  (function(){var ti=idx(10,10);var _g=grid[ti],_a=aridity[ti],_w=waterDist[ti];grid[ti]=T.PLAINS;aridity[ti]=2;waterDist[ti]=0; // pin a hospitable, WELL-WATERED tile so health depends on climate fit, not on biome or the absolute moisture/water brakes
+    var f=makeFlora(10,10,{prefArid:aridity[ti],prefTemp:tempField[ti],prefSL:sunlight[ti],tolerance:3.0,hue:120,sat:0.7,val:0.8,gen:0});t('Adapted flora hp>0.9',computeFloraHealth(f)>0.9);var f2=makeFlora(10,10,{prefArid:clamp((aridity[ti]||5)+8,0,10),prefTemp:clamp((tempField[ti]||5)+8,0,10),prefSL:clamp((sunlight[ti]||5)+8,0,10),tolerance:1.5,hue:120,sat:0.7,val:0.8,gen:0});t('Maladapted hp<0.3',computeFloraHealth(f2)<0.3);grid[ti]=_g;aridity[ti]=_a;waterDist[ti]=_w;})();
   (function(){var p=makeFlora(15,15,null);var c=mutateFloraChild(p,16,15);t('Mutant shifts prefs',c.prefArid!==p.prefArid||c.prefTemp!==p.prefTemp);t('Mutant gen+1',c.gen===p.gen+1);t('Mutant prefs in [0,10]',c.prefArid>=0&&c.prefArid<=10&&c.prefTemp>=0&&c.prefTemp<=10);})();
   (function(){var h=makeFauna(10,10,'herbivore',null);t('Herb created',h.type==='herbivore');t('Herb energy',h.energy===CFG.herbivoreStartEnergy);var c=makeFauna(10,10,'carnivore',null);t('Carn created',c.type==='carnivore');})();
   t('Flora mut>5%',CFG.floraMutationChance>0.05);t('Fauna mut>5%',CFG.faunaMutationChance>0.05);
@@ -1507,6 +1572,7 @@ function restoreState(snap){
   modArid=s.modArid; anomalyBlobs=s.anomalyBlobs;
   riverData=s.riverData; beachLevel=s.beachLevel;
   flora=s.flora; fauna=s.fauna; floraRemnants=s.floraRemnants; deathParticles=s.deathParticles;
+  computeWaterDist(); // derive from the restored grid so snapshot replays use a consistent water field
 }
 
 // Pure entry points for headless use (gate + measurement harness). Live bindings
@@ -1514,4 +1580,4 @@ function restoreState(snap){
 export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, snapshotState, restoreState, CFG, flora, fauna, tick, W, H };
 // Additional live bindings for the river structural tests + headless probe (grid/elev are
 // reassigned in initWorld; in-place mutation of them from a test paints a synthetic surface).
-export { generateRivers, clearRivers, riverData, grid, elev, T, buildSnapshot };
+export { generateRivers, clearRivers, riverData, grid, elev, aridity, T, buildSnapshot };

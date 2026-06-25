@@ -330,3 +330,31 @@ Decision: **REVERT crowding to 2.0** (C2 is strictly better long-run: 27 vs 388 
 - **3000t (long, land ~54%):** 33% extinction, 50% persistence, cap-hits from the rising food base - WINDOW-balanced, not steady-state, blocked by the paradox of enrichment under non-stationary K.
 
 The clean rate-knob search is DONE. Long-run steady-state balance is a Kevin design fork (above).
+
+---
+
+# Flora distribution + clustering (2026-06-24) - SHIPPED
+
+Kevin's ask: flora overruns the map; make it (1) fewer / cover less of the map, (2) cluster around rivers/lakes, (3) struggle in deserts; then re-balance. New instruments: a flora-distribution diagnostic in the harness (coverage, flora-vs-land aridity, desert share, near-water share) + `scripts/flora-ab.mjs` (warm-per-variant high-land A/B reporting distribution AND balance).
+
+## Findings (why the obvious levers failed)
+- **Overrun is a HIGH-LAND problem.** At the standard 24%-land protocol there are ~0% deserts and ~72% of land is near water, so distribution levers are inert. Reproduced the overrun at warmup 6000 (~76% land): flora covers ~66% of land, fauna pegged at the cap.
+- **Placement weighting (aridity OR waterDist) barely moves distribution** - local spread + adaptation dominate. Aridity-placement sweep (w 0->0.15): flora aridity 2.93->2.89 (nil). waterDist-placement+brake sweep (pen 0->0.25, free 3): coverage 65.6%->62.6% (weak; the world is too water-laced for a far-from-water brake to bite).
+- **Survival brakes work where placement doesn't.** An absolute aridity brake on `computeFloraHealth` cleared deserts (share 1.6%->0%).
+
+## What shipped (v3, land-adaptive)
+Two flora-only mechanisms (biomes/terrain untouched), all behind CFG knobs + live Ecology sliders:
+1. **Clustering** = `waterDist` field (BFS to ocean/coast/river/lake) driving flora placement (`floraWaterDistK=0.2`) + a survival brake (`floraWaterDistPenalty=0.12`, `floraWaterDistFree=2`), plus an aridity desert brake (`floraMoisturePenalty=0.25`).
+2. **Maturity thinning** = `floraLandThin=0.55` scales flora spread+spawn down as land fills, inert below `floraLandThinStart=0.4` (preserves the low-land C2 balance).
+
+## A/B ledger (flora-ab, warm-per-variant)
+| regime | variant | coverage | flora aridity (vs land) | desert | near-water (vs land) | extinction | carn-persist |
+|---|---|---|---|---|---|---|---|
+| high land ~76% | pre-change/C2 | 65.6% | 2.99 | 1.6% | 24.0% (25.3) | 0% | 100% |
+| high land ~76% | v3-shipped | **40.9%** | **2.65** | **0.0%** | **27.5%** (25.3) | 0% | 100% |
+| low land ~24% (8 seeds) | pre-change/C2 | 27.5% | 1.81 | 0% | 66.4% | 25% | 38% |
+| low land ~24% (8 seeds) | v3-shipped | 26.4% | 1.82 | 0% | 64.5% | **13%** | **50%** |
+
+High land: coverage ~halved into the "moderate" target, flora clusters wetter-than-land + near-water, desert-free, cycle held. Low land: balance NEUTRAL-to-better (clean same-code A/B; the standard harness's 17%/50% was an RNG-reshuffle artifact vs the old-code baseline - flora was identical).
+
+NOTE: river/lake hugging is GATE-BLIND (harness has no rivers). Verified in-browser on a loaded preview world + generated rivers; Kevin signed off on the look. Live sliders: Flora Thinning / Water Clustering / Desert Harshness (Ecology panel).
