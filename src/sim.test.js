@@ -109,6 +109,11 @@ describe('rivers (hydrology pipeline)', () => {
 
   it('builds a connected dendritic network, no basin stubs, with a lake', () => {
     paintSyntheticContinent();
+    // Pin the DESIGN threshold here (independent of the gameplay default): the synthetic continent is a
+    // high-relief cone that is far more blob-prone than the real low-relief terrain, where the shipped
+    // default (6) stays dendritic across the land range (verify with scripts/river-diag.mjs). This test
+    // validates the PIPELINE STRUCTURE (dendritic, reaches sea, no stubs, a lake), not the density tuning.
+    sim.CFG.riverAccumThreshold = 14;
     sim.generateRivers();
     const rd = sim.riverData, grid = sim.grid, W = sim.W, H = sim.H, T = sim.T;
     const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;

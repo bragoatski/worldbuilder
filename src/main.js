@@ -150,7 +150,7 @@ var WORLD={ muE:3, varMode:0.5, gammaA:4, gammaTheta:400, H0:1.4, Hmax:9.0, k:0.
 var CFG={
   volcanoChancePerTile:0.00005, coastalSpreadBase:0.0030, erosionChanceBase:0.00025,
   hardenRate:0.0025, elevationIntensity:1.0, maxLandCap:0.90,
-  riverAccumThreshold:14,           // upstream drainage cells before a tile renders as a river. LOWER = more/finer rivers that also appear at lower land coverage; HIGHER = only major trunks. Tunable via the River Density slider; re-runs generateRivers live.
+  riverAccumThreshold:6,            // upstream drainage cells before a tile renders as a river. LOWER = more/finer rivers that also appear at LOWER land coverage; HIGHER = only major trunks. Default 6 surfaces rivers at moderate land (~2% coverage at 56% land, ~9% at high land); tunable via the River Density slider; re-runs generateRivers live.
   sunlightNeighborMaxDelta:1.0, sunlightIntensity:1.0,
   aridityDistK:0.085, ariditySunCoef:0.18, aridityElevCoef:0.03, aridityHotBoost:0.50,
   clusterSpikeRate:0.025, clusterPlusChance:0.18,
@@ -494,7 +494,7 @@ var SLIDER_SCHEMA=[
   {key:'maxLandCap',min:0.2,max:0.9,step:0.01,label:'Max Land Cap'},
   {key:'elevationIntensity',min:0.5,max:1.5,step:0.05,label:'Elevation Intensity'},
   // River Density: inverted (drag right = denser = lower threshold) and regen='rivers' (re-runs generateRivers live).
-  {key:'riverAccumThreshold',min:6,max:40,step:1,label:'River Density',invert:true,regen:true}
+  {key:'riverAccumThreshold',min:3,max:40,step:1,label:'River Density',invert:true,regen:true}
 ];
 function decimalsForStep(step){var s=String(step);var dot=s.indexOf('.');return dot>=0?(s.length-dot-1):0;}
 function buildSliders(){
