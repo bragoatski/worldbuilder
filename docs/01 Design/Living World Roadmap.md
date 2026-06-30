@@ -59,9 +59,12 @@ next-session prompt for the following chunk. One chunk per cycle.
    readout + vivid-lineage announcements. Balance-safe (read-only observation). Exposes
    `chronicleNote()` for later god-powers (D) to log deliberate acts. Gate-covered pure core
    (ladder + determinism-through-snapshot); panel render is gate-blind.
-2. **Make evolution visible (pillar A).** Heritable size gene + size-scaled render; follow-a-
-   creature camera + ancestry panel. Size cosmetic-first (balance-safe); if it later affects
-   energy/eat it goes through the harness.
+2. **Make evolution visible (pillar A).** DONE 2026-06-30 (deployed). Heritable cosmetic `size` gene
+   (founders 1.0, drifts on the isolated `cRng` stream, rendered as marker scale) + `lineageId` for
+   kin-tracking; a follow-a-creature camera (`followId`/`updateFollow`) + a Lineage inspector panel +
+   per-creature Follow buttons; a Chronicle size record. Balance PROVED safe (harness byte-identical
+   before/after, since `cRng` leaves `eRng` untouched). If size later affects energy/eat it moves to
+   `eRng` and goes through the harness.
 3. **God powers (pillar D).** Land brush + a few dramatic events (meteor / drought / bloom),
    each logging to the Chronicle. Behavior-touching -> harness sanity pass.
 4. **Shareable worlds (thread 3).** Seed + CFG -> URL permalink (builds on JSON export); a
@@ -73,3 +76,7 @@ next-session prompt for the following chunk. One chunk per cycle.
 - **Chunk 1 - The Chronicle** (2026-06-29, deployed). Pure event engine on the step path + Chronicle
   sidebar panel + notable-life records + vivid-lineage announcements. Balance-safe. See STATUS + the
   2026-06-29 Chronicle handoff.
+- **Chunk 2 - Make evolution visible** (2026-06-30, deployed). Heritable cosmetic `size` gene on a new
+  isolated `cRng` stream (rendered as creature scale) + `lineageId` kin-tracking + a follow-a-creature
+  camera + a Lineage inspector panel + a Chronicle size record. Balance byte-identical (harness A/B). See
+  STATUS + the 2026-06-30 evolution-visibility handoff.

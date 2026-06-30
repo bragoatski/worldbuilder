@@ -139,14 +139,35 @@ observation; no fauna rate/behavior touched), and it round-trips through snapsho
 typecheck + lint (0 errors) + 10 tests (new: ladder-monotone, `chronicleNote` contract,
 determinism-through-snapshot) + build. The PANEL RENDER is gate-blind -> needs an eyeball in the live app.
 
+## Chronicle - Living World chunk 2 (2026-06-30) - DONE, deploying
+Make evolution VISIBLE (pillar A). Shipped, balance PROVEN safe (harness byte-identical before/after):
+- **Heritable cosmetic `size` gene.** Founders start at exactly 1.0; the gene only diversifies through
+  inherited drift in `mutateFaunaChild` (so a large lineage is visibly EVOLVED, not initial luck). Drift
+  is drawn from a NEW isolated RNG stream `cRng` (`cRandn`, offset `_seed ^ 0x85EBCA6B`) so it NEVER
+  consumes an `eRng` draw -> the ecology trajectory (and C2 balance) is byte-identical. Clamped [0.5,2.2].
+  Rendered as the fauna marker dimension (`dim` in `draw`). Knob: `CFG.faunaSizeMutationMag` (0.09).
+- **`lineageId` gene** (founder = own id, inherited) so living kin are countable. Pure annotation.
+- **Follow-a-creature camera:** `followId` + `updateFollow()` (called at the end of `draw()`) recenters
+  the camera on the tracked creature each frame and clears when it dies; `startFollow` zooms in + expands
+  the Lineage panel. An accent ring marks the followed creature.
+- **Lineage inspector panel** (`#panelLineage`/`renderLineagePanel`): live size/gen/energy/age/genome +
+  living-kin count + lineage top-gen + a Stop button. Per-creature **Follow buttons** added to the
+  Inspector. Both wired via delegated listeners.
+- **Chronicle size record:** `CHRON_SIZE_LADDER` + `records.peakSize`; feed event "a creature grew to N×
+  normal size" + a Biggest entry in the records strip.
+- Genes round-trip through snapshot/restore (they live on the fauna objects; `cRng` re-seeded in
+  `restoreState`). Gate GREEN: typecheck clean + lint 0 errors (23 pre-existing warnings) + **13 tests**
+  (was 10; new: size/lineage validity, kin+drift, balance-safe snapshot replay) + build. The RENDER +
+  follow camera + panels are gate-blind DOM -> need an eyeball in the live app (follow a creature, watch
+  it stay centered; check the size markers + Lineage panel + size events in the Chronicle).
+
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is now the driver; next chunk first,
 then the still-valid pre-roadmap backlog.
-0. **Living World chunk 2 - make evolution VISIBLE (pillar A).** Heritable size gene (cosmetic-first =
-   balance-safe) + size-scaled fauna render; a follow-a-creature camera + ancestry panel. The genome
-   (climate prefs + color genes) already mutates + inherits via `mutateFaunaChild` - this makes it
-   watchable. If size later affects energy/eat it goes through the harness. Roadmap has the full sequence
-   (god-powers, shareable permalinks, scenarios, speciation).
+0. **Living World chunk 3 - God powers (pillar D).** A land brush + a few dramatic events (meteor /
+   drought / bloom), each logging to the Chronicle via the existing `chronicleNote()` hook. This one is
+   BEHAVIOR-touching (it changes terrain/fauna), so it needs a harness sanity pass, unlike chunks 1-2.
+   Roadmap has the full remaining sequence (shareable permalinks, scenarios, speciation + trophic depth).
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence
