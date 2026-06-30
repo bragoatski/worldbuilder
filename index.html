@@ -507,6 +507,15 @@
   /* Species name styling */
   .species-name { font-style:italic; color:var(--teal); font-family:var(--sans); }
 
+  /* Follow-a-creature: inspector button + lineage panel */
+  .follow-btn { font-family:var(--mono); font-size:9px; color:var(--accent); background:var(--accent-dim); border:1px solid var(--accent-dim); border-radius:3px; padding:0 6px; cursor:pointer; vertical-align:middle; }
+  .follow-btn:hover { border-color:var(--accent); }
+  .lin-empty { font-family:var(--mono); font-size:10px; color:var(--fg-dim); font-style:italic; padding:2px 0; line-height:1.5; }
+  .lin-head { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+  .lin-head .tname { font-weight:600; font-size:12px; flex:1 1 auto; }
+  .lin-stop { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--fg-dim); background:var(--bg-input); border:1px solid var(--border); border-radius:3px; padding:2px 7px; cursor:pointer; flex:0 0 auto; }
+  .lin-stop:hover { border-color:var(--accent); color:var(--accent); }
+
   /* Utility */
   .gap-2 { gap:2px; } .gap-4 { gap:4px; } .gap-6 { gap:6px; }
   .hidden { display:none !important; }
@@ -652,6 +661,17 @@
           </div>
           <div class="panel-body inspector-body" id="inspector">
             <div class="insp-empty">Click a tile to inspect</div>
+          </div>
+        </div>
+
+        <!-- Lineage (follow a creature) -->
+        <div class="panel" id="panelLineage">
+          <div class="panel-head" onclick="togglePanel('panelLineage')">
+            <span class="chev">▼</span>
+            <h3>Lineage</h3>
+          </div>
+          <div class="panel-body" id="lineagePanel">
+            <div class="lin-empty">Click a creature in the Inspector, then press Follow to track it and watch its lineage evolve.</div>
           </div>
         </div>
 

@@ -102,6 +102,11 @@ function mulberry32(a) {
 }
 var sRng = Math.random; // replaced in init() with seeded version
 var eRng = Math.random; // seeded DYNAMICS stream (ecology/climate-drift); set in initWorld. Kept separate from sRng so terrain generation is byte-identical.
+// Seeded COSMETIC stream: drives purely-visual genes (the heritable size gene) ONLY. Kept on its own
+// stream so cosmetic genes NEVER consume a draw from eRng - the ecology trajectory (and thus the C2
+// predator-prey balance) is byte-identical whether or not these genes exist. This is what makes
+// "cosmetic-first" provably balance-safe (see Engineering Lessons - cosmetic genes on a separate RNG).
+var cRng = Math.random; // seeded in initWorld/restoreState alongside eRng.
 // Seeded random helpers for generation pipeline
 function sRandn(){var u=0,v=0;while(u===0)u=sRng();while(v===0)v=sRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function sTruncNorm(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*sRandn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
@@ -190,6 +195,7 @@ var CFG={
   floraPerTileMax:4,               // carrying capacity per tile
   ecotoneFloraBoost:1.6,           // flora spread multiplier at biome edges
   faunaSpawnChance:0.001, faunaMutationChance:0.07, faunaMutationMag:0.6,
+  faunaSizeMutationMag:0.09,        // COSMETIC size-gene drift per mutation (sd of the Gaussian step on cRng). Heritable + rendered; never affects energy/eat (balance-safe). Clamped to [0.5,2.2]x.
   faunaMaxPop:400, faunaBaseMaxAge:500,
   herbivoreSpeed:20, carnivoreSpeed:16,
   herbivoreEatSpeed:20,             // ticks between grazing
@@ -269,6 +275,8 @@ function resize(){ if(!Number.isFinite(PIX) || PIX<=0) PIX=6; if(W<=0||H<=0){ W=
 var zoomLevel=1, panX=0, panY=0;
 var ZOOM_MIN=0.5, ZOOM_MAX=6, ZOOM_STEP=0.15;
 var isPanning=false, panStartX=0, panStartY=0, panStartPX=0, panStartPY=0;
+// Follow-a-creature camera: the id of the fauna the camera is tracking (null = free camera).
+var followId=null, FOLLOW_MIN_ZOOM=3;
 
 function applyZoomPan(){
   canvas.style.transform='scale('+zoomLevel+') translate('+panX+'px,'+panY+'px)';
@@ -282,6 +290,52 @@ function screenToTile(clientX,clientY){
   var x=((clientX-r.left)/r.width*canvas.width/PIX)|0;
   var y=((clientY-r.top)/r.height*canvas.height/PIX)|0;
   return {x:x,y:y};
+}
+
+// ===== Follow-a-creature camera (the lineage lens) =====
+// Track one creature by id: keep the camera centered on it each frame and feed a live readout into
+// the Lineage panel. Pure UI/observation - no sim state is touched, so it is balance-safe.
+function findFauna(id){if(id==null)return null;for(var i=0;i<fauna.length;i++){if(fauna[i]&&fauna[i].id===id)return fauna[i];}return null;}
+// Center the camera on a tile. With transform-origin:center, the visible center sits at pan=0, so
+// panning by (canvasCenter - tileCenter) puts the tile at the viewport center (zoom-independent).
+function centerOnTile(tx,ty){panX=canvas.width/2-(tx+0.5)*PIX;panY=canvas.height/2-(ty+0.5)*PIX;applyZoomPan();}
+function startFollow(id){
+  followId=id;
+  if(zoomLevel<FOLLOW_MIN_ZOOM){zoomLevel=FOLLOW_MIN_ZOOM;var zEl=document.getElementById('hZoom');if(zEl)zEl.textContent=Math.round(zoomLevel*100)+'%';var zw=document.getElementById('hZoomWrap');if(zw)zw.style.display='';}
+  var lp=document.getElementById('panelLineage');if(lp){lp.classList.remove('collapsed');if(lp.scrollIntoView)lp.scrollIntoView({block:'nearest'});}
+  updateFollow();
+}
+function stopFollow(){followId=null;renderLineagePanel();}
+function updateFollow(){
+  if(followId==null) return;
+  var f=findFauna(followId);
+  if(!f){followId=null;renderLineagePanel(null,true);return;} // the followed creature died
+  centerOnTile(f.x,f.y);
+  renderLineagePanel(f);
+}
+function _sizeWord(s){return s>=1.7?'giant':s>=1.3?'large':s<=0.75?'small':'average';}
+function renderLineagePanel(f,died){
+  var el=document.getElementById('lineagePanel'); if(!el) return;
+  if(died){ el.innerHTML='<div class="lin-empty">The creature you were following has died. Follow another to keep watching the world evolve.</div>'; return; }
+  if(!f){ el.innerHTML='<div class="lin-empty">Click a creature in the Inspector, then press Follow to track it and watch its lineage evolve.</div>'; return; }
+  var icon=f.type==='herbivore'?'🐇':'🐺';
+  var sName=getSpeciesName(f,f.type);
+  var sw=hsv2hex(f.hue,f.sat,f.val);
+  var sz=f.size||1;
+  // Lineage stats: scan living kin that share this lineage root.
+  var kin=0,topGen=0; for(var i=0;i<fauna.length;i++){var o=fauna[i];if(o&&o.lineageId===f.lineageId){kin++;if(o.gen>topGen)topGen=o.gen;}}
+  var html='<div class="lin-head"><span class="insp-swatch" style="background:'+sw+'"></span><span class="tname">'+icon+' '+_capType(f.type)+(f.vivid?' ✨':'')+'</span><button class="lin-stop" id="lineageStop">Stop</button></div>';
+  if(sName) html+='<div class="species-name">'+sName+'</div>';
+  html+='<div class="insp-grid">';
+  html+='<span class="ig-k">Size</span><span class="ig-v">'+sz.toFixed(2)+'× ('+_sizeWord(sz)+')</span>';
+  html+='<span class="ig-k">Generation</span><span class="ig-v">'+f.gen+'</span>';
+  html+='<span class="ig-k">Energy</span><span class="ig-v">'+f.energy.toFixed(0)+'/'+f.maxEnergy+'</span>';
+  html+='<span class="ig-k">Age</span><span class="ig-v">'+f.age+'/'+Math.round(f.maxAge)+'</span>';
+  html+='<span class="ig-k">Position</span><span class="ig-v">('+f.x+', '+f.y+')</span>';
+  html+='<span class="ig-k">Climate pref</span><span class="ig-v">A'+f.prefArid.toFixed(1)+' T'+f.prefTemp.toFixed(1)+' S'+f.prefSL.toFixed(1)+'</span>';
+  html+='</div><hr class="insp-divider"><div class="insp-sub">Lineage</div>';
+  html+='<div class="insp-grid"><span class="ig-k">Living kin</span><span class="ig-v">'+kin+'</span><span class="ig-k">Lineage top gen</span><span class="ig-v">'+topGen+'</span></div>';
+  el.innerHTML=html;
 }
 
 // ===== Climate System =====
@@ -412,6 +466,15 @@ hook('btnRollSeed',function(){if(seedInputEl)seedInputEl.value='';init();draw();
     overlayMode=btn.getAttribute('data-ov');
     draw();
   });
+})();
+
+// Follow-a-creature wiring (delegated, bound once so the per-frame innerHTML rewrites don't leak listeners).
+(function(){
+  var insp=document.getElementById('inspector');
+  if(insp)insp.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('.follow-btn'):null;if(!b)return;var fid=parseInt(b.getAttribute('data-fid'));if(!isNaN(fid))startFollow(fid);});
+  var lin=document.getElementById('panelLineage');
+  if(lin)lin.addEventListener('click',function(e){if(e.target&&e.target.id==='lineageStop')stopFollow();});
+  renderLineagePanel(); // show the idle hint at boot
 })();
 
 canvas.addEventListener('click',function(ev){if(!grid)return;var tile=screenToTile(ev.clientX,ev.clientY);var x=tile.x,y=tile.y;
@@ -601,6 +664,8 @@ function reclassTerrain(){for(var y=0;y<H;y++)for(var x=0;x<W;x++){var iR=idx(x,
   for(var yy=0;yy<H;yy++)for(var xx=0;xx<W;xx++){var ii=idx(xx,yy);var myT=grid[ii];biomeBoundary[ii]=0;if(myT===T.OCEAN)continue;var nb=neighbors4(xx,yy);for(var nn=0;nn<nb.length;nn++){var nj=idx(nb[nn][0],nb[nn][1]);if(grid[nj]!==myT&&grid[nj]!==T.OCEAN){biomeBoundary[ii]=1;break;}}}
 }
 function randn(){var u=0,v=0;while(u===0)u=eRng();while(v===0)v=eRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
+// Gaussian draw on the COSMETIC stream (size-gene drift). Never touches eRng -> balance-neutral.
+function cRandn(){var u=0,v=0;while(u===0)u=cRng();while(v===0)v=cRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function truncatedNormal(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*randn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
 function betaapprox(a,b){function gK(k){if(k<1){var u=eRng();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=eRng();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}var x=gK(a),y=gK(b);return x/(x+y);}
 function gammaSample(shape,scale){function gK(k){if(k<1){var u=eRng();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=eRng();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}return gK(shape)*scale;}
@@ -1052,12 +1117,21 @@ function floraStep(){if(!CFG.ecoActive)return;
 var VIVID_HUES=[210,25,290,50,355,175,320,140]; // blue, orange, purple, gold, crimson, cyan, magenta, lime
 function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var isH=(type==='herbivore');var pA=prefs?prefs.prefArid:clamp(tA+(eRng()*3-1.5),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(eRng()*3-1.5),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(eRng()*3-1.5),0,10);var tol=prefs?prefs.tolerance:(3.0+eRng()*1.5);
   var vivid=prefs?!!prefs.vivid:false;
+  var newId=++faunaIdCounter;
+  // Cosmetic SIZE gene (heritable, rendered, balance-safe): founders start at 1.0x and the gene only
+  // diversifies through inherited drift (mutateFaunaChild on the cosmetic cRng stream), so a large
+  // lineage is visibly EVOLVED, not initial luck. Never read by faunaStep/scoreTileForFauna -> zero
+  // balance effect (eRng untouched).
+  var size=(prefs&&prefs.size!==undefined)?prefs.size:1.0;
+  // Lineage identity: a founder is its own lineage root; children inherit the root id, so living kin are
+  // countable for the lineage inspector. Pure annotation - never read by the sim.
+  var lineageId=(prefs&&prefs.lineageId!==undefined)?prefs.lineageId:newId;
   var hue,sat,val;
   if(prefs&&prefs.hue!==undefined){hue=prefs.hue;sat=prefs.sat;val=prefs.val;}
   else if(vivid){hue=VIVID_HUES[(eRng()*VIVID_HUES.length)|0]+randn()*8;sat=0.75+eRng()*0.2;val=0.8+eRng()*0.15;}
   else if(isH){hue=35+eRng()*15;sat=0.05+eRng()*0.1;val=0.78+eRng()*0.17;} // warm cream/white
   else{hue=210+eRng()*30;sat=0.05+eRng()*0.1;val=0.2+eRng()*0.18;} // charcoal/slate
-  return{id:++faunaIdCounter,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,vivid?0.65:0.03,vivid?0.95:0.2),val:clamp(val,vivid?0.7:(isH?0.75:0.18),vivid?0.95:(isH?0.95:0.4)),vivid:vivid,energy:isH?CFG.herbivoreStartEnergy:CFG.carnivoreStartEnergy,maxEnergy:isH?CFG.herbivoreMaxEnergy:CFG.carnivoreMaxEnergy,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:isH?(x*7+y*13)%CFG.herbivoreSpeed:0,eatCD:isH?(x*11+y*5)%CFG.herbivoreEatSpeed:0};}
+  return{id:newId,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,vivid?0.65:0.03,vivid?0.95:0.2),val:clamp(val,vivid?0.7:(isH?0.75:0.18),vivid?0.95:(isH?0.95:0.4)),vivid:vivid,size:size,lineageId:lineageId,energy:isH?CFG.herbivoreStartEnergy:CFG.carnivoreStartEnergy,maxEnergy:isH?CFG.herbivoreMaxEnergy:CFG.carnivoreMaxEnergy,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:isH?(x*7+y*13)%CFG.herbivoreSpeed:0,eatCD:isH?(x*11+y*5)%CFG.herbivoreEatSpeed:0};}
 function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;return Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));}
 function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
 function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
@@ -1109,8 +1183,10 @@ function mutateFaunaChild(parent,cx,cy){var mag=CFG.faunaMutationMag;
     var isH=(parent.type==='herbivore');
     childHue=clamp(parent.hue+randn()*8,isH?30:200,isH?55:245);childSat=clamp(parent.sat+(eRng()-0.5)*0.04,0.03,0.2);childVal=clamp(parent.val+(eRng()-0.5)*0.06,isH?0.75:0.18,isH?0.95:0.4);
   }
-  return makeFauna(cx,cy,parent.type,{prefArid:clamp(parent.prefArid+randn()*mag,0,10),prefTemp:clamp(parent.prefTemp+randn()*mag,0,10),prefSL:clamp(parent.prefSL+randn()*mag,0,10),tolerance:clamp(parent.tolerance+randn()*0.3,1.5,6.0),hue:childHue,sat:childSat,val:childVal,vivid:childVivid,gen:parent.gen+1});}
-function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefArid:parent.prefArid,prefTemp:parent.prefTemp,prefSL:parent.prefSL,tolerance:parent.tolerance,hue:parent.hue,sat:parent.sat,val:parent.val,vivid:parent.vivid,gen:parent.gen});}
+  // Cosmetic size drifts on the cRng stream (balance-neutral); lineage id is inherited unchanged.
+  var childSize=clamp((parent.size||1)+cRandn()*CFG.faunaSizeMutationMag,0.5,2.2);
+  return makeFauna(cx,cy,parent.type,{prefArid:clamp(parent.prefArid+randn()*mag,0,10),prefTemp:clamp(parent.prefTemp+randn()*mag,0,10),prefSL:clamp(parent.prefSL+randn()*mag,0,10),tolerance:clamp(parent.tolerance+randn()*0.3,1.5,6.0),hue:childHue,sat:childSat,val:childVal,vivid:childVivid,size:childSize,lineageId:(parent.lineageId||parent.id),gen:parent.gen+1});}
+function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefArid:parent.prefArid,prefTemp:parent.prefTemp,prefSL:parent.prefSL,tolerance:parent.tolerance,hue:parent.hue,sat:parent.sat,val:parent.val,vivid:parent.vivid,size:(parent.size||1),lineageId:(parent.lineageId||parent.id),gen:parent.gen});}
 function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(eRng()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
   for(var oi2=0;oi2<order.length;oi2++){var fi=order[oi2];var f=fauna[fi];if(!f)continue;var isHerb=(f.type==='herbivore');var climateFit=computeFaunaClimateFit(f);var idleCost=isHerb?CFG.faunaIdleCost:(CFG.faunaIdleCost*0.6);f.energy-=(idleCost+CFG.faunaClimatePenalty*(1-climateFit));f.age++;if(f.energy<=0){deathParticles.push({x:f.x,y:f.y,type:'starve',tick:tick});fauna[fi]=null;continue;}if(f.age>=f.maxAge){deathParticles.push({x:f.x,y:f.y,type:'age',tick:tick});fauna[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){fauna[fi]=null;continue;}
     f.moveCD--;f.eatCD--;if(f.moveCD<=0){f.moveCD=isHerb?CFG.herbivoreSpeed:CFG.carnivoreSpeed;var nbrs=neighbors4(f.x,f.y);var bestScore=scoreTileForFauna(f,f.x,f.y,isHerb);var bestPos=[f.x,f.y];for(var ni=0;ni<nbrs.length;ni++){var nx=nbrs[ni][0],ny=nbrs[ni][1];if(grid[idx(nx,ny)]===T.OCEAN)continue;var score=scoreTileForFauna(f,nx,ny,isHerb)+(eRng()-0.5)*0.5;if(score>bestScore){bestScore=score;bestPos=[nx,ny];}}if(bestPos[0]!==f.x||bestPos[1]!==f.y){f.x=bestPos[0];f.y=bestPos[1];f.energy-=CFG.faunaMoveCost;}}
@@ -1159,10 +1235,14 @@ function draw(){
     if(f.shape==='dot'){ctx.fillRect(px+off,py+off,sz,sz);}else if(f.shape==='plus'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='x'){ctx.fillRect(px+off-1,py+off-1,1,1);ctx.fillRect(px+off+sz,py+off-1,1,1);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off-1,py+off+sz,1,1);ctx.fillRect(px+off+sz,py+off+sz,1,1);}else if(f.shape==='ring'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='diamond'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,sz+2,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else{ctx.fillRect(px+off,py+off,sz,sz);}}}
   // Fauna render
   if(CFG.ecoRender){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var isH=(a.type==='herbivore');var aBright=0.4+0.6*(a.energy/a.maxEnergy);var faunaCol=hsv2hex(a.hue,a.sat,a.val*aBright);var apx=a.x*PIX,apy=a.y*PIX;
-    // Vivid glow: draw 1px bright halo behind vivid fauna
-    if(a.vivid){ctx.fillStyle=hsv2hex(a.hue,Math.min(1,a.sat*1.3),Math.min(1,a.val*1.2));var gsz=Math.max(3,Math.min(5,PIX));var goff=((PIX-gsz)/2)|0;ctx.fillRect(apx+goff,apy+goff,gsz,gsz);}
+    // Heritable SIZE gene -> rendered marker dimension. This is the visible part of evolution; cosmetic only.
+    var dim=clamp(Math.round(Math.min(4,PIX-1)*(a.size||1)),2,Math.round(PIX*2.2));var doff=((PIX-dim)/2)|0;
+    // Vivid glow: bright halo behind vivid fauna (scaled with the creature)
+    if(a.vivid){ctx.fillStyle=hsv2hex(a.hue,Math.min(1,a.sat*1.3),Math.min(1,a.val*1.2));var gsz=dim+2;var goff=((PIX-gsz)/2)|0;ctx.fillRect(apx+goff,apy+goff,gsz,gsz);}
     ctx.fillStyle=faunaCol;
-    if(isH){var hsz=Math.max(3,Math.min(4,PIX-1));var hoff=((PIX-hsz)/2)|0;ctx.fillRect(apx+hoff,apy+hoff,hsz,hsz);}else{var csz=Math.max(3,Math.min(4,PIX-1));var coff=((PIX-csz)/2)|0;var mid=(csz/2)|0;ctx.fillRect(apx+coff+mid,apy+coff,1,1);ctx.fillRect(apx+coff,apy+coff+mid,csz,1);ctx.fillRect(apx+coff+mid,apy+coff+csz-1,1,1);if(csz>=3)ctx.fillRect(apx+coff+mid-1,apy+coff+1,3,1);}}}
+    if(isH){ctx.fillRect(apx+doff,apy+doff,dim,dim);}else{var mid=(dim/2)|0;ctx.fillRect(apx+doff+mid,apy+doff,1,1);ctx.fillRect(apx+doff,apy+doff+mid,dim,1);ctx.fillRect(apx+doff+mid,apy+doff+dim-1,1,1);if(dim>=3)ctx.fillRect(apx+doff+mid-1,apy+doff+1,3,1);}
+    // Follow highlight: an accent ring around the creature the camera is tracking.
+    if(a.id===followId){ctx.strokeStyle='#3b9eff';ctx.lineWidth=1;var rs=dim+4;var ro=((PIX-rs)/2)|0;ctx.strokeRect(apx+ro+0.5,apy+ro+0.5,rs-1,rs-1);}}}
   // Death particles
   var aliveParticles=[];
   for(var dp=0;dp<deathParticles.length;dp++){var p=deathParticles[dp];var age=tick-p.tick;if(age>=DEATH_PARTICLE_LIFE)continue;aliveParticles.push(p);var alpha=1.0-age/DEATH_PARTICLE_LIFE;var px=p.x*PIX,py=p.y*PIX;ctx.globalAlpha=alpha;
@@ -1170,7 +1250,7 @@ function draw(){
     else if(p.type==='starve'){ctx.fillStyle='#888';ctx.beginPath();ctx.arc(px+PIX/2,py+PIX/2,PIX/3,0,Math.PI*2);ctx.fill();}
     else if(p.type==='age'){ctx.fillStyle='#aaa';ctx.fillRect(px+1,py+PIX/2,PIX-2,1);}
   }ctx.globalAlpha=1.0;deathParticles=aliveParticles;
-  drawHUD();renderChronicle();
+  drawHUD();renderChronicle();updateFollow();
 }
 
 // ===== Inspector =====
@@ -1196,7 +1276,7 @@ function inspectTile(x,y){
   var tileFauna=fauna.filter(function(a){return a&&a.x===x&&a.y===y;});
   if(tileFauna.length){
     html+='<hr class="insp-divider"><div class="insp-sub">🦌 Fauna × '+tileFauna.length+'</div>';
-    for(var ai=0;ai<Math.min(tileFauna.length,3);ai++){var a=tileFauna[ai];var icon=a.type==='herbivore'?'🐇':'🐺';var vTag=a.vivid?' ✨vivid':'';var sName=getSpeciesName(a,a.type);var nameHtml=sName?'<div class="species-name">'+sName+'</div>':'';html+='<div class="insp-entity"><b>'+icon+' '+a.type+vTag+'</b> gen:'+a.gen+' E:'+a.energy.toFixed(0)+'/'+a.maxEnergy+nameHtml+'<br>age:'+a.age+'/'+Math.round(a.maxAge)+' pref A:'+a.prefArid.toFixed(1)+' T:'+a.prefTemp.toFixed(1)+' S:'+a.prefSL.toFixed(1)+'</div>';}
+    for(var ai=0;ai<Math.min(tileFauna.length,3);ai++){var a=tileFauna[ai];var icon=a.type==='herbivore'?'🐇':'🐺';var vTag=a.vivid?' ✨vivid':'';var sName=getSpeciesName(a,a.type);var nameHtml=sName?'<div class="species-name">'+sName+'</div>':'';html+='<div class="insp-entity"><b>'+icon+' '+a.type+vTag+'</b> gen:'+a.gen+' E:'+a.energy.toFixed(0)+'/'+a.maxEnergy+' <button class="follow-btn" data-fid="'+a.id+'">Follow</button>'+nameHtml+'<br>size:'+(a.size||1).toFixed(2)+'× age:'+a.age+'/'+Math.round(a.maxAge)+' pref A:'+a.prefArid.toFixed(1)+' T:'+a.prefTemp.toFixed(1)+' S:'+a.prefSL.toFixed(1)+'</div>';}
     if(tileFauna.length>3)html+='<div style="font-size:10px;color:var(--fg-faint);margin-top:2px;">+'+(tileFauna.length-3)+' more</div>';
   }
   ins.innerHTML=html;
@@ -1295,26 +1375,29 @@ var CHRON_HERB_LADDER = [50,100,200,400,800];
 var CHRON_CARN_LADDER = [20,40,80,160];
 var CHRON_FLORA_LADDER = [500,1000,2000,4000,8000];
 var CHRON_LAND_LADDER = [25,50,75,90];
+var CHRON_SIZE_LADDER = [1.3,1.5,1.7,1.9,2.1]; // size-gene milestones ("a creature grew to N x normal size")
 function newChronicle(){
   return { events:[], nextId:1, prev:null,
     records:{ peakHerb:0, peakCarn:0, peakFlora:0, herbPopRung:0, carnPopRung:0, floraPopRung:0,
-      herbGenRung:0, carnGenRung:0, oldestAge:0, landRung:0, firstCarn:false } };
+      herbGenRung:0, carnGenRung:0, oldestAge:0, landRung:0, sizeRung:0, peakSize:0, firstCarn:false } };
 }
 var chronicle = newChronicle();
 // Highest ladder value <= value, but only if it exceeds the previously-crossed rung (else prevRung).
 function _crossLadder(ladder,value,prevRung){var hit=prevRung;for(var i=0;i<ladder.length;i++){if(value>=ladder[i]&&ladder[i]>hit)hit=ladder[i];}return hit;}
 function _capType(t){return t==='herbivore'?'Herbivore':t==='carnivore'?'Carnivore':(t?t.charAt(0).toUpperCase()+t.slice(1):'Creature');}
 function chronicleStats(){
-  var herb=0,carn=0,hv=0,cv=0,mhg=0,mcg=0,oldestAge=0,oldestRef=null,topHerb=null,topCarn=null;
+  var herb=0,carn=0,hv=0,cv=0,mhg=0,mcg=0,oldestAge=0,oldestRef=null,topHerb=null,topCarn=null,maxSize=0,bigRef=null;
   for(var i=0;i<fauna.length;i++){var f=fauna[i];if(!f)continue;
     if(f.type==='herbivore'){herb++;if(f.vivid)hv++;if(f.gen>mhg){mhg=f.gen;topHerb=f;}}
     else{carn++;if(f.vivid)cv++;if(f.gen>mcg){mcg=f.gen;topCarn=f;}}
-    if(f.age>oldestAge){oldestAge=f.age;oldestRef=f;}}
+    if(f.age>oldestAge){oldestAge=f.age;oldestRef=f;}
+    if((f.size||1)>maxSize){maxSize=f.size||1;bigRef=f;}}
   return { flora:flora.length, herb:herb, carn:carn, herbVivid:hv, carnVivid:cv, maxHerbGen:mhg, maxCarnGen:mcg,
     oldestAge:oldestAge|0,
     oldestName: oldestRef?(getSpeciesName(oldestRef,'fauna')||_capType(oldestRef.type)):null,
     topHerbName: topHerb?getSpeciesName(topHerb,'fauna'):null,
     topCarnName: topCarn?getSpeciesName(topCarn,'fauna'):null,
+    maxSize:maxSize, bigName: bigRef?(getSpeciesName(bigRef,'fauna')||_capType(bigRef.type)):null,
     land: landCoverage() };
 }
 function chronicleAdd(kind,text,color){
@@ -1353,8 +1436,10 @@ function chronicleSample(){
   else if(s.oldestAge>r.oldestAge) r.oldestAge=s.oldestAge;
   // Land development milestones
   var lr=_crossLadder(CHRON_LAND_LADDER,Math.round(s.land*100),r.landRung); if(lr>r.landRung){r.landRung=lr;chronicleAdd('terrain','The land grew to '+lr+'% of the world.','#8a9a7b');}
+  // Size-gene milestones (the visible evolution): a lineage growing past round-number size rungs.
+  var szr=_crossLadder(CHRON_SIZE_LADDER,s.maxSize,r.sizeRung); if(szr>r.sizeRung){r.sizeRung=szr;chronicleAdd('record','A '+(s.bigName||'creature')+' grew to '+szr.toFixed(1)+'× normal size - the largest yet.','#c8a0e0');}
   // Silent peak records for the readout strip
-  if(s.herb>r.peakHerb)r.peakHerb=s.herb; if(s.carn>r.peakCarn)r.peakCarn=s.carn; if(s.flora>r.peakFlora)r.peakFlora=s.flora;
+  if(s.herb>r.peakHerb)r.peakHerb=s.herb; if(s.carn>r.peakCarn)r.peakCarn=s.carn; if(s.flora>r.peakFlora)r.peakFlora=s.flora; if(s.maxSize>r.peakSize)r.peakSize=s.maxSize;
   chronicle.prev=s;
 }
 function renderChronicle(){
@@ -1367,7 +1452,7 @@ function renderChronicle(){
     feed.innerHTML=html; }
   var rec=document.getElementById('chronicleRecords');
   if(rec){ var r=chronicle.records; var topGen=Math.max(r.herbGenRung,r.carnGenRung);
-    rec.innerHTML='<span>Events <b>'+chronicle.events.length+'</b></span><span>Peak herb <b>'+r.peakHerb+'</b></span><span>Peak carn <b>'+r.peakCarn+'</b></span><span>Top gen <b>'+topGen+'</b></span><span>Oldest <b>'+r.oldestAge+'</b></span>'; }
+    rec.innerHTML='<span>Events <b>'+chronicle.events.length+'</b></span><span>Peak herb <b>'+r.peakHerb+'</b></span><span>Peak carn <b>'+r.peakCarn+'</b></span><span>Top gen <b>'+topGen+'</b></span><span>Oldest <b>'+r.oldestAge+'</b></span><span>Biggest <b>'+(r.peakSize?r.peakSize.toFixed(2)+'×':'--')+'</b></span>'; }
   var badge=document.getElementById('chronicleBadge'); if(badge) badge.textContent=String(chronicle.events.length);
 }
 
@@ -1379,6 +1464,9 @@ function initWorld(seedOverride){
   // Dynamics stream: seeded deterministically from _seed but on a distinct offset, so a given
   // seed reproduces the same ECOLOGY run (flora/fauna/climate-drift), not just the terrain.
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
+  // Cosmetic stream: a THIRD distinct offset for purely-visual genes (size). Separate so it cannot
+  // shift the eRng phase -> the ecology run is byte-identical with or without the cosmetic genes.
+  cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
   tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};chronicle=newChronicle();placeMode='none';clearRivers();resetZoomPan();
@@ -1556,10 +1644,11 @@ function snapshotState(){
 function restoreState(snap){
   var s=structuredClone(snap); // clone so one snapshot can be restored repeatedly without aliasing
   _seed=s.seed; tick=s.tick; W=s.W; H=s.H;
-  // Re-seed both streams from the stored seed (mulberry32 state is not externally readable), exactly
-  // as initWorld does. sRng is consumed by per-tick terrain genesis, eRng by ecology, so both matter.
+  // Re-seed all three streams from the stored seed (mulberry32 state is not externally readable), exactly
+  // as initWorld does. sRng -> terrain genesis, eRng -> ecology, cRng -> cosmetic genes.
   sRng=mulberry32(_seed);
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
+  cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   floraIdCounter=s.floraIdCounter; faunaIdCounter=s.faunaIdCounter;
   yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; riverGenerated=s.riverGenerated;
   WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle();

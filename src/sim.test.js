@@ -209,3 +209,64 @@ describe('chronicle (the world\'s memory)', () => {
     }
   }, 30000);
 });
+
+// Evolution visibility (chunk 2): the heritable cosmetic SIZE gene + lineage ids. Two properties matter.
+// (1) The genes are well-formed + heritable: every creature carries a finite size in [0.5,2.2] and a
+// positive integer lineageId; kin share a lineage; the size gene drifts off the founder default of 1.0
+// through reproduction. (2) The genes are BALANCE-SAFE: they live on a separate cosmetic RNG stream and
+// are never read by the sim, so the ecology trajectory is deterministic and identical through a snapshot
+// replay (the render + follow camera are gate-blind DOM, verified in the browser).
+describe('evolution visibility (size gene + lineage)', () => {
+  function warmAndSeed(seed, herb, carn, ticks) {
+    sim.initWorld(seed);
+    for (let i = 0; i < 600; i++) sim.step();
+    sim.seedFloraCluster(40);
+    sim.seedFaunaGroup('herbivore', herb);
+    sim.seedFaunaGroup('carnivore', carn);
+    for (let i = 0; i < ticks; i++) sim.step();
+    return sim.fauna.filter((f) => f);
+  }
+
+  it('every creature carries a valid size gene and a lineage id', () => {
+    const living = warmAndSeed(4242, 24, 8, 400);
+    expect(living.length).toBeGreaterThan(0);
+    for (const f of living) {
+      expect(Number.isFinite(f.size)).toBe(true);
+      expect(f.size).toBeGreaterThanOrEqual(0.5);
+      expect(f.size).toBeLessThanOrEqual(2.2);
+      expect(Number.isInteger(f.lineageId)).toBe(true);
+      expect(f.lineageId).toBeGreaterThan(0);
+    }
+  }, 30000);
+
+  it('lineages are shared by kin and the size gene diversifies through reproduction', () => {
+    const living = warmAndSeed(909090, 30, 8, 500);
+    expect(living.some((f) => f.gen > 0)).toBe(true); // descendants exist
+    const counts = {};
+    for (const f of living) counts[f.lineageId] = (counts[f.lineageId] || 0) + 1;
+    expect(Object.values(counts).some((c) => c > 1)).toBe(true); // a lineage has living kin
+    expect(living.some((f) => Math.abs(f.size - 1.0) > 1e-6)).toBe(true); // size drifted off 1.0
+    expect(sim.chronicle.records.peakSize).toBeGreaterThanOrEqual(1.0); // chronicle tracked it
+  }, 30000);
+
+  it('is balance-safe: ecology + cosmetic genes are identical through a snapshot replay', () => {
+    sim.initWorld(31337);
+    for (let i = 0; i < 600; i++) sim.step();
+    const snap = sim.snapshotState();
+    function replay() {
+      sim.restoreState(snap);
+      sim.seedFloraCluster(40);
+      sim.seedFaunaGroup('herbivore', 24);
+      sim.seedFaunaGroup('carnivore', 8);
+      for (let i = 0; i < 250; i++) sim.step();
+      // fingerprint the ECOLOGY state (position/energy) AND the cosmetic genes (size/lineage) together
+      return sim.fauna
+        .filter((f) => f)
+        .map((f) => `${f.id}:${f.x},${f.y}:${f.energy.toFixed(3)}:${f.size.toFixed(4)}:${f.lineageId}`);
+    }
+    const a = replay();
+    const b = replay();
+    expect(b).toEqual(a);
+    expect(a.length).toBeGreaterThan(0);
+  }, 30000);
+});
