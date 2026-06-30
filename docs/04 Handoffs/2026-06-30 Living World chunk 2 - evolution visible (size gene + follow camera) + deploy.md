@@ -54,8 +54,10 @@ tree was clean at start (branch `ecology-balance`, == `main` == `59bfe84`). Chec
 before editing if another session may be active.
 
 ## Deploy
-ff `main` -> the chunk-2 commit(s) + push (GitHub Pages CI publishes the Vite `dist/`). `main` was at
-`59bfe84`. [Fill in the deployed commit + live bundle hash after pushing.]
+DONE 2026-06-30 (Kevin's call: ship chunk 2). ff `main` `59bfe84 -> d7d0191` + pushed; GitHub Pages CI
+run for `d7d0191` concluded **success** and the live site serves HTTP 200 with bundle
+`assets/index-0doKaswX.js` (matches the local build). Commits: `ac71774` (code) + `d7d0191` (docs).
+Live: https://bragoatski.github.io/worldbuilder/
 
 ## NEXT (chunk 3): God powers (pillar D)
 A land brush + a few dramatic events (meteor / drought / bloom), each logging to the Chronicle via the

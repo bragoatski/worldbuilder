@@ -139,7 +139,7 @@ observation; no fauna rate/behavior touched), and it round-trips through snapsho
 typecheck + lint (0 errors) + 10 tests (new: ladder-monotone, `chronicleNote` contract,
 determinism-through-snapshot) + build. The PANEL RENDER is gate-blind -> needs an eyeball in the live app.
 
-## Chronicle - Living World chunk 2 (2026-06-30) - DONE, deploying
+## Chronicle - Living World chunk 2 (2026-06-30) - DONE + DEPLOYED (main d7d0191, ff'd + pushed, CI success, live bundle index-0doKaswX.js)
 Make evolution VISIBLE (pillar A). Shipped, balance PROVEN safe (harness byte-identical before/after):
 - **Heritable cosmetic `size` gene.** Founders start at exactly 1.0; the gene only diversifies through
   inherited drift in `mutateFaunaChild` (so a large lineage is visibly EVOLVED, not initial luck). Drift
