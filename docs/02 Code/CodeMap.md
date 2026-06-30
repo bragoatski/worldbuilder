@@ -23,12 +23,12 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
 
 ## Systems and key symbols
 - **Error / util:** `togglePanel`, `window.onerror` HUD.
-- **State:** grid / elev / aridity / tempField / sunlight + volcano fields; ecology state (`flora[]`, `fauna[]`, `deathParticles`, `placeMode`, species-name parts, `popHistory`, `biomeBoundary`, `floraRemnants`); river vars; beach vars.
+- **State:** grid / elev / aridity / tempField / sunlight (+ `baseTemp`/`baseArid` = the genesis climate before climate offsets) + volcano fields; ecology state (`flora[]`, `fauna[]`, `deathParticles`, `placeMode`, species-name parts, `popHistory`, `biomeBoundary`, `floraRemnants`); river vars; beach vars.
 - **Seeded PRNG:** `mulberry32`, `sRng`, `sRandn` / `sTruncNorm` / `sBeta` / `sGamma`. NOTE: the generation pipeline uses these; ecology / climate use raw `Math.random` (the reproducibility gap).
 - **Presets:** `PRESETS` (8: balanced/desert/wetlands/iceage/volcanic/jungle/archipelago/pangaea), `applyPreset`, `syncUIToConfig`.
 - **Config:** terrain enum `T` / `TNAME` / `TERRAIN_COLORS` (16 biomes), `WORLD`, `CFG` (all tunables incl. ecology + beach), `DEFAULT_CFG`.
 - **Canvas helpers:** `idx`, `inb`, `neighbors4/8`, `clamp`, `resize`. **Zoom / pan:** `applyZoomPan`, `screenToTile`.
-- **Climate:** `climateInit`, `initAnomalyBlobs`, `updateAnomalyBlobs`, `seasonPhase`, `climateStep`, `applyClimateIfEnabled`.
+- **Climate (OFFSET model, 2026-06-29):** `climateInit`, `initAnomalyBlobs`, `updateAnomalyBlobs`, `seasonPhase`, `seasonWave` (zero-mean trapezoid), `climateStep` (advances time scalars + blob drift only), `applyClimate` (writes live temp/aridity = genesis base + bounded offsets, EVERY tick). `computeTemperature`/`computeAridity` write `baseTemp`/`baseArid`; the live fields are base + seasonal/anomaly/volcano OFFSETS, so climate forcings never accumulate or drift (the pre-2026-06-29 model integrated a delta onto the field and drifted once genesis stopped). Amplitude knobs in CFG: `seasonalTempAmp`/`seasonalAridAmp` + `anomaly*`/`volcano*` variants.
 - **UI hooks:** `hook()` + all button bindings, placement mode, overlay selector, canvas click/move/wheel/pan, climate + ecology slider hooks, legend tooltips, hotkeys.
 - **Sliders:** `SLIDER_SCHEMA`, `buildSliders`, `applyElevationIntensity`.
 - **Climate fields:** `computeSunlight` (+ `reseedSunlight`, `addHotColdBlobs`), `computeTemperature`, `computeAridity` (BFS from coast + river moisture).

@@ -307,26 +307,57 @@ function updateAnomalyBlobs(){
   }
 }
 function seasonPhase(){ if(CFG.climateSeasonLength<=0)return 0; return(tick%CFG.climateSeasonLength)/CFG.climateSeasonLength; }
-function climateStep(){
-  var yearCycle=(tick/CFG.climateSeasonLength); var variationPhase=yearCycle*0.15;
-  yearlyVariation=0.85+Math.sin(variationPhase*2*Math.PI)*0.15;
-  var phase=seasonPhase(); var plateauWidth=0.2; var seasonalWithPlateaus;
-  if(phase<0.25-plateauWidth/2){var t0=phase/(0.25-plateauWidth/2);seasonalWithPlateaus=-1+t0;}
-  else if(phase<0.25+plateauWidth/2){seasonalWithPlateaus=1;}
-  else if(phase<0.75-plateauWidth/2){var t1=(phase-(0.25+plateauWidth/2))/(0.5-plateauWidth);seasonalWithPlateaus=1-t1*2;}
-  else if(phase<0.75+plateauWidth/2){seasonalWithPlateaus=-1;}
-  else{var t2=(phase-(0.75+plateauWidth/2))/(0.25-plateauWidth/2);seasonalWithPlateaus=-1+t2;}
-  var seasonalCompressed=seasonalWithPlateaus*0.075*yearlyVariation;
-  for(var i=0;i<W*H;i++){
-    var x=i%W,y=(i/W)|0;
-    if(CFG.seasonalTilt){var e=elev[i]||0;var atten=1-Math.min(1,e/10);var targetTS=0.008*seasonalCompressed*atten;var targetAS=-0.005*seasonalCompressed*atten;modTempSeasonal[i]+=(targetTS-modTempSeasonal[i])*0.005;modAridSeasonal[i]+=(targetAS-modAridSeasonal[i])*0.005;}else{modTempSeasonal[i]*=0.995;modAridSeasonal[i]*=0.995;}
-    if(CFG.anomalies){if(!anomalyBlobs)initAnomalyBlobs();if(tick%5===0)updateAnomalyBlobs();var totalAnom=0;for(var b=0;b<anomalyBlobs.length;b++){var blob=anomalyBlobs[b];var dx=x-blob.x,dy=y-blob.y;if(dx>W/2)dx-=W;if(dx<-W/2)dx+=W;if(dy>H/2)dy-=H;if(dy<-H/2)dy+=H;var distSq=dx*dx+dy*dy;var radiusSq=blob.radius*blob.radius;totalAnom+=blob.amplitude*Math.exp(-distSq/(2*radiusSq));}var targetTA=totalAnom*0.0006;var targetAA=-totalAnom*0.00037;modTempAnom[i]+=(targetTA-modTempAnom[i])*0.02;modAridAnom[i]+=(targetAA-modAridAnom[i])*0.02;}else{modTempAnom[i]*=0.98;modAridAnom[i]*=0.98;}
-    if(CFG.volcanoAsh){if(peakVolcano[i]){modTempVolc[i]=-0.006;modAridVolc[i]=-0.004;}else if(volcanoRing[i]===1){modTempVolc[i]=-0.003;modAridVolc[i]=-0.002;}else if(volcanoRing[i]===2){modTempVolc[i]=-0.0015;modAridVolc[i]=-0.001;}else{modTempVolc[i]=0;modAridVolc[i]=0;}}else{modTempVolc[i]=0;modAridVolc[i]=0;}
+// Seasonal waveform: a SYMMETRIC trapezoid in [-1,1] (warm plateau ~phase .25, cold plateau ~.75, linear
+// ramps between). Symmetric => its average over a full year is exactly 0, so applied as an offset it returns
+// to baseline each cycle instead of marching the climate one way (the old plateau wave averaged ~-0.15, which
+// is what made "seasons" a permanent cool/dry drift once terrain genesis stopped resetting the field).
+function seasonWave(phase){
+  var pw=0.1; // plateau half-width (0.2 total per plateau)
+  if(phase>=0.25-pw && phase<=0.25+pw) return 1;   // warm plateau [.15,.35]
+  if(phase>=0.75-pw && phase<=0.75+pw) return -1;  // cold plateau [.65,.85]
+  if(phase>0.25+pw && phase<0.75-pw){               // warm -> cold ramp (.35..0.65), +1 -> -1
+    return 1 - 2*(phase-(0.25+pw))/((0.75-pw)-(0.25+pw));
   }
+  // cold -> warm ramp, wrapping .85 -> 1 -> 0 -> .15, -1 -> +1
+  var into = (phase>=0.75+pw) ? phase-(0.75+pw) : phase+(1-(0.75+pw));
+  var rampLen = (1-(0.75+pw)) + (0.25-pw); // 0.30
+  return -1 + 2*(into/rampLen);
 }
-function applyClimateIfEnabled(){
+// Advance the time-varying climate scalars (and drift the anomaly blobs). No per-tile work here - the field
+// is written by applyClimate. yearlyVariation is a slow multi-year amplitude wobble (bounded, ~0.85..1.0).
+function climateStep(){
+  var yearCycle=(CFG.climateSeasonLength>0?tick/CFG.climateSeasonLength:0);
+  yearlyVariation=0.85+Math.sin(yearCycle*0.15*2*Math.PI)*0.15;
+  if(CFG.anomalies){ if(!anomalyBlobs)initAnomalyBlobs(); if(tick%5===0)updateAnomalyBlobs(); }
+}
+// Write the live fields = genesis baseline + bounded climate OFFSETS. Runs every tick. Each forcing is an
+// offset (recomputed from scratch, never accumulated), so toggling any of them just adds/removes a swing and
+// nothing drifts. seasonalTilt: zero-mean trapezoid scaled by amplitude * yearlyVariation * elevation-atten.
+// anomalies: moving warm/cool blobs. volcanoAsh: localized cooling around volcano peaks. climateIntensity
+// scales the whole offset (presets use it: ice age 1.8, volcanic 1.5).
+function applyClimate(){
+  if(!baseTemp||!baseArid) return;
   var ci=CFG.climateIntensity||1;
-  for(var i=0;i<W*H;i++){var tD=(modTempSeasonal[i]+modTempAnom[i]+modTempVolc[i])*ci;var aD=(modAridSeasonal[i]+modAridAnom[i]+modAridVolc[i])*ci;tempField[i]=clamp((tempField[i]||0)+tD,0,10);aridity[i]=clamp((aridity[i]||0)+aD,0,10);modArid[i]=aD;}
+  var sW = CFG.seasonalTilt ? seasonWave(seasonPhase())*yearlyVariation : 0;
+  var seasT = CFG.seasonalTempAmp*sW, seasA = -CFG.seasonalAridAmp*sW; // warm season is moister (sign kept from the old model)
+  var anyOff = CFG.seasonalTilt || CFG.anomalies || CFG.volcanoAsh;
+  for(var i=0;i<W*H;i++){
+    if(!anyOff){ tempField[i]=baseTemp[i]; aridity[i]=baseArid[i]; continue; } // off => field IS the base (matches the pre-climate baseline exactly)
+    var x=i%W,y=(i/W)|0;
+    var atten=1-Math.min(1,(elev[i]||0)/10);
+    var tOff=seasT*atten, aOff=seasA*atten;
+    if(CFG.anomalies && anomalyBlobs){
+      var totalAnom=0;
+      for(var b=0;b<anomalyBlobs.length;b++){var blob=anomalyBlobs[b];var dx=x-blob.x,dy=y-blob.y;if(dx>W/2)dx-=W;if(dx<-W/2)dx+=W;if(dy>H/2)dy-=H;if(dy<-H/2)dy+=H;var distSq=dx*dx+dy*dy;var radiusSq=blob.radius*blob.radius;totalAnom+=blob.amplitude*Math.exp(-distSq/(2*radiusSq));}
+      tOff += CFG.anomalyTempAmp*totalAnom; aOff += -CFG.anomalyAridAmp*totalAnom;
+    }
+    if(CFG.volcanoAsh){
+      var vs = peakVolcano[i] ? 1 : (volcanoRing[i]===1 ? 0.5 : (volcanoRing[i]===2 ? 0.25 : 0));
+      if(vs){ tOff += -CFG.volcanoTempAmp*vs; aOff += -CFG.volcanoAridAmp*vs; }
+    }
+    tempField[i]=clamp(baseTemp[i]+tOff*ci,0,10);
+    aridity[i]=clamp(baseArid[i]+aOff*ci,0,10);
+  }
 }
 
 // ===== UI hooks =====
@@ -339,7 +370,7 @@ hook('btnReset',function(){running=false;init();buildSliders();applyElevationInt
 hook('btnSpawnFlora',function(){seedFloraCluster(15);draw();});
 hook('btnSpawnHerb',function(){seedFaunaGroup('herbivore',8);draw();});
 hook('btnSpawnCarn',function(){seedFaunaGroup('carnivore',4);draw();});
-hook('btnRivers',function(){generateRivers();computeAridity();reclassTerrain();draw();});
+hook('btnRivers',function(){generateRivers();computeAridity();applyClimate();reclassTerrain();draw();});
 // Placement mode
 function setPlaceMode(mode){
   placeMode=(placeMode===mode)?'none':mode;
@@ -513,7 +544,7 @@ function buildSliders(){
     var out=document.createElement('span');out.className='val';
     function fmt(v){return Number(v).toFixed(decimalsForStep(s.step));}
     out.textContent=fmt(CFG[s.key]);
-    input.addEventListener('input',function(e){var raw=parseFloat(e.target.value);var val=s.invert?(s.min+s.max-raw):raw;CFG[s.key]=val;out.textContent=fmt(val);if(s.key==='elevationIntensity')applyElevationIntensity();if(s.regen&&riverGenerated){generateRivers();computeAridity();reclassTerrain();}draw();});
+    input.addEventListener('input',function(e){var raw=parseFloat(e.target.value);var val=s.invert?(s.min+s.max-raw):raw;CFG[s.key]=val;out.textContent=fmt(val);if(s.key==='elevationIntensity')applyElevationIntensity();if(s.regen&&riverGenerated){generateRivers();computeAridity();applyClimate();reclassTerrain();}draw();});
     row.appendChild(lab);row.appendChild(input);row.appendChild(out);host.appendChild(row);
   });
 }
@@ -539,15 +570,17 @@ function computeSunlight(){
   var minV=Infinity,maxV=-Infinity;for(var i0=0;i0<W*H;i0++){var v0=sunlight[i0];if(v0<minV)minV=v0;if(v0>maxV)maxV=v0;}var span=Math.max(1e-6,maxV-minV);
   for(var i1=0;i1<W*H;i1++){var t=(sunlight[i1]-minV)/span;sunlight[i1]=clamp(5+(t*10-5)*CFG.sunlightIntensity,0,10);}
 }
-function computeTemperature(){for(var iT=0;iT<W*H;iT++){var s=Math.max(0,Math.min(1,sunlight[iT]/10));var sCurve=Math.pow(s,1.2);var e=elev[iT]||0;tempField[iT]=clamp(0.3+sCurve*9.8-0.06*e-0.24*Math.pow(Math.max(0,e-6),2)/16,0,10);}}
+// Genesis temperature from sunlight + elevation. Writes the BASE field; the live tempField is base + offsets
+// (applyClimate). Called on terrain change / periodically, so the base tracks erosion + new land.
+function computeTemperature(){for(var iT=0;iT<W*H;iT++){var s=Math.max(0,Math.min(1,sunlight[iT]/10));var sCurve=Math.pow(s,1.2);var e=elev[iT]||0;baseTemp[iT]=clamp(0.3+sCurve*9.8-0.06*e-0.24*Math.pow(Math.max(0,e-6),2)/16,0,10);}}
 function computeAridity(){
   var dist=new Float32Array(W*H);for(var i=0;i<W*H;i++)dist[i]=1e9;var q=[];
   for(var y=0;y<H;y++)for(var x=0;x<W;x++){var ii=idx(x,y);if(grid[ii]===T.OCEAN||grid[ii]===T.COAST){dist[ii]=0;q.push([x,y]);}}
   while(q.length){var p=q.shift();var i0=idx(p[0],p[1]);neighbors4(p[0],p[1]).forEach(function(n){var j=idx(n[0],n[1]);if(dist[j]>dist[i0]+1){dist[j]=dist[i0]+1;q.push(n);}});}
-  for(var k=0;k<W*H;k++){var d=dist[k];var base=10*(1-Math.exp(-d*CFG.aridityDistK));var Tm=tempField[k]||0;var hot=(Tm>8)?CFG.aridityHotBoost*((Tm-8)/2):0;aridity[k]=clamp(base+CFG.ariditySunCoef*sunlight[k]-CFG.aridityElevCoef*(10-(elev[k]||0))+hot,0,10);}
-  var c2=new Float32Array(aridity);for(var y4=0;y4<H;y4++)for(var x4=0;x4<W;x4++){var sum2=0,n2=0;neighbors4(x4,y4).forEach(function(p){sum2+=c2[idx(p[0],p[1])];n2++;});aridity[idx(x4,y4)]=clamp((c2[idx(x4,y4)]+sum2)/(n2+1),0,10);}
+  for(var k=0;k<W*H;k++){var d=dist[k];var base=10*(1-Math.exp(-d*CFG.aridityDistK));var Tm=baseTemp[k]||0;var hot=(Tm>8)?CFG.aridityHotBoost*((Tm-8)/2):0;baseArid[k]=clamp(base+CFG.ariditySunCoef*sunlight[k]-CFG.aridityElevCoef*(10-(elev[k]||0))+hot,0,10);}
+  var c2=new Float32Array(baseArid);for(var y4=0;y4<H;y4++)for(var x4=0;x4<W;x4++){var sum2=0,n2=0;neighbors4(x4,y4).forEach(function(p){sum2+=c2[idx(p[0],p[1])];n2++;});baseArid[idx(x4,y4)]=clamp((c2[idx(x4,y4)]+sum2)/(n2+1),0,10);}
   // River moisture effect: reduce aridity on river tiles and neighbors
-  if(riverData&&riverGenerated){for(var rk=0;rk<W*H;rk++){if(riverData[rk]){aridity[rk]=clamp(aridity[rk]-RIVER_ARIDITY_EFFECT,0,10);var rx=rk%W,ry=(rk/W)|0;var rn=neighbors4(rx,ry);for(var rni=0;rni<rn.length;rni++){var rnj=idx(rn[rni][0],rn[rni][1]);aridity[rnj]=clamp(aridity[rnj]-RIVER_ARIDITY_EFFECT*0.3,0,10);}}}}
+  if(riverData&&riverGenerated){for(var rk=0;rk<W*H;rk++){if(riverData[rk]){baseArid[rk]=clamp(baseArid[rk]-RIVER_ARIDITY_EFFECT,0,10);var rx=rk%W,ry=(rk/W)|0;var rn=neighbors4(rx,ry);for(var rni=0;rni<rn.length;rni++){var rnj=idx(rn[rni][0],rn[rni][1]);baseArid[rnj]=clamp(baseArid[rnj]-RIVER_ARIDITY_EFFECT*0.3,0,10);}}}}
   computeWaterDist();
 }
 // Distance (in tiles) from every cell to the nearest WATER feature: ocean/coast, plus river + lake tiles
@@ -1107,7 +1140,7 @@ function draw(){
     else if(overlayMode==='clim-ar'){var va=clamp((aridity[i]||0)/10,0,1);col='rgb('+Math.floor(255*va)+','+Math.floor(31+(255-31)*va)+','+Math.floor(63+(255-63)*va)+')';}
     else if(overlayMode==='clim-te'){var Tt=tempField[i]||0;var r5,g5,b5;if(Tt<=5){var kk=Math.max(0,Math.min(1,(Tt-1)/4));r5=Math.floor(128*kk);g5=0;b5=Math.floor(255+(128-255)*kk);}else{var k2=Math.max(0,Math.min(1,(Tt-5)/5));r5=Math.floor(128+(255-128)*k2);g5=0;b5=Math.floor(128-128*k2);}col='rgb('+r5+','+g5+','+b5+')';}
     else if(overlayMode==='clim-su'){var vs=(sunlight[i]||0)/10;col='rgb('+Math.floor(255*vs)+','+Math.floor(180*vs)+','+Math.floor(60*(1-vs)+10)+')';}
-    else if(overlayMode==='climate'){if(!modTempSeasonal||!modTempAnom||!modTempVolc){col='rgb(80,60,100)';ctx.fillStyle=col;ctx.fillRect(x*PIX,y*PIX,PIX,PIX);continue;}var ci=CFG.climateIntensity||1;var dT=((modTempSeasonal[i]||0)+(modTempAnom[i]||0)+(modTempVolc[i]||0))*ci;var dA2=((modAridSeasonal[i]||0)+(modAridAnom[i]||0)+(modAridVolc[i]||0))*ci;var tN=Math.max(0,Math.min(1,(dT+0.007)/0.008));var ll2=20+tN*60;var aN=Math.max(0,Math.min(1,(dA2+0.005)/0.006));var ss2=20+aN*60;var hh2=270,sF=ss2/100,lF=ll2/100;var cC=(1-Math.abs(2*lF-1))*sF;var xC=cC*(1-Math.abs(((hh2/60)%2)-1));var mM=lF-cC/2;col='rgb('+Math.floor((xC+mM)*255)+','+Math.floor(mM*255)+','+Math.floor((cC+mM)*255)+')';}
+    else if(overlayMode==='climate'){if(!baseTemp||!baseArid){col='rgb(80,60,100)';ctx.fillStyle=col;ctx.fillRect(x*PIX,y*PIX,PIX,PIX);continue;}var dT=(tempField[i]||0)-(baseTemp[i]||0);var dA2=(aridity[i]||0)-(baseArid[i]||0);var tN=Math.max(0,Math.min(1,(dT+1.5)/3.0));var ll2=20+tN*60;var aN=Math.max(0,Math.min(1,(dA2+0.9)/1.8));var ss2=20+aN*60;var hh2=270,sF=ss2/100,lF=ll2/100;var cC=(1-Math.abs(2*lF-1))*sF;var xC=cC*(1-Math.abs(((hh2/60)%2)-1));var mM=lF-cC/2;col='rgb('+Math.floor((xC+mM)*255)+','+Math.floor(mM*255)+','+Math.floor((cC+mM)*255)+')';}
     else if(overlayMode==='water'){
       if(terr===T.OCEAN){col='#0a2a3f';}
       else{
@@ -1180,7 +1213,7 @@ function updateTooltip(ev){
   html+='<div class="kv">Temp <span>'+(tempField[i]||0).toFixed(1)+'</span></div><div class="bar"><i style="width:'+pct01(tempField[i])+'%"></i></div>';
   html+='<div class="kv">Sun <span>'+(sunlight[i]||0).toFixed(1)+'</span></div><div class="bar"><i style="width:'+pct01(sunlight[i])+'%"></i></div>';
   if(riverData&&riverData[i]){var rdT=riverData[i];var rLbl=rdT.lake?'💧 Lake':(rdT.sourcePool?'💧 Source':'💧 River');html+='<div class="kv">'+rLbl+' <span>vol:'+rdT.volume+(rdT.estuary?' (estuary)':'')+'</span></div>';}
-  if((CFG.seasonalTilt||CFG.anomalies||CFG.volcanoAsh)&&modTempSeasonal){var ci=CFG.climateIntensity||1;html+='<hr class="tsep"><div class="kv">ΔT s/a/v <span>'+((modTempSeasonal[i]||0)*ci).toFixed(5)+'/'+((modTempAnom[i]||0)*ci).toFixed(5)+'/'+((modTempVolc[i]||0)*ci).toFixed(5)+'</span></div><div class="kv">Season <span>'+Math.round(seasonPhase()*100)+'%</span></div>';}
+  if((CFG.seasonalTilt||CFG.anomalies||CFG.volcanoAsh)&&baseTemp){var dT=(tempField[i]||0)-(baseTemp[i]||0),dA=(aridity[i]||0)-(baseArid[i]||0);html+='<hr class="tsep"><div class="kv">climate ΔT/ΔA <span>'+(dT>=0?'+':'')+dT.toFixed(2)+' / '+(dA>=0?'+':'')+dA.toFixed(2)+'</span></div><div class="kv">Season <span>'+Math.round(seasonPhase()*100)+'%</span></div>';}
   var tF=[],tA2=[];for(var fi=0;fi<flora.length;fi++){if(flora[fi]&&flora[fi].x===x&&flora[fi].y===y)tF.push(flora[fi]);}for(var ai=0;ai<fauna.length;ai++){if(fauna[ai]&&fauna[ai].x===x&&fauna[ai].y===y)tA2.push(fauna[ai]);}
   if(tF.length||tA2.length){html+='<hr class="tsep">';if(tF.length){var avgH=0;for(var fj=0;fj<tF.length;fj++)avgH+=tF[fj].health;avgH/=tF.length;var mG=0;for(var fk=0;fk<tF.length;fk++)if(tF[fk].gen>mG)mG=tF[fk].gen;html+='<div class="kv">🌿 ×'+tF.length+'/'+CFG.floraPerTileMax+' <span>hp:'+avgH.toFixed(2)+' gen≤'+mG+'</span></div>';if(mG>=5){var topF=null;for(var tf2=0;tf2<tF.length;tf2++){if(!topF||tF[tf2].gen>topF.gen)topF=tF[tf2];}if(topF){var tfName=getSpeciesName(topF,'flora');if(tfName)html+='<div class="kv" style="font-style:italic;color:#38c8b0;">'+tfName+'</div>';}}var remC=0;for(var rr=0;rr<floraRemnants.length;rr++){if(floraRemnants[rr].x===x&&floraRemnants[rr].y===y)remC++;}if(remC)html+='<div class="kv">🌱 regrowing <span>×'+remC+'</span></div>';}
   for(var aj=0;aj<Math.min(tA2.length,2);aj++){var fa=tA2[aj];var faName=getSpeciesName(fa,fa.type);var faLabel=faName?('<i>'+faName+'</i>'):(fa.type==='herbivore'?'🐇':'🐺');html+='<div class="kv">'+faLabel+(fa.vivid?' ✨':'')+' <span>E:'+fa.energy.toFixed(0)+'/'+fa.maxEnergy+' g:'+fa.gen+'</span></div>';}}
@@ -1193,7 +1226,7 @@ function exportPNG(){try{var url=canvas.toDataURL('image/png');var a=document.cr
 // produce a loadable world snapshot without the DOM download path.
 function buildSnapshot(){return {meta:{version:'wb-eco-1',W:W,H:H,tick:tick,seed:_seed,preset:activePreset,world:WORLD,cfg:{climateIntensity:CFG.climateIntensity,climateSeasonLength:CFG.climateSeasonLength},sunlightPhase:sunPhase},grid:Array.from(grid),elev:Array.from(elev),aridity:Array.from(aridity),temp:Array.from(tempField),flora:flora.filter(function(f){return f!==null;}),fauna:fauna.filter(function(f){return f!==null;}),remnants:floraRemnants,rivers:riverGenerated?riverData:null};}
 function exportJSON(){try{var snapshot=buildSnapshot();var json=JSON.stringify(snapshot,null,2);var blob=new Blob([json],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='worldbuilder_'+W+'x'+H+'_tick'+tick+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Export error: '+e.message;}}}
-function importJSON(data){try{if(!data||!data.meta||(data.meta.version!=='wb-land-base-1'&&data.meta.version!=='wb-eco-1'))throw new Error('Invalid snapshot format');if(data.meta.W!==W||data.meta.H!==H){W=data.meta.W;H=data.meta.H;resize();}tick=data.meta.tick||0;if(data.meta.seed!==undefined){_seed=data.meta.seed;sRng=mulberry32(_seed);var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;var seedInp=document.getElementById('seedInput');if(seedInp)seedInp.value=_seed;}if(data.meta.preset){activePreset=data.meta.preset;var psEl=document.getElementById('presetSelect');if(psEl)psEl.value=activePreset;}if(data.meta.world)WORLD=data.meta.world;if(data.meta.cfg){CFG.climateIntensity=data.meta.cfg.climateIntensity||1.0;CFG.climateSeasonLength=data.meta.cfg.climateSeasonLength||10000;}if(data.meta.sunlightPhase!==undefined)sunPhase=data.meta.sunlightPhase;grid=new Uint8Array(W*H);if(data.grid&&data.grid.length===W*H){grid=new Uint8Array(data.grid);}elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];if(data.rivers&&Array.isArray(data.rivers)){riverData=data.rivers;riverGenerated=true;}else{clearRivers();}reseedSunlight();computeSunlight();climateInit();reclassTerrain();buildSliders();
+function importJSON(data){try{if(!data||!data.meta||(data.meta.version!=='wb-land-base-1'&&data.meta.version!=='wb-eco-1'))throw new Error('Invalid snapshot format');if(data.meta.W!==W||data.meta.H!==H){W=data.meta.W;H=data.meta.H;resize();}tick=data.meta.tick||0;if(data.meta.seed!==undefined){_seed=data.meta.seed;sRng=mulberry32(_seed);var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;var seedInp=document.getElementById('seedInput');if(seedInp)seedInp.value=_seed;}if(data.meta.preset){activePreset=data.meta.preset;var psEl=document.getElementById('presetSelect');if(psEl)psEl.value=activePreset;}if(data.meta.world)WORLD=data.meta.world;if(data.meta.cfg){CFG.climateIntensity=data.meta.cfg.climateIntensity||1.0;CFG.climateSeasonLength=data.meta.cfg.climateSeasonLength||10000;}if(data.meta.sunlightPhase!==undefined)sunPhase=data.meta.sunlightPhase;grid=new Uint8Array(W*H);if(data.grid&&data.grid.length===W*H){grid=new Uint8Array(data.grid);}elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];if(data.rivers&&Array.isArray(data.rivers)){riverData=data.rivers;riverGenerated=true;}else{clearRivers();}reseedSunlight();computeSunlight();climateInit();computeTemperature();computeAridity();applyClimate();reclassTerrain();buildSliders();
   var cIE=document.getElementById('climateIntensity'),cIO=document.getElementById('climateIntensityOut');if(cIE&&cIO){cIE.value=CFG.climateIntensity;cIO.textContent=CFG.climateIntensity.toFixed(2);}var cSE=document.getElementById('climateSeasonLen'),cSO=document.getElementById('climateSeasonLenOut');if(cSE&&cSO){cSE.value=CFG.climateSeasonLength;cSO.textContent=CFG.climateSeasonLength;}draw();}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Import error: '+e.message;}}}
 
 // ===== HUD =====
@@ -1262,7 +1295,7 @@ function initWorld(seedOverride){
   tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};placeMode='none';clearRivers();resetZoomPan();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
-  pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyElevationIntensity();
+  pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
 }
 function init(){
   var seedEl=document.getElementById('seedInput');
@@ -1278,8 +1311,11 @@ function step(){
   for(var i2=0;i2<W*H;i2++)if(volcActive[i2]){volcAge[i2]+=1;elev[i2]=currentCoreHeight(volcAge[i2]);if(volcAge[i2]>=volcLife[i2])coolVolcano(i2);}
   for(var ci=0;ci<W*H;ci++){if(grid[ci]===T.COAST&&coastTTL[ci]>0)coastTTL[ci]--;}
   clusterSpikePass();mountainFringePass();isolatedHillDecayPass();eruptionPromotionPass();
-  var anyC=CFG.seasonalTilt||CFG.anomalies||CFG.volcanoAsh;if(genesisChanged||(!anyC&&tick%20===1)){computeTemperature();computeAridity();}
-  climateStep();applyClimateIfEnabled();reclassTerrain();floraStep();faunaStep();
+  // Refresh the BASE climate on terrain change / periodically - ALWAYS, regardless of the climate toggles.
+  // (The old code suppressed this whenever climate was on, which froze the base and made the seasonal delta
+  // accumulate only once genesis stopped - the regime-dependence + drift bug. Base is climate-independent.)
+  if(genesisChanged||tick%20===1){computeTemperature();computeAridity();}
+  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();
 }
 function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
@@ -1308,7 +1344,8 @@ function runAssertions(){
   (function(){var i0=idx(10,10);var gO=grid[i0],eO=elev[i0],pvO=peakVolcano[i0],vrO=volcanoRing[i0],acO=adjCooldown[i0];grid[i0]=T.MOUNTAIN;elev[i0]=10.0;peakVolcano[i0]=0;volcanoRing[i0]=0;adjCooldown[i0]=0;volcanoCenters=[];promoteVolcanoAt(i0);t('Volcano flag',!!peakVolcano[i0]&&elev[i0]===10.0);t('Ring=3',volcanoRing[i0]===3);t('Center tracked',volcanoCenters.length===1);grid[i0]=gO;elev[i0]=eO;peakVolcano[i0]=pvO;volcanoRing[i0]=vrO;adjCooldown[i0]=acO;})();
   (function(){var x=20,y=20,i=idx(x,y);var _ec=CFG.erosionChanceBase;CFG.erosionChanceBase=1.0;grid[i]=T.PLAINS;elev[i]=9.2;var e0=elev[i];for(var k=0;k<200;k++)erosionStep(x,y);t('Erosion lowers tile',elev[i]<e0);CFG.erosionChanceBase=_ec;})(); // force erosion certain so the assertion is deterministic, not RNG-flaky
   var okStep=true;try{step();}catch(e){okStep=false;}t('step() no throw',okStep);
-  (function(){var wS=CFG.seasonalTilt,wA=CFG.anomalies,wV=CFG.volcanoAsh;CFG.seasonalTilt=true;CFG.anomalies=true;CFG.volcanoAsh=true;climateStep();applyClimateIfEnabled();var tOK=true,aOK=true;for(var ci=0;ci<W*H;ci++){if(tempField[ci]<0||tempField[ci]>10)tOK=false;if(aridity[ci]<0||aridity[ci]>10)aOK=false;}t('Climate temp [0,10]',tOK);t('Climate arid [0,10]',aOK);CFG.seasonalTilt=wS;CFG.anomalies=wA;CFG.volcanoAsh=wV;})();
+  (function(){var wS=CFG.seasonalTilt,wA=CFG.anomalies,wV=CFG.volcanoAsh;CFG.seasonalTilt=true;CFG.anomalies=true;CFG.volcanoAsh=true;computeTemperature();computeAridity();climateStep();applyClimate();var tOK=true,aOK=true;for(var ci=0;ci<W*H;ci++){if(tempField[ci]<0||tempField[ci]>10)tOK=false;if(aridity[ci]<0||aridity[ci]>10)aOK=false;}t('Climate temp [0,10]',tOK);t('Climate arid [0,10]',aOK);CFG.seasonalTilt=wS;CFG.anomalies=wA;CFG.volcanoAsh=wV;})();
+  (function(){var sum=0,bounded=true,N=2000;for(var s=0;s<N;s++){var v=seasonWave(s/N);sum+=v;if(v<-1.0001||v>1.0001)bounded=false;}t('Season wave zero-mean (no climate drift)',Math.abs(sum/N)<0.01);t('Season wave bounded [-1,1]',bounded);})();
   t('Biome stab init',biomeStability&&biomeStability.length===W*H);initAnomalyBlobs();t('Anomaly blobs',anomalyBlobs&&anomalyBlobs.length>0);
   out.push('');out.push('— ECOLOGY —');
   (function(){var tf=makeFlora(10,10,null);t('Flora has prefs',tf.prefArid!==undefined&&tf.prefTemp!==undefined);t('Flora has tolerance',tf.tolerance>=1.0&&tf.tolerance<=5.0);t('Flora has shape',FLORA_SHAPES.indexOf(tf.shape)>=0);})();
@@ -1417,10 +1454,8 @@ function snapshotState(){
     peakVolcano:peakVolcano, volcActive:volcActive, volcAge:volcAge, volcLife:volcLife,
     volcanoRing:volcanoRing, volcanoCenters:volcanoCenters, biomeStability:biomeStability,
     biomeDesiredNext:biomeDesiredNext, biomeBoundary:biomeBoundary,
-    // climate fields
-    modTempSeasonal:modTempSeasonal, modTempAnom:modTempAnom, modTempVolc:modTempVolc,
-    modAridSeasonal:modAridSeasonal, modAridAnom:modAridAnom, modAridVolc:modAridVolc,
-    modArid:modArid, anomalyBlobs:anomalyBlobs,
+    // climate fields (genesis baseline; the live temp/aridity above are base + offsets, re-derived next tick)
+    baseTemp:baseTemp, baseArid:baseArid, anomalyBlobs:anomalyBlobs,
     // rivers
     riverData:riverData,
     // ecology lists
@@ -1442,9 +1477,7 @@ function restoreState(snap){
   peakVolcano=s.peakVolcano; volcActive=s.volcActive; volcAge=s.volcAge; volcLife=s.volcLife;
   volcanoRing=s.volcanoRing; volcanoCenters=s.volcanoCenters; biomeStability=s.biomeStability;
   biomeDesiredNext=s.biomeDesiredNext; biomeBoundary=s.biomeBoundary;
-  modTempSeasonal=s.modTempSeasonal; modTempAnom=s.modTempAnom; modTempVolc=s.modTempVolc;
-  modAridSeasonal=s.modAridSeasonal; modAridAnom=s.modAridAnom; modAridVolc=s.modAridVolc;
-  modArid=s.modArid; anomalyBlobs=s.anomalyBlobs;
+  baseTemp=s.baseTemp; baseArid=s.baseArid; anomalyBlobs=s.anomalyBlobs;
   riverData=s.riverData;
   flora=s.flora; fauna=s.fauna; floraRemnants=s.floraRemnants; deathParticles=s.deathParticles;
   computeWaterDist(); // derive from the restored grid so snapshot replays use a consistent water field

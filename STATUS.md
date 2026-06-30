@@ -95,6 +95,34 @@ is a high-land (88.7%) world for checking the look.
 - **2026-06-28 river visibility** (Kevin: "ran 2 sims, no rivers"; herbivores confirmed GREAT): root cause was land level - rivers only form at high land (`scripts/river-diag.mjs`: 0 below ~40% land, the good ones at ~88%). Lowered default `riverAccumThreshold 14 -> 6` (slider dense-end min 6 -> 3) so rivers show ~4x more at moderate land, still dendritic on real terrain. Rivers stay MANUAL (Rivers button / slider) - auto-generating them cost carnivore-persistence 80% -> 60% (rivers concentrate flora), so it was reverted. Balance still 0%/80%.
 - **GATE-BLIND visual confirmations still open** (shipped to live for Kevin): rivers now show at moderate land when you click Rivers / use the River Density slider (no need to grind to ~90% land).
 
+## Seasons / climate rebuild (2026-06-29) - DONE on branch `ecology-balance`, gate green, NOT yet pushed/deployed
+Kevin: "look into the seasons, make sure they are balanced when turned on." Investigation (via the new
+`scripts/season-probe.mjs` + harness `--seasons` flag) found Seasonal Tilt was structurally BROKEN, not just
+mis-tuned: the seasonal delta was INTEGRATED onto `tempField`/`aridity` every tick while `computeTemperature`/
+`computeAridity` (which overwrite the field) were suppressed when climate was on. Result: (1) a permanent
+cool/dry DRIFT (the plateau waveform averaged ~-0.15, not zero), and (2) REGIME-DEPENDENCE - seasons were
+nearly invisible until land hit the cap and genesis stopped, then surfaced as drift.
+
+Fix (Kevin chose: proper redesign + moderate strength): rewrote climate as a bounded, zero-mean OFFSET on a
+cached genesis baseline. `computeTemperature`/`computeAridity` now write `baseTemp`/`baseArid`; `applyClimate`
+runs every tick and sets live temp/aridity = base + seasonal/anomaly/volcano offsets (recomputed, never
+accumulated). New `seasonWave` is a symmetric trapezoid (zero-mean, gate-tested). Amplitude knobs in CFG
+(`seasonalTempAmp` 1.5 etc.). Anomalies + volcano ash converted to bounded offsets too (they shared the bug).
+
+Validated: probe shows NO drift at the matured world (phase-0 Tmean constant 4.31 vs old 4.37->3.97) and
+seasons now visible at ALL land levels. Balance A/B (harness `--seasons`): clean C2 window (8 seeds, 1000t)
+cap-hits 0 both, seasons slightly DAMP the swing (osc 85->69); harsh long window (6 seeds, 4000t) extinction
+33%->17%, carn-persistence 67%->83% - seasons are neutral-to-stabilizing, never destabilizing. Crucially,
+climate-OFF is byte-identical to before (field=base+0), so C2 is untouched. Gate GREEN (typecheck + 7 tests
+incl. new zero-mean wave test + lint 0 errors). Engineering Lessons + CodeMap updated.
+
+NOTE: an unexpected commit `7ab8ffc` ("chore(harness): preserve season/climate A/B probe tooling (WIP)")
+appeared mid-session (20:33, authored bragoatski) committing the probe tooling but NOT the main.js fix -
+likely a concurrent session or a manual checkpoint. The main.js redesign is committed on top (see git log).
+OPEN: push `ecology-balance` -> `main` + Pages redeploy is Kevin's call (render is gate-blind; eyeball the
+seasonal swing + Climate Δ overlay in-browser first). The amp knobs (`seasonalTempAmp` etc.) have no UI
+sliders yet - tunable in code.
+
 ## NEXT (in order)
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
