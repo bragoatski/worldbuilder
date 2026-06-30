@@ -29,7 +29,10 @@ var waterDist; // tiles to nearest water (ocean/coast + rivers/lakes when presen
 var floraLandVigor=1; // maturity-thinning multiplier on flora spread/spawn (1 at low land, down to 1-floraLandThin at full land); refreshed each floraStep
 var coastTTL; var lastClick=null;
 var volcActive, volcAge, volcLife;
-var modTempSeasonal, modTempAnom, modTempVolc, modAridSeasonal, modAridAnom, modAridVolc, modArid;
+var baseTemp, baseArid; // genesis climate (temperature/aridity from terrain), BEFORE the seasonal/anomaly/volcano
+                        // offsets. The live tempField/aridity = base + bounded offsets, recomputed every tick by
+                        // applyClimate, so climate forcings are OFFSETS that return to baseline - they never
+                        // accumulate or drift (the old integrate-onto-the-field model did, only once genesis stopped).
 var biomeStability, biomeDesiredNext;
 var yearlyVariation;
 var anomalyBlobs;
@@ -163,6 +166,13 @@ var CFG={
   rareSurgeProb:0.028, tickMsBase:100,
   seasonalTilt:false, anomalies:false, volcanoAsh:false,
   climateIntensity:1.0, climateSeasonLength:10000,
+  // Climate offset amplitudes (units of the 0..10 fields, at sea level, before climateIntensity). These are
+  // OFFSETS on the genesis baseline, not per-tick increments: the seasonal one is zero-mean over a year, so the
+  // climate returns to baseline each cycle instead of drifting. seasonalTempAmp is the moderate strength Kevin
+  // signed off on (~+/-1.5 temp); aridity swings the opposite way (warm season = moister) at ~0.6x, as before.
+  seasonalTempAmp:1.5, seasonalAridAmp:0.9,
+  anomalyTempAmp:0.8, anomalyAridAmp:0.5,   // drifting warm/cool blobs (anomalies toggle)
+  volcanoTempAmp:1.2, volcanoAridAmp:0.8,   // ash cooling at a volcano peak; ring tiles get half / a quarter
   anomalySpeed:0.0005, anomalyWavelength:40.0, anomalyBlobCount:3, anomalyBlobRadius:25,
   biomeStabilityThreshold:20,
   ecoActive:true, ecoRender:true,
@@ -276,10 +286,7 @@ function screenToTile(clientX,clientY){
 
 // ===== Climate System =====
 function climateInit(){
-  modTempSeasonal = new Float32Array(W*H); modTempAnom = new Float32Array(W*H); modTempVolc = new Float32Array(W*H);
-  modAridSeasonal = new Float32Array(W*H); modAridAnom = new Float32Array(W*H); modAridVolc = new Float32Array(W*H);
-  modArid = new Float32Array(W*H);
-  for(var i=0; i<W*H; i++){ modTempSeasonal[i]=0; modTempAnom[i]=0; modTempVolc[i]=0; modAridSeasonal[i]=0; modAridAnom[i]=0; modAridVolc[i]=0; modArid[i]=0; }
+  baseTemp = new Float32Array(W*H); baseArid = new Float32Array(W*H);
   initAnomalyBlobs();
 }
 function initAnomalyBlobs(){
@@ -1448,4 +1455,4 @@ function restoreState(snap){
 export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, snapshotState, restoreState, CFG, flora, fauna, tick, W, H };
 // Additional live bindings for the river structural tests + headless probe (grid/elev are
 // reassigned in initWorld; in-place mutation of them from a test paints a synthetic surface).
-export { generateRivers, clearRivers, riverData, grid, elev, aridity, T, buildSnapshot };
+export { generateRivers, clearRivers, riverData, grid, elev, aridity, tempField, T, buildSnapshot };

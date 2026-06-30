@@ -8,6 +8,15 @@
 //                                  [--repeat=1]      (measured windows per seed; with --snapshot the
 //                                                     warmup is paid once, so this shows the runtime cut)
 //                                  [--traj]          (print a coarse per-seed trajectory)
+//                                  [--seasons]       (enable CFG.seasonalTilt - the climate A/B switch)
+//                                  [--anomalies] [--volcano]  (the other two climate toggles)
+//                                  [--seasonlen=N]   (CFG.climateSeasonLength; default 10000 - shorten to
+//                                                     fit several full seasons inside --ticks)
+//                                  [--intensity=N]   (CFG.climateIntensity multiplier; default 1.0)
+//
+// Climate A/B: warmup ALWAYS runs climate-off (a clean genesis baseline), then the climate toggles are
+// applied just before the measured window, so the only difference vs the seasons-off baseline is the
+// window's climate. This isolates the ecological effect of seasons from any warmup-path difference.
 //
 // The ecology is now seeded (eRng), so a seed reproduces the same run. The cycle-aware metrics below
 // (phase lag, per-trophic period/amplitude, completed cycles, persistence, min floor, cap-hits,
@@ -27,13 +36,17 @@ function parseArgs() {
   // Defaults aim for a DEVELOPED world: terrain genesis is slow, so ~3k warmup ticks are needed
   // before there is enough land/flora to measure ecology on. Scale --seeds / --warmup down for a smoke check.
   const o = { seeds: 6, warmup: 3000, ticks: 1000, herb: 24, carn: 8, flora: 40, sample: 5,
-    repeat: 1, snapshot: false, traj: false };
+    repeat: 1, snapshot: false, traj: false,
+    seasons: false, anomalies: false, volcano: false, seasonlen: 10000, intensity: 1.0 };
   for (const a of process.argv.slice(2)) {
     const m = /^--([a-z]+)(?:=(.+))?$/.exec(a);
     if (!m) continue;
     const [, k, v] = m;
     if (k === 'traj') o.traj = true;
     else if (k === 'snapshot') o.snapshot = true;
+    else if (k === 'seasons') o.seasons = true;
+    else if (k === 'anomalies') o.anomalies = true;
+    else if (k === 'volcano') o.volcano = true;
     else if (k in o && v !== undefined) o[k] = Number(v);
   }
   return o;
@@ -249,7 +262,23 @@ function measureWindow(seed, o) {
 }
 
 const o = parseArgs();
-console.log(`\nWorldbuilder measurement harness`);
+// Season length + intensity only bite when a toggle is on, but set them always so they are in effect
+// the moment the window enables a toggle. The toggles themselves are flipped per-window (see below).
+sim.CFG.climateSeasonLength = o.seasonlen;
+sim.CFG.climateIntensity = o.intensity;
+const anyClimate = o.seasons || o.anomalies || o.volcano;
+function setClimateToggles(on) {
+  sim.CFG.seasonalTilt = on && o.seasons;
+  sim.CFG.anomalies = on && o.anomalies;
+  sim.CFG.volcanoAsh = on && o.volcano;
+}
+setClimateToggles(false); // warmup baseline is always climate-off
+
+const climateLabel = anyClimate
+  ? `CLIMATE-ON [${[o.seasons && 'seasons', o.anomalies && 'anomalies', o.volcano && 'volcano'].filter(Boolean).join('+')}` +
+    ` len=${o.seasonlen} intensity=${o.intensity}]`
+  : 'climate-off (baseline)';
+console.log(`\nWorldbuilder measurement harness  -  ${climateLabel}`);
 console.log(`seeds=${o.seeds} warmup=${o.warmup} ticks=${o.ticks} seed-fauna=${o.herb}H/${o.carn}C flora=${o.flora} sample=${o.sample}` +
   ` repeat=${o.repeat}${o.snapshot ? ' [snapshot]' : ''}\n`);
 
@@ -265,9 +294,11 @@ for (let s = 0; s < o.seeds; s++) {
   for (let rep = 0; rep < o.repeat; rep++) {
     if (o.snapshot) { sim.restoreState(snap); }
     else { const w0 = Date.now(); warm(seed, o); tWarm += Date.now() - w0; }
+    setClimateToggles(true);  // enable climate ONLY for the measured window
     const m0 = Date.now();
     r = measureWindow(seed, o);
     tMeasure += Date.now() - m0;
+    setClimateToggles(false); // restore the clean warmup baseline for the next seed/rep
   }
   rows.push(r); // metrics are deterministic across repeats; the last one represents the seed
 
