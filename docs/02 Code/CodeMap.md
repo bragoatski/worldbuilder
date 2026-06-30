@@ -43,7 +43,12 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
 - **Inspector / tooltip:** `inspectTile`, `pct01`, `updateTooltip`.
 - **Export / import:** `exportPNG`, `exportJSON`, `importJSON` (snapshot version `wb-eco-1`).
 - **HUD:** `drawPopGraph`, `drawHUD`.
-- **Loop:** `init`, `step` (the per-tick pipeline), `loop`.
+- **Chronicle (the world's memory):** `chronicleSample` (pure, runs at the end of `step()` on a 10-tick
+  cadence), `chronicleStats`, `chronicleAdd`/`chronicleNote` (public hook for god-powers), `_crossLadder`
+  (milestone ladders), `newChronicle`, `renderChronicle` (the only DOM part - feeds the `#panelChronicle`
+  sidebar panel + `#chronicleRecords` strip). `chronicle` state round-trips through snapshot/restore and
+  resets in `initWorld`. Pure core is gate-tested (`sim.test.js` chronicle block); render is gate-blind.
+- **Loop:** `init`, `step` (the per-tick pipeline; ends with `chronicleSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.
 

@@ -123,7 +123,30 @@ DEPLOYED 2026-06-29 (Kevin's call: ship it). OPEN follow-ups: visual eyeball of 
 Climate Δ overlay (render is gate-blind, not yet eyeballed); the amp knobs (`seasonalTempAmp` etc.) have no
 UI sliders yet (tunable in code); this STATUS doc-fix sits on `ecology-balance` ahead of `main` by one commit.
 
+## Chronicle - Living World chunk 1 (2026-06-29) - DONE, deploying
+Direction set with Kevin (see `docs/01 Design/Living World Roadmap.md`): AMPLIFY the simulation, do not
+discard it. Threads 1 (deepen the living-world sim) + 2 (god-game agency) first; 3 (shareable worlds) folds
+in. Per-chunk workflow: one large chunk -> full gate -> docs -> commit -> deploy -> next-session prompt.
+
+Chunk 1 = **the Chronicle** (the world's memory). A PURE, headless-safe event log: `chronicleSample()` runs
+at the END of `step()` on a 10-tick cadence, derives population/lineage stats, and emits typed events off
+round-number milestone LADDERS (so the feed reads as a story, not +1 spam): extinctions/arrivals, population
++ flora + land milestones, generation milestones (named once a lineage hits gen>=5), crashes, vivid-lineage
+emergence, longevity records. No DOM / no RNG in the sampler (Worker-safe + deterministic);
+`renderChronicle()` is the only DOM part - a new "Chronicle" sidebar panel + a notable-life records strip.
+`chronicleNote()` is exposed for chunk-3 god-powers to log deliberate acts. BALANCE-SAFE (read-only
+observation; no fauna rate/behavior touched), and it round-trips through snapshot/restore. Gate GREEN:
+typecheck + lint (0 errors) + 10 tests (new: ladder-monotone, `chronicleNote` contract,
+determinism-through-snapshot) + build. The PANEL RENDER is gate-blind -> needs an eyeball in the live app.
+
 ## NEXT (in order)
+The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is now the driver; next chunk first,
+then the still-valid pre-roadmap backlog.
+0. **Living World chunk 2 - make evolution VISIBLE (pillar A).** Heritable size gene (cosmetic-first =
+   balance-safe) + size-scaled fauna render; a follow-a-creature camera + ancestry panel. The genome
+   (climate prefs + color genes) already mutates + inherits via `mutateFaunaChild` - this makes it
+   watchable. If size later affects energy/eat it goes through the harness. Roadmap has the full sequence
+   (god-powers, shareable permalinks, scenarios, speciation).
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence
