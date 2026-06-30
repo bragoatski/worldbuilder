@@ -1170,7 +1170,7 @@ function draw(){
     else if(p.type==='starve'){ctx.fillStyle='#888';ctx.beginPath();ctx.arc(px+PIX/2,py+PIX/2,PIX/3,0,Math.PI*2);ctx.fill();}
     else if(p.type==='age'){ctx.fillStyle='#aaa';ctx.fillRect(px+1,py+PIX/2,PIX-2,1);}
   }ctx.globalAlpha=1.0;deathParticles=aliveParticles;
-  drawHUD();
+  drawHUD();renderChronicle();
 }
 
 // ===== Inspector =====
@@ -1283,6 +1283,94 @@ function drawHUD(){
   drawPopGraph();
 }
 
+// ===== Chronicle: the world's memory =====
+// A pure, headless-safe event log. chronicleSample() runs at the END of step() on a fixed cadence:
+// it derives a snapshot of populations/lineages and emits typed events by comparing to the previous
+// sample and to all-time records (round-number milestone ladders, so the feed reads as a story and
+// does not spam on every +1). NO DOM and NO RNG here (Worker-safe + deterministic, so two identical
+// seeds produce an identical chronicle). renderChronicle() is the only DOM-touching part (draw path).
+var CHRONICLE_SAMPLE_EVERY = 10;   // ticks between samples
+var CHRONICLE_MAX_EVENTS   = 200;  // ring-buffer cap (oldest events drop off the front)
+var CHRON_HERB_LADDER = [50,100,200,400,800];
+var CHRON_CARN_LADDER = [20,40,80,160];
+var CHRON_FLORA_LADDER = [500,1000,2000,4000,8000];
+var CHRON_LAND_LADDER = [25,50,75,90];
+function newChronicle(){
+  return { events:[], nextId:1, prev:null,
+    records:{ peakHerb:0, peakCarn:0, peakFlora:0, herbPopRung:0, carnPopRung:0, floraPopRung:0,
+      herbGenRung:0, carnGenRung:0, oldestAge:0, landRung:0, firstCarn:false } };
+}
+var chronicle = newChronicle();
+// Highest ladder value <= value, but only if it exceeds the previously-crossed rung (else prevRung).
+function _crossLadder(ladder,value,prevRung){var hit=prevRung;for(var i=0;i<ladder.length;i++){if(value>=ladder[i]&&ladder[i]>hit)hit=ladder[i];}return hit;}
+function _capType(t){return t==='herbivore'?'Herbivore':t==='carnivore'?'Carnivore':(t?t.charAt(0).toUpperCase()+t.slice(1):'Creature');}
+function chronicleStats(){
+  var herb=0,carn=0,hv=0,cv=0,mhg=0,mcg=0,oldestAge=0,oldestRef=null,topHerb=null,topCarn=null;
+  for(var i=0;i<fauna.length;i++){var f=fauna[i];if(!f)continue;
+    if(f.type==='herbivore'){herb++;if(f.vivid)hv++;if(f.gen>mhg){mhg=f.gen;topHerb=f;}}
+    else{carn++;if(f.vivid)cv++;if(f.gen>mcg){mcg=f.gen;topCarn=f;}}
+    if(f.age>oldestAge){oldestAge=f.age;oldestRef=f;}}
+  return { flora:flora.length, herb:herb, carn:carn, herbVivid:hv, carnVivid:cv, maxHerbGen:mhg, maxCarnGen:mcg,
+    oldestAge:oldestAge|0,
+    oldestName: oldestRef?(getSpeciesName(oldestRef,'fauna')||_capType(oldestRef.type)):null,
+    topHerbName: topHerb?getSpeciesName(topHerb,'fauna'):null,
+    topCarnName: topCarn?getSpeciesName(topCarn,'fauna'):null,
+    land: landCoverage() };
+}
+function chronicleAdd(kind,text,color){
+  var e={ id:chronicle.nextId++, tick:tick, kind:kind, text:text, color:color||'#4a5568' };
+  chronicle.events.push(e);
+  if(chronicle.events.length>CHRONICLE_MAX_EVENTS) chronicle.events.shift();
+  return e;
+}
+// Public hook for the UI / god-powers (chunk 3) to record a deliberate act in the same feed.
+function chronicleNote(kind,text,color){ return chronicleAdd(kind,text,color); }
+function chronicleSample(){
+  if(tick%CHRONICLE_SAMPLE_EVERY!==0) return;
+  var s=chronicleStats(), p=chronicle.prev, r=chronicle.records;
+  if(p){
+    // Arrivals + extinctions (state transitions across the sample gap)
+    if(p.carn===0&&s.carn>0){ if(!r.firstCarn){r.firstCarn=true;chronicleAdd('milestone','The first predators took hold. The food web now has two tiers.','#e85454');} else chronicleAdd('arrival','Carnivores returned to the world.','#e85454'); }
+    if(p.carn>0&&s.carn===0) chronicleAdd('extinct','The last predator vanished. Carnivores are extinct.','#e85454');
+    if(p.herb===0&&s.herb>0) chronicleAdd('arrival','Herbivores returned to the world.','#5bb8f0');
+    if(p.herb>0&&s.herb===0) chronicleAdd('extinct','The last grazer died. Herbivores are extinct.','#5bb8f0');
+    // Crashes (steep drop from the previous sample, above a floor so ordinary churn is ignored)
+    if(p.herb>=40&&s.herb<p.herb*0.55) chronicleAdd('crash','Herbivore numbers crashed ('+p.herb+' to '+s.herb+').','#5bb8f0');
+    if(p.carn>=20&&s.carn<p.carn*0.55) chronicleAdd('crash','Carnivore numbers crashed ('+p.carn+' to '+s.carn+').','#e85454');
+    // Vivid lineage emergence (the rare bright mutants taking hold)
+    if(p.herbVivid===0&&s.herbVivid>0) chronicleAdd('vivid','A vivid lineage emerged among the herbivores.','#e8a838');
+    if(p.carnVivid===0&&s.carnVivid>0) chronicleAdd('vivid','A vivid lineage emerged among the carnivores.','#e854e8');
+  }
+  // Population milestones (round-number ladders read as a story, not +1 spam)
+  var hr=_crossLadder(CHRON_HERB_LADDER,s.herb,r.herbPopRung); if(hr>r.herbPopRung){r.herbPopRung=hr;chronicleAdd('record','Herbivores passed '+hr+' for the first time.','#5bb8f0');}
+  var crn=_crossLadder(CHRON_CARN_LADDER,s.carn,r.carnPopRung); if(crn>r.carnPopRung){r.carnPopRung=crn;chronicleAdd('record','Carnivores passed '+crn+' for the first time.','#e85454');}
+  var flr=_crossLadder(CHRON_FLORA_LADDER,s.flora,r.floraPopRung); if(flr>r.floraPopRung){r.floraPopRung=flr;chronicleAdd('record','Flora passed '+flr+' for the first time.','#3fcf6a');}
+  // Generation milestones (every 5th generation; named once a lineage is old enough)
+  var hg=Math.floor(s.maxHerbGen/5)*5; if(hg>=5&&hg>r.herbGenRung){r.herbGenRung=hg;chronicleAdd('lineage','A herbivore lineage reached generation '+hg+(s.topHerbName?(' ('+s.topHerbName+')'):'')+'.','#5bb8f0');}
+  var cg=Math.floor(s.maxCarnGen/5)*5; if(cg>=5&&cg>r.carnGenRung){r.carnGenRung=cg;chronicleAdd('lineage','A carnivore lineage reached generation '+cg+(s.topCarnName?(' ('+s.topCarnName+')'):'')+'.','#e85454');}
+  // Longevity record (notable only when it clears the previous best by a margin)
+  if(s.oldestAge>=250&&s.oldestAge>r.oldestAge+50){ r.oldestAge=s.oldestAge; chronicleAdd('record','A '+(s.oldestName||'creature')+' is the longest-lived yet (age '+s.oldestAge+').','#9fb4c8'); }
+  else if(s.oldestAge>r.oldestAge) r.oldestAge=s.oldestAge;
+  // Land development milestones
+  var lr=_crossLadder(CHRON_LAND_LADDER,Math.round(s.land*100),r.landRung); if(lr>r.landRung){r.landRung=lr;chronicleAdd('terrain','The land grew to '+lr+'% of the world.','#8a9a7b');}
+  // Silent peak records for the readout strip
+  if(s.herb>r.peakHerb)r.peakHerb=s.herb; if(s.carn>r.peakCarn)r.peakCarn=s.carn; if(s.flora>r.peakFlora)r.peakFlora=s.flora;
+  chronicle.prev=s;
+}
+function renderChronicle(){
+  var feed=document.getElementById('chronicleFeed'); if(!feed) return;
+  var evs=chronicle.events;
+  if(!evs.length){ feed.innerHTML='<div class="chron-empty">No history yet. Press play and let the world unfold.</div>'; }
+  else { var html='',lo=Math.max(0,evs.length-60);
+    for(var i=evs.length-1;i>=lo;i--){ var e=evs[i];
+      html+='<div class="chron-row"><span class="chron-dot" style="background:'+e.color+'"></span><span class="chron-text">'+e.text+'</span><span class="chron-tick">'+e.tick+'</span></div>'; }
+    feed.innerHTML=html; }
+  var rec=document.getElementById('chronicleRecords');
+  if(rec){ var r=chronicle.records; var topGen=Math.max(r.herbGenRung,r.carnGenRung);
+    rec.innerHTML='<span>Events <b>'+chronicle.events.length+'</b></span><span>Peak herb <b>'+r.peakHerb+'</b></span><span>Peak carn <b>'+r.peakCarn+'</b></span><span>Top gen <b>'+topGen+'</b></span><span>Oldest <b>'+r.oldestAge+'</b></span>'; }
+  var badge=document.getElementById('chronicleBadge'); if(badge) badge.textContent=String(chronicle.events.length);
+}
+
 // ===== Init & loop =====
 function initWorld(seedOverride){
   // Seed setup: use override if a valid number, else random (DOM-free core)
@@ -1293,7 +1381,7 @@ function initWorld(seedOverride){
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
   tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
-  popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};placeMode='none';clearRivers();resetZoomPan();
+  popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};chronicle=newChronicle();placeMode='none';clearRivers();resetZoomPan();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
 }
@@ -1301,6 +1389,7 @@ function init(){
   var seedEl=document.getElementById('seedInput');
   var seedVal=seedEl?seedEl.value.trim():'';
   initWorld(seedVal);
+  chronicleNote('terrain','A new world begins.','#8a9a7b');
   var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;
   if(seedEl&&!seedVal)seedEl.value='';
   resize();buildSliders();draw();
@@ -1315,7 +1404,7 @@ function step(){
   // (The old code suppressed this whenever climate was on, which froze the base and made the seasonal delta
   // accumulate only once genesis stopped - the regime-dependence + drift bug. Base is climate-independent.)
   if(genesisChanged||tick%20===1){computeTemperature();computeAridity();}
-  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();
+  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();chronicleSample();
 }
 function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
@@ -1370,6 +1459,8 @@ function runAssertions(){
   // Pop history tests
   t('PopHistory initialized',popHistory&&Array.isArray(popHistory.flora));
   t('PopHistory len constant',POP_HISTORY_LEN===500);
+  t('Chronicle initialized',chronicle&&Array.isArray(chronicle.events));
+  t('Chronicle events bounded',chronicle.events.length<=CHRONICLE_MAX_EVENTS);
   // Grazing balance tests
   out.push('');out.push('— GRAZING BALANCE —');
   t('Herb eat cooldown exists',CFG.herbivoreEatSpeed>0);
@@ -1447,7 +1538,7 @@ function snapshotState(){
     seed:_seed, tick:tick, W:W, H:H,
     floraIdCounter:floraIdCounter, faunaIdCounter:faunaIdCounter,
     yearlyVariation:yearlyVariation, sunPhase:sunPhase, riverGenerated:riverGenerated,
-    WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache,
+    WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache, chronicle:chronicle,
     // terrain + volcano fields
     grid:grid, elev:elev, aridity:aridity, tempField:tempField, sunlight:sunlight,
     coastTTL:coastTTL, adjCooldown:adjCooldown, ringDone:ringDone, hillDecayCount:hillDecayCount,
@@ -1471,7 +1562,7 @@ function restoreState(snap){
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
   floraIdCounter=s.floraIdCounter; faunaIdCounter=s.faunaIdCounter;
   yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; riverGenerated=s.riverGenerated;
-  WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache;
+  WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle();
   grid=s.grid; elev=s.elev; aridity=s.aridity; tempField=s.tempField; sunlight=s.sunlight;
   coastTTL=s.coastTTL; adjCooldown=s.adjCooldown; ringDone=s.ringDone; hillDecayCount=s.hillDecayCount;
   peakVolcano=s.peakVolcano; volcActive=s.volcActive; volcAge=s.volcAge; volcLife=s.volcLife;
@@ -1486,6 +1577,8 @@ function restoreState(snap){
 // Pure entry points for headless use (gate + measurement harness). Live bindings
 // reflect reassignment inside the module (e.g. flora/fauna/tick after a step).
 export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, snapshotState, restoreState, CFG, flora, fauna, tick, W, H };
+// Chronicle (the world's memory): live binding + the pure helpers the gate exercises directly.
+export { chronicle, chronicleNote, _crossLadder };
 // Additional live bindings for the river structural tests + headless probe (grid/elev are
 // reassigned in initWorld; in-place mutation of them from a test paints a synthetic surface).
 export { generateRivers, clearRivers, riverData, grid, elev, aridity, tempField, T, buildSnapshot };

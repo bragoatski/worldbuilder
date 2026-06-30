@@ -489,6 +489,16 @@
   .pop-graph-legend { display:flex; gap:12px; margin-top:4px; font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
   .pop-graph-legend .pg-dot { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; vertical-align:middle; }
 
+  /* Chronicle (the world's memory) */
+  .chron-records { display:flex; flex-wrap:wrap; gap:3px 12px; font-family:var(--mono); font-size:10px; color:var(--fg-dim); margin-bottom:7px; }
+  .chron-records b { color:var(--fg); font-weight:600; }
+  .chron-feed { max-height:208px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+  .chron-row { display:flex; align-items:baseline; gap:6px; font-family:var(--mono); font-size:10px; line-height:1.4; }
+  .chron-row .chron-dot { flex:0 0 auto; width:6px; height:6px; border-radius:50%; align-self:flex-start; margin-top:3px; }
+  .chron-row .chron-text { flex:1 1 auto; color:var(--fg); }
+  .chron-row .chron-tick { flex:0 0 auto; color:var(--fg-faint); font-variant-numeric:tabular-nums; }
+  .chron-empty { font-family:var(--mono); font-size:10px; color:var(--fg-dim); font-style:italic; padding:4px 0; }
+
   /* Placement mode */
   .place-active { background:var(--accent-dim) !important; border-color:var(--accent) !important; color:var(--accent) !important; }
   .place-banner { display:none; padding:2px 8px; font-family:var(--mono); font-size:10px; color:var(--amber); background:var(--amber-dim); border-radius:3px; margin-left:6px; }
@@ -752,6 +762,19 @@
                 <span><span class="pg-dot" style="background:#e85454"></span>Carnivore</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Chronicle (the world's memory) -->
+        <div class="panel" id="panelChronicle">
+          <div class="panel-head" onclick="togglePanel('panelChronicle')">
+            <span class="chev">▼</span>
+            <h3>Chronicle</h3>
+            <span class="badge" id="chronicleBadge">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="chron-records" id="chronicleRecords"></div>
+            <div class="chron-feed" id="chronicleFeed"><div class="chron-empty">No history yet. Press play and let the world unfold.</div></div>
           </div>
         </div>
 

@@ -158,3 +158,54 @@ describe('rivers (hydrology pipeline)', () => {
     expect(fingerprint()).toBe(fingerprint());
   });
 });
+
+// Chronicle (the world's memory): a pure, headless-safe event log driven from step(). Two properties
+// matter. (1) The pure helpers behave: the milestone ladder only advances, and chronicleNote appends a
+// well-formed event. (2) The chronicle is DETERMINISTIC through the engine: replaying one snapshot twice
+// must produce a byte-identical event sequence (it is derived purely from seeded sim state). The render
+// (renderChronicle) is gate-blind DOM and is verified in the browser, not here.
+describe('chronicle (the world\'s memory)', () => {
+  it('milestone ladder only advances past the previous rung', () => {
+    expect(sim._crossLadder([50, 100, 200], 150, 0)).toBe(100);
+    expect(sim._crossLadder([50, 100, 200], 40, 0)).toBe(0);
+    expect(sim._crossLadder([50, 100, 200], 250, 0)).toBe(200);
+    expect(sim._crossLadder([50, 100, 200], 80, 50)).toBe(50);   // 80 clears no NEW rung
+    expect(sim._crossLadder([50, 100, 200], 120, 50)).toBe(100);
+  });
+
+  it('chronicleNote appends a well-formed event, and initWorld clears the log', () => {
+    sim.initWorld(99);
+    expect(sim.chronicle.events.length).toBe(0); // pure initWorld starts with an empty chronicle
+    const e = sim.chronicleNote('test', 'hello world', '#abcdef');
+    expect(sim.chronicle.events.length).toBe(1);
+    expect(e.kind).toBe('test');
+    expect(e.text).toBe('hello world');
+    expect(e.color).toBe('#abcdef');
+    expect(typeof e.tick).toBe('number');
+  });
+
+  it('is deterministic through a snapshot (replay twice -> identical event sequence)', () => {
+    sim.initWorld(31337);
+    for (let i = 0; i < 600; i++) sim.step();
+    const snap = sim.snapshotState();
+    function replay() {
+      sim.restoreState(snap);
+      sim.seedFloraCluster(40);
+      sim.seedFaunaGroup('herbivore', 24);
+      sim.seedFaunaGroup('carnivore', 8);
+      for (let i = 0; i < 250; i++) sim.step();
+      return sim.chronicle.events.map((e) => `${e.tick}|${e.kind}|${e.text}`);
+    }
+    const a = replay();
+    const b = replay();
+    expect(b).toEqual(a);
+    // The chronicle actually observed the seeded life, and every event is well-formed.
+    expect(sim.chronicle.records.peakHerb).toBeGreaterThan(0);
+    const kinds = new Set(['milestone', 'arrival', 'extinct', 'crash', 'vivid', 'record', 'lineage', 'terrain']);
+    for (const e of sim.chronicle.events) {
+      expect(e.tick).toBeLessThanOrEqual(sim.tick);
+      expect(kinds.has(e.kind)).toBe(true);
+      expect(e.text.length).toBeGreaterThan(0);
+    }
+  }, 30000);
+});
