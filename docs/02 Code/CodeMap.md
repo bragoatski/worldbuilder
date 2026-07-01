@@ -43,6 +43,16 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
 - **Rendering:** `hexToRGB` / `rgbToHex` / `blendColors`, `draw` (terrain + 9 overlays + ecotone blend + beach render + river render + flora / fauna render + death particles). Fauna markers are scaled by the `size` gene (`dim`); a follow-highlight accent ring is drawn around the `followId` creature; `draw()` ends with `drawHUD();renderChronicle();updateFollow();`.
 - **Inspector / tooltip:** `inspectTile` (now shows each creature's `size` + a per-creature `.follow-btn`), `pct01`, `updateTooltip`.
 - **Export / import:** `exportPNG`, `exportJSON`, `importJSON` (snapshot version `wb-eco-1`).
+- **Shareable worlds (chunk 4, thread 3):** a world is a `?w=` permalink. `buildWorldCode` (pure recipe
+  `{v,seed,preset,cfg}` where `cfg`=diff-from-`DEFAULT_CFG` MINUS the `_DERIVED_CFG_KEYS` recomputed from
+  `elevationIntensity` -> a default world = empty diff) / `applyWorldCode` (pure: reset CFG to default, layer the
+  diff for KNOWN + matching-typed keys only since a URL is untrusted, restore the preset, `initWorld(seed)`;
+  throws on a bad code). `encodeWorldCode`/`decodeWorldCode` (URL-safe base64), `worldPermalink`, `getWorldCodeParam`.
+  DOM wrappers: `copyWorldLink` (clipboard + `history.replaceState`), `worldPostcard`/`copyPostcard` (a
+  Chronicle-driven blurb), `_flashBtn`. Boot restore: `init()` consumes `_pendingWorldCode` (the `?w=` param
+  captured at load) ONCE, so a later preset/reset rolls fresh. Balance-safe: the only sim mutation is the same
+  `initWorld` re-genesis the preset selector uses; nothing runs in `step()`. Pure cores gate-tested
+  (`sim.test.js` shareable-worlds block); the buttons/clipboard/address-bar + `init()` boot branch are gate-blind.
 - **HUD:** `drawPopGraph`, `drawHUD`.
 - **Chronicle (the world's memory):** `chronicleSample` (pure, runs at the end of `step()` on a 10-tick
   cadence), `chronicleStats`, `chronicleAdd`/`chronicleNote` (public hook for god-powers), `_crossLadder`

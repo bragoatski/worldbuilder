@@ -185,13 +185,38 @@ block: brush raise/lower land<->sea, meteor wipes+craters+logs, drought withers+
 The RENDER + the brush/event feel are gate-blind DOM -> eyeball in the live app (Raise/Lower then click the map;
 Meteor/Drought/Bloom and watch the Chronicle + the map react).
 
+## Shareable worlds - Living World chunk 4 (2026-06-30) - DONE + DEPLOYING (code 30f9117)
+Thread 3 (shareable worlds): a world is a shareable LINK. Insight: a world is fully determined at GENESIS by
+its **seed + config** (terrain + ecology are deterministic from the seeded streams; `WORLD` is re-derived from
+the seed by `pickWorldMeta`), so a compact world code `{ v, seed, preset, cfg-diff-from-default }` reproduces
+it - far smaller than the baked `wb-eco-1` JSON snapshot (which stays the exact-evolved-state download path).
+Encoded into a `?w=` URL param, so a world is a permalink. Shipped, balance-safe by construction:
+- **`buildWorldCode`/`applyWorldCode`** (pure) - build the recipe (cfg = diff-from-`DEFAULT_CFG` MINUS the
+  derived elevation keys, which `applyElevationIntensity` recomputes on load -> a default world encodes to an
+  EMPTY diff) / apply it (reset CFG to default, layer the diff for KNOWN + matching-typed keys only since a URL
+  is untrusted, restore the preset label, `initWorld(seed)`; throws on a malformed / bad-version / seedless code).
+- **`encodeWorldCode`/`decodeWorldCode`** - URL-safe base64 codec; `worldPermalink` = `origin+pathname+'?w='+code`.
+- **Boot restore** - `init()` consumes a `?w=` param ONCE (`_pendingWorldCode`, one-shot so a later preset/reset
+  rolls fresh), applying the code + syncing the UI + noting the Chronicle; a malformed code falls through to a
+  fresh world.
+- **Share deck seg** (index.html): **Copy Link** (clipboard + `history.replaceState` address-bar reflect) +
+  **Postcard** (`worldPostcard`: a Chronicle-driven blurb - seed/preset, tick + land% + flora/herb/carn,
+  biggest + oldest named creature, up to 3 recent story beats, and the link). No exclamation marks.
+**Why balance-safe:** the only sim mutation is `applyWorldCode` -> `initWorld`, the SAME re-genesis path the
+preset selector already uses, and it runs only from boot / a button, never in `step()` -> the measured `eRng`
+loop is byte-identical (no harness A/B needed; Kevin flagged this in the prompt). Gate GREEN: typecheck clean +
+lint 0 errors (32 warnings, +9 warn-only legacy) + **22 tests** (was 17; new shareable-worlds block: round-trip,
+deterministic replay, default-reset, untrusted-input robustness, postcard) + build (bundle `index-BBeJNJbL.js`).
+**Gate-blind (DOM):** the Copy Link / Postcard buttons + clipboard + address-bar + `init()`'s `?w=` boot branch
+-> eyeball in the live app (load a shared link, confirm the same world; see the chunk-4 handoff checklist).
+
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is now the driver; next chunk first,
 then the still-valid pre-roadmap backlog.
-0. **Living World chunk 4 - Shareable worlds (thread 3).** Seed + CFG -> URL permalink (builds on the JSON
-   export) + a "copy world link" action; optionally a Chronicle-driven "postcard". Balance-safe (no step
-   changes). Roadmap has the remaining sequence after it (scenarios + objectives, then speciation + trophic
-   depth - the harness-heavy chunks, last).
+0. **Living World chunk 5 - Scenarios + light objectives (pillar E).** A few starting setups + win-checks on
+   top of the sandbox (Genesis, Ice Age, "keep 3 trophic levels alive N ticks"). Depends on the Chronicle
+   (done). Roadmap has the remaining sequence after it (then speciation + trophic depth - the harness-heavy
+   chunks, last).
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence

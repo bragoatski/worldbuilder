@@ -70,8 +70,11 @@ next-session prompt for the following chunk. One chunk per cycle.
    aridity-weighted flora dieback), bloom (`bloomEvent`: a flora burst) - each logging a `'god'` Chronicle event.
    Balance-safe BY CONSTRUCTION: the interventions run only from UI hooks, never inside `step()`, so the harness
    (which only exercises `step()`) is byte-identical before/after (verified). See STATUS + the chunk-3 handoff.
-4. **Shareable worlds (thread 3).** Seed + CFG -> URL permalink (builds on JSON export); a
-   "copy world link" action. Optionally a Chronicle-driven "postcard". Balance-safe.
+4. **Shareable worlds (thread 3).** DONE 2026-06-30 (deployed). A world is a permalink: a compact world code
+   `{ seed, preset, cfg-diff-from-default }` (WORLD is re-derived from the seed) encoded into a `?w=` URL
+   (`buildWorldCode`/`applyWorldCode` + a base64 codec), a boot-time one-shot restore, and a Share deck seg
+   (Copy Link + a Chronicle-driven Postcard). Balance-safe (the only sim mutation is the same `initWorld`
+   re-genesis the preset selector uses; nothing in `step()`).
 5. **Scenarios + objectives (pillar E).** A few setups + win-checks on top of the sandbox.
 6. **Speciation (pillar C)** and **trophic depth** - the harness-heavy chunks, last.
 
@@ -87,3 +90,9 @@ next-session prompt for the following chunk. One chunk per cycle.
   bloom events, each logging a `'god'` Chronicle event. First BEHAVIOR-touching chunk, but balance-safe by
   construction (interventions never run in `step()`, so the harness is byte-identical before/after). See STATUS
   + the 2026-06-30 god-powers handoff.
+- **Chunk 4 - Shareable worlds** (2026-06-30, deployed). A world is a permalink: a compact world code
+  `{ seed, preset, cfg-diff-from-default }` (terrain + ecology are deterministic from the seed; `WORLD` is
+  re-derived) encoded into a `?w=` URL via `buildWorldCode`/`applyWorldCode` + a base64 codec, restored once at
+  boot, with a Share deck seg (Copy Link + a Chronicle-driven Postcard). Balance-safe (the only sim mutation is
+  the `initWorld` re-genesis the preset selector already uses; nothing in `step()`). See STATUS + the
+  2026-06-30 shareable-worlds handoff.
