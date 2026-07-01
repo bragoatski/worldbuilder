@@ -289,16 +289,45 @@ experiments - measured, shelved, documented, not deleted.
 world booms/busts; open the panel, check names/pop/gen); if you flip `CFG.scavengersEnabled` on in the console,
 the olive-brown hollow-square scavengers + dark carrion specks + the scavenger species rows.
 
+## Trophic depth take 2 - scavenger VIABLE + shipped ON - Living World chunk 7 (2026-07-01) - DONE + deploying
+Made the chunk-6 detritivore self-sustaining WITHOUT regressing C2, then flipped `CFG.scavengersEnabled` ON.
+The failure mode was food scarcity (carrion ~11 corpses / ~2000 tiles = too sparse for a random wanderer),
+so take-2 attacked it on four complementary axes + fixed a hidden confound:
+- **`carrionMaxAge` 100 -> 300** - carrion accumulates (~11 -> ~23 standing) AND post-crash death PULSES persist
+  long enough to feed a scavenger bloom (the realistic "scavengers boom after a die-off").
+- **`scavengerEatGain` 20 -> 35** - a single find sustains a wanderer between corpses.
+- **Ring-2-4 carrion SCENT** scan in `scoreTileForFauna` (mirrors the carnivore prey-scent) - directs movement
+  toward a distant kill/crash field. This is the lever that actually FINDS sparse food.
+- **Carrion-dependent immigration RESCUE** in `naturalFaunaSpawn` (`scavengerRescueRate/MinCarrion/ScavCap`, a
+  knob-D analog): scavengers immigrate while scarce AND corpses are present, capped at 6 (rescue, not subsidy),
+  guarded on the flag so OFF draws no eRng.
+- **Confound fixed:** `naturalFaunaSpawn` had lumped scavengers into the carnivore count (`else cc++`), which
+  once scavengers exist starves knob D's carnivore-rescue headroom (this helped tank the chunk-6 carn 75->58).
+  The three tiers are now counted SEPARATELY.
+
+**A/B verdict (measure -> A/B -> keep-if-better, all at 12 seeds): PASS, shipped ON.** C2 reference (`--scav=0`):
+extinction 0%, carn-persistence 75% (9/12), cap-hits 0, final fauna 61.3 / flora 2211. Before (old tuning
+`--scav=12`): extinction 17%, carn 58%, scavenger-persistence 8% (final scav 2.5) - confirmed the documented
+failure. Take-2 (`--scav=12`): extinction 0%, carn 75% (9/12), cap-hits 0, final fauna 60.5 / flora 2210 ==
+C2 EXACTLY, with **scavenger-persistence 100% (12/12), final scav mean 11.1** (above the rescue cap of 6 =>
+genuinely reproducing, not just rescue-propped); it even mildly DAMPS the herb oscillation (amp 29 vs 40).
+Bar cleared (neutral-to-better herb/carn + non-zero scav persistence + 0 cap-hits), so `scavengersEnabled`
+defaults ON. Flag OFF stays byte-identical to C2 (`--scav=0` remains the proof). Added a `Scav` populate button
+(the rescue also auto-introduces scavengers once carrion accumulates). Gate GREEN: typecheck clean + lint 0
+errors (32 warnings unchanged) + **34 tests** (was 33; +the shipped-default-ON assertion; the flag-OFF test is
+now try/finally-isolated; one chunk-2 single-seed inheritance test disables the tier to dodge the eRng reshuffle)
++ build (bundle `index-DQuD9VMF.js`). **Gate-blind (DOM), eyeball in the live app:** the olive-brown
+hollow-square scavengers + dark carrion specks appear by default now; the `Scav` populate button; watch a
+post-crash corpse field draw scavengers in + a scavenger species row in the Species panel.
+
 ## NEXT (in order)
-The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is now the driver; next chunk first,
+The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is the driver; next chunk first,
 then the still-valid pre-roadmap backlog.
-0. **Trophic depth, take 2 - make the scavenger VIABLE + balance-safe (its own tuning loop).** The chunk-6
-   scaffolding + the `--scav` harness instrument are in place (default-off). The A/B showed the scavenger
-   starves (0% persistence; carrion too sparse) AND perturbs C2, so it needs a real measure->A/B->keep-if-better
-   loop: raise carrion density/nutrition (longer `carrionMaxAge`, higher `scavengerEatGain`) and/or scavenger
-   foraging range, and/or add a small immigration rescue (like knob D) so it cannot instantly die; re-measure at
-   >=10 seeds (persistence is noisy below that) and require neutral-to-better herb/carn + non-zero scavenger
-   persistence + 0 cap-hits before flipping the default on. THEN the apex + omnivore tiers, each its own loop.
+0. **Trophic depth take 3 - APEX predator tier, then OMNIVORE, each its own loop.** Scavenger is DONE (chunk 7,
+   shipped ON). The next trophic levels are the harder ones (an apex predator stacks a 4th level and directly
+   amplifies the paradox of enrichment; an omnivore blurs the herb/carn coupling), so each is its own
+   default-off measure->A/B->keep-if-better loop with the same bar (neutral-to-better on the existing tiers +
+   non-zero persistence for the new tier + 0 cap-hits). Reuse the `--scav`-style harness instrument pattern.
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence

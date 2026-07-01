@@ -102,16 +102,19 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
   `getSpeciesName` gate coupled to `SPECIES_MIN_GEN`. DOM (gate-blind): `renderSpecies()` (Species sidebar
   panel: living census + emerged/extinct records) in the `draw()` tail. Exports: `speciesCensus, speciesKey,
   updateSpeciesRegistry, newSpeciesRegistry, speciesRegistry`.
-- **Trophic depth: SCAVENGER experiment (chunk 6, DEFAULT-OFF `CFG.scavengersEnabled`):** a detritivore tier
+- **Trophic depth: SCAVENGER tier (chunk 7, SHIPPED DEFAULT-ON `CFG.scavengersEnabled`):** a detritivore tier
   that eats CARRION (corpses). `carrion[]` (module state, reset in `initWorld`, snapshot/restore) is pushed by
   `_dropCarrion(x,y)` on fauna death in `faunaStep` (starve/age/carnivore-kill) and consumed by scavengers;
-  it ages out at `CFG.carrionMaxAge`. `makeFauna`/`mutateFaunaChild` have a scavenger branch (olive-brown,
-  `scavenger*` CFG energy/speed/repro); `buildSpatialIndex` adds `_scavAtTile`/`_carrionAtTile`;
-  `scoreTileForFauna` has a scavenger branch (seek carrion + mild self-crowding); `faunaStep` has a scavenger
-  eat branch. Render: hollow-square marker + dark carrion specks. Harness A/B via `--scav=N` (seeds N
-  scavengers + toggles the flag in the measured window). **Flag OFF => no carrion, no scavenger code runs =>
-  eRng byte-identical to C2.** Ships default-OFF pending the harness verdict (see Engineering Lessons + STATUS).
-  Export: `carrion`.
+  it ages out at `CFG.carrionMaxAge` (chunk-7 take-2: 300). `makeFauna`/`mutateFaunaChild` have a scavenger
+  branch (olive-brown, `scavenger*` CFG energy/speed/repro/eatGain); `buildSpatialIndex` adds
+  `_scavAtTile`/`_carrionAtTile`; `scoreTileForFauna` has a scavenger branch (seek carrion + ring-2-4 carrion
+  SCENT + mild self-crowding); `faunaStep` has a scavenger eat branch; `naturalFaunaSpawn` counts the three
+  tiers SEPARATELY (so scavengers don't starve knob D's carnivore rescue) + has a carrion-dependent scavenger
+  RESCUE (`scavengerRescue*` CFG, guarded on the flag). Render: hollow-square marker + dark carrion specks;
+  `btnSpawnScav` seeds 4. Harness A/B via `--scav=N` (seeds N scavengers + toggles the flag in the measured
+  window). **Flag OFF => no carrion, no scavenger code runs => eRng byte-identical to C2** (the `--scav=0` run
+  is the C2 proof). Chunk-7 take-2 tuning made it viable + balance-neutral (harness `--scav=12` @ 12 seeds ==
+  C2 with scavenger-persistence 100%); see Engineering Lessons + STATUS. Export: `carrion`.
 - **Loop:** `init`, `step` (the per-tick pipeline; ends `chronicleSample();scenarioSample();speciesSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.

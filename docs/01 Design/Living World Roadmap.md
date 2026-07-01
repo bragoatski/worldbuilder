@@ -34,8 +34,9 @@ option because it would genuinely use the sim.
   bloom; the Chronicle/telemetry as the feedback that closes the loop.
 - **E. Scenarios + light objectives** - starting setups + win-conditions on top of the sandbox
   (Genesis, Ice Age, "keep 3 trophic levels alive 10k ticks"). Depends on B.
-- (Parked: more trophic levels - apex/scavenger/omnivore. Richest story fuel but most likely to
-  break the C2 balance, so it gets its own measured loop later, not the first push.)
+- (Trophic levels: SCAVENGER shipped in chunk 7 (2026-07-01, balance-neutral). Still parked: APEX
+  predator + OMNIVORE - richest story fuel but most likely to break the C2 balance, so each gets its
+  own measured loop, not a bundled push.)
 
 ## The balance constraint (non-negotiable)
 The hard-won C2 predator-prey balance must not silently regress. So:
@@ -89,6 +90,14 @@ next-session prompt for the following chunk. One chunk per cycle.
    experiment). **Trophic depth (scavenger)** built as a DEFAULT-OFF measured experiment; the 8-seed A/B did
    NOT clear the keep-if-better bar (scavengers went 0% persistent; carrion too sparse), so it ships off and
    its viability+balance tuning becomes a future trophic chunk (chunk 7). See STATUS + the chunk-6 handoff.
+7. **Trophic depth take 2 - scavenger viable + shipped ON** DONE 2026-07-01 (deployed, balance-neutral). The
+   chunk-6 scaffolding was made viable with four levers (`carrionMaxAge` 100->300, `scavengerEatGain` 20->35,
+   a ring-2-4 carrion SCENT scan in `scoreTileForFauna`, and a carrion-dependent immigration RESCUE in
+   `naturalFaunaSpawn`), plus a fix separating the scavenger count from knob D's carnivore count. `--scav=12`
+   @ 12 seeds == C2 EXACTLY (extinction 0%, carn-persistence 75%, cap-hits 0) with scavenger-persistence 100%
+   (final scav ~11, above the rescue floor => genuinely reproducing), so `CFG.scavengersEnabled` ships ON
+   (flag-off still byte-identical to C2). NEXT trophic tiers: APEX predator, then OMNIVORE - each its own
+   measure -> A/B -> keep-if-better loop. See STATUS + the chunk-7 handoff.
 
 ## Done
 - **Chunk 1 - The Chronicle** (2026-06-29, deployed). Pure event engine on the step path + Chronicle
@@ -126,3 +135,14 @@ next-session prompt for the following chunk. One chunk per cycle.
   8-seed `--scav=12` A/B FAILED the keep-if-better bar (scavenger-persistence 0%, extinction 0->13%,
   carn-persistence 75->63%), so it ships off + flagged for a future viability/balance tuning loop. See STATUS +
   the 2026-06-30 speciation handoff.
+- **Chunk 7 - Trophic depth take 2: scavenger viable + shipped ON** (2026-07-01, deployed, balance-neutral).
+  Made the chunk-6 detritivore self-sustaining without regressing C2: `carrionMaxAge` 100->300 (carrion
+  accumulates + post-crash death pulses persist to feed a bloom), `scavengerEatGain` 20->35 (a find sustains a
+  wanderer), a ring-2-4 carrion SCENT scan in `scoreTileForFauna` (homes in on distant corpse fields - the
+  lever that finds sparse food), and a carrion-dependent immigration RESCUE in `naturalFaunaSpawn` (knob-D
+  analog, guarded on the flag). Also fixed a confound: `naturalFaunaSpawn` had lumped scavengers into the
+  carnivore count, starving knob D's carnivore rescue once scavengers exist - now the three tiers are counted
+  separately. A/B `--scav=12` @ 12 seeds == C2 EXACTLY (extinction 0%, carn-persistence 75% 9/12, cap-hits 0)
+  with scavenger-persistence 100% (final scav mean 11.1). `CFG.scavengersEnabled` now defaults ON; flag-off is
+  still byte-identical to C2 (`--scav=0` remains the proof). Added a `Scav` spawn button. See STATUS + the
+  2026-07-01 chunk-7 handoff.
