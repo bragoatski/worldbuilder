@@ -161,13 +161,37 @@ Make evolution VISIBLE (pillar A). Shipped, balance PROVEN safe (harness byte-id
   follow camera + panels are gate-blind DOM -> need an eyeball in the live app (follow a creature, watch
   it stay centered; check the size markers + Lineage panel + size events in the Chronicle).
 
+## God powers - Living World chunk 3 (2026-06-30) - DONE, deploying (code a25978a; local build bundle index-CmijjgF9.js)
+God-game agency (pillar D): deliberate interventions with Chronicle-logged consequence. First BEHAVIOR-touching
+chunk, but **balance-safe BY CONSTRUCTION** - proven with a harness before/after (see below). Shipped:
+- **Land brush** (`brushTerrain(cx,cy,dir)`): a "God" deck seg -> Raise / Lower buttons set a `placeMode`;
+  clicking the map raises or lowers a soft elevation disc (radius/delta in CFG), handling the land<->sea
+  boundary (ocean crosses to land at elev>=0.5; land sinks to ocean below 0.35, clearing stranded life),
+  then refreshes the climate base + `reclassTerrain`. Logs a `'god'` event on a coastline crossing.
+- **Meteor** (`meteorStrike`): aims at the densest life (`_pickStrikeTarget`, or an explicit tile), craters
+  terrain (ocean basin at the centre, gouged rim) and wipes fauna + flora in the blast radius (kill particles);
+  logs the death toll.
+- **Drought** (`droughtEvent`): withers flora weighted by tile aridity (dry interior/deserts scorch worst,
+  wet oases persist); logs the loss. The downstream starvation cascade is narrated for free by the existing
+  Chronicle crash/extinct detectors.
+- **Bloom** (`bloomEvent`): a `seedFloraCluster` burst carpeting the world with new growth; logs it.
+All are PURE sim-core mutations (chronicle is headless-safe) + thin DOM button/click wrappers; helpers
+`_killLifeAt`/`_compactLife` use the null-then-filter life-array convention. **Why balance-safe:** none run
+inside `step()`, and the harness/tests only ever exercise `step()`, so the measured `eRng` stream is untouched.
+**Harness proof (`measure --seeds=8` before vs after): BYTE-IDENTICAL** - extinction 0% (0/8), carn-persistence
+75% (6/8), phase lag +127t, final fauna 73.6, final flora 2263.8, cap-hits 0 (== the C2 chunk-2 numbers).
+Gate GREEN: typecheck clean + lint 0 errors (23 pre-existing warnings) + **17 tests** (was 13; new god-powers
+block: brush raise/lower land<->sea, meteor wipes+craters+logs, drought withers+logs, bloom seeds+logs) + build.
+The RENDER + the brush/event feel are gate-blind DOM -> eyeball in the live app (Raise/Lower then click the map;
+Meteor/Drought/Bloom and watch the Chronicle + the map react).
+
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is now the driver; next chunk first,
 then the still-valid pre-roadmap backlog.
-0. **Living World chunk 3 - God powers (pillar D).** A land brush + a few dramatic events (meteor /
-   drought / bloom), each logging to the Chronicle via the existing `chronicleNote()` hook. This one is
-   BEHAVIOR-touching (it changes terrain/fauna), so it needs a harness sanity pass, unlike chunks 1-2.
-   Roadmap has the full remaining sequence (shareable permalinks, scenarios, speciation + trophic depth).
+0. **Living World chunk 4 - Shareable worlds (thread 3).** Seed + CFG -> URL permalink (builds on the JSON
+   export) + a "copy world link" action; optionally a Chronicle-driven "postcard". Balance-safe (no step
+   changes). Roadmap has the remaining sequence after it (scenarios + objectives, then speciation + trophic
+   depth - the harness-heavy chunks, last).
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence

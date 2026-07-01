@@ -65,8 +65,11 @@ next-session prompt for the following chunk. One chunk per cycle.
    per-creature Follow buttons; a Chronicle size record. Balance PROVED safe (harness byte-identical
    before/after, since `cRng` leaves `eRng` untouched). If size later affects energy/eat it moves to
    `eRng` and goes through the harness.
-3. **God powers (pillar D).** Land brush + a few dramatic events (meteor / drought / bloom),
-   each logging to the Chronicle. Behavior-touching -> harness sanity pass.
+3. **God powers (pillar D).** DONE 2026-06-30 (deployed). Land brush (raise/lower a soft disc, `brushTerrain`)
+   + three one-press events - meteor (`meteorStrike`: crater + wipe life in the blast), drought (`droughtEvent`:
+   aridity-weighted flora dieback), bloom (`bloomEvent`: a flora burst) - each logging a `'god'` Chronicle event.
+   Balance-safe BY CONSTRUCTION: the interventions run only from UI hooks, never inside `step()`, so the harness
+   (which only exercises `step()`) is byte-identical before/after (verified). See STATUS + the chunk-3 handoff.
 4. **Shareable worlds (thread 3).** Seed + CFG -> URL permalink (builds on JSON export); a
    "copy world link" action. Optionally a Chronicle-driven "postcard". Balance-safe.
 5. **Scenarios + objectives (pillar E).** A few setups + win-checks on top of the sandbox.
@@ -80,3 +83,7 @@ next-session prompt for the following chunk. One chunk per cycle.
   isolated `cRng` stream (rendered as creature scale) + `lineageId` kin-tracking + a follow-a-creature
   camera + a Lineage inspector panel + a Chronicle size record. Balance byte-identical (harness A/B). See
   STATUS + the 2026-06-30 evolution-visibility handoff.
+- **Chunk 3 - God powers** (2026-06-30, deployed). Land brush (`brushTerrain` raise/lower) + meteor / drought /
+  bloom events, each logging a `'god'` Chronicle event. First BEHAVIOR-touching chunk, but balance-safe by
+  construction (interventions never run in `step()`, so the harness is byte-identical before/after). See STATUS
+  + the 2026-06-30 god-powers handoff.

@@ -51,6 +51,17 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
   resets in `initWorld`. Pure core is gate-tested (`sim.test.js` chronicle block); render is gate-blind.
   Chunk 2 added a SIZE record (`CHRON_SIZE_LADDER`, `records.sizeRung`/`peakSize`; `chronicleStats` reports
   `maxSize`/`bigName`) so the visible size gene shows up in the feed + records strip.
+- **God powers (chunk 3, pillar D):** deliberate interventions, all PURE sim-core mutations logging a `'god'`
+  Chronicle event, defined just above `initWorld`. `brushTerrain(cx,cy,dir)` (land brush: raise/lower a soft
+  disc, handling the land<->sea boundary, then refresh climate + `reclassTerrain`), `meteorStrike(tx,ty)`
+  (`_pickStrikeTarget` aims at the densest life if no coords given; craters terrain + wipes fauna/flora in the
+  blast), `droughtEvent` (withers flora, weighted by tile aridity), `bloomEvent` (a `seedFloraCluster` burst).
+  Helpers `_killLifeAt`/`_compactLife` (null-then-filter + `deathParticles`). **NONE run inside `step()`** ->
+  outside the measured loop -> harness balance byte-identical (see Engineering Lessons - God powers). CFG knobs:
+  `godBrushRadius`/`godBrushDelta`, `meteorRadius`/`meteorCraterDepth`, `droughtSeverity`, `bloomCount`.
+  Wired from the "God" deck seg (index.html): the brush is a `placeMode` (`'raise'`/`'lower'`, routed in the
+  canvas click handler + `setPlaceMode`/`PLACE_BTN_IDS`/`PLACE_LABELS`); Meteor/Drought/Bloom fire once per
+  button press. Gate-tested (`sim.test.js` god-powers block); exported for the tests.
 - **Loop:** `init`, `step` (the per-tick pipeline; ends with `chronicleSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.
