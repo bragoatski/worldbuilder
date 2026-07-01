@@ -212,7 +212,13 @@ var CFG={
   carnivoreRescueCarnCap:6,         // stop rescuing once predators are established (rescue, not subsidy)
   herbivoreCrowding:2.0,            // knob C: herbivores avoid tiles crowded with conspecifics (fragments the herd; adds local density-dependence)
   herbivoreStartEnergy:50, carnivoreStartEnergy:75,
-  herbivoreMaxEnergy:100, carnivoreMaxEnergy:120
+  herbivoreMaxEnergy:100, carnivoreMaxEnergy:120,
+  // God powers (chunk 3, pillar D): user-triggered interventions. NONE run inside step(), so they sit
+  // outside the measured ecology loop and leave the C2 balance byte-identical (verified via the harness).
+  godBrushRadius:2, godBrushDelta:1.3,     // land brush: soft-disc radius + centre elevation delta per stroke
+  meteorRadius:4, meteorCraterDepth:3.0,   // meteor: blast/crater radius + centre-to-rim elevation gouge
+  droughtSeverity:0.5,                     // drought: base per-plant kill prob (scaled up on arid ground)
+  bloomCount:250                           // bloom: plants seeded in a burst (weighted placement)
 };
 // Snapshot defaults for preset reset
 var DEFAULT_CFG = {};
@@ -425,17 +431,24 @@ hook('btnSpawnFlora',function(){seedFloraCluster(15);draw();});
 hook('btnSpawnHerb',function(){seedFaunaGroup('herbivore',8);draw();});
 hook('btnSpawnCarn',function(){seedFaunaGroup('carnivore',4);draw();});
 hook('btnRivers',function(){generateRivers();computeAridity();applyClimate();reclassTerrain();draw();});
-// Placement mode
+// Placement / brush mode (fauna placement + the god-power land brush share the click machinery)
+var PLACE_BTN_IDS={herbivore:'btnPlaceHerb',carnivore:'btnPlaceCarn',raise:'btnBrushRaise',lower:'btnBrushLower'};
+var PLACE_LABELS={herbivore:'Click tile to place herbivore',carnivore:'Click tile to place carnivore',raise:'Click the map to RAISE land',lower:'Click the map to LOWER land'};
 function setPlaceMode(mode){
   placeMode=(placeMode===mode)?'none':mode;
-  var hb=document.getElementById('btnPlaceHerb'),cb=document.getElementById('btnPlaceCarn'),banner=document.getElementById('placeBanner');
-  if(hb){hb.classList.toggle('place-active',placeMode==='herbivore');}
-  if(cb){cb.classList.toggle('place-active',placeMode==='carnivore');}
-  if(banner){banner.classList.toggle('show',placeMode!=='none');banner.textContent=placeMode==='none'?'':'Click tile to place '+placeMode+'…';}
+  for(var m in PLACE_BTN_IDS){var el=document.getElementById(PLACE_BTN_IDS[m]);if(el)el.classList.toggle('place-active',placeMode===m);}
+  var banner=document.getElementById('placeBanner');
+  if(banner){banner.classList.toggle('show',placeMode!=='none');banner.textContent=placeMode==='none'?'':(PLACE_LABELS[placeMode]||('Click tile to place '+placeMode));}
   canvas.style.cursor=placeMode!=='none'?'cell':'crosshair';
 }
 hook('btnPlaceHerb',function(){setPlaceMode('herbivore');});
 hook('btnPlaceCarn',function(){setPlaceMode('carnivore');});
+// God powers (chunk 3): the land brush is a click mode; the three events fire once per press.
+hook('btnBrushRaise',function(){setPlaceMode('raise');});
+hook('btnBrushLower',function(){setPlaceMode('lower');});
+hook('btnMeteor',function(){meteorStrike();draw();});
+hook('btnDrought',function(){droughtEvent();draw();});
+hook('btnBloom',function(){bloomEvent();draw();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&placeMode!=='none')setPlaceMode('none');});
 hook('btnRunTests',function(){runTests();});
 hook('btnExport',exportPNG);
@@ -478,6 +491,7 @@ hook('btnRollSeed',function(){if(seedInputEl)seedInputEl.value='';init();draw();
 })();
 
 canvas.addEventListener('click',function(ev){if(!grid)return;var tile=screenToTile(ev.clientX,ev.clientY);var x=tile.x,y=tile.y;
+  if((placeMode==='raise'||placeMode==='lower')&&inb(x,y)){brushTerrain(x,y,placeMode==='raise'?1:-1);draw();return;}
   if(placeMode!=='none'&&inb(x,y)){var ti=idx(x,y);var t=grid[ti];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,placeMode,null));draw();}return;}
   lastClick={x:x,y:y};inspectTile(x,y);});
 canvas.addEventListener('mousemove',function(ev){
@@ -1456,6 +1470,85 @@ function renderChronicle(){
   var badge=document.getElementById('chronicleBadge'); if(badge) badge.textContent=String(chronicle.events.length);
 }
 
+// ===== God powers (chunk 3, pillar D): deliberate interventions with Chronicle-logged consequence =====
+// PURE sim-core mutations (no DOM); the button/click hooks below call these then draw(). NONE run inside
+// step(), so they sit OUTSIDE the measured ecology loop -> the harness balance is byte-identical (they are
+// never called in the harness/tests, so the eRng stream there is untouched). Each logs a 'god' event so a
+// deliberate act reads distinctly in the Chronicle from the world's own natural milestones. Downstream
+// consequences (a drought that starves the herds, a bloom that lets them boom) are then narrated for free
+// by the existing chronicleSample crash/arrival detectors over the following ticks.
+function _killLifeAt(i){var x=i%W,y=(i/W)|0,n=0;
+  for(var f=0;f<flora.length;f++){var fl=flora[f];if(fl&&fl.x===x&&fl.y===y)flora[f]=null;}
+  for(var a=0;a<fauna.length;a++){var fa=fauna[a];if(fa&&fa.x===x&&fa.y===y){deathParticles.push({x:x,y:y,type:'kill',tick:tick});fauna[a]=null;n++;}}
+  return n;}
+function _compactLife(){flora=flora.filter(function(f){return f!==null;});fauna=fauna.filter(function(f){return f!==null;});}
+
+// Land brush: raise (dir=+1) or lower (dir=-1) a soft disc of terrain, handling the land<->sea boundary,
+// then refresh the climate base + reclassify. Returns the number of tiles that crossed the coastline.
+function brushTerrain(cx,cy,dir){
+  if(!inb(cx,cy))return 0;
+  var R=CFG.godBrushRadius|0,d=CFG.godBrushDelta*dir,crossed=0,rose=false,sank=false;
+  for(var yy=cy-R;yy<=cy+R;yy++)for(var xx=cx-R;xx<=cx+R;xx++){
+    if(!inb(xx,yy))continue;
+    var ddx=xx-cx,ddy=yy-cy,dist=Math.sqrt(ddx*ddx+ddy*ddy);if(dist>R+0.5)continue;
+    var i=idx(xx,yy);if(peakVolcano&&peakVolcano[i])continue;      // leave volcano cores intact
+    var fall=1-dist/(R+1);                                          // soft falloff, 1 at centre
+    var wasOcean=(grid[i]===T.OCEAN);
+    elev[i]=clamp((elev[i]||0)+d*fall,0,10);
+    if(dir>0&&wasOcean&&elev[i]>=0.5){grid[i]=T.COAST;coastTTL[i]=0;crossed++;rose=true;}
+    else if(dir<0&&!wasOcean&&elev[i]<0.35){_killLifeAt(i);grid[i]=T.OCEAN;elev[i]=0;coastTTL[i]=0;crossed++;sank=true;}
+  }
+  _compactLife();computeTemperature();computeAridity();applyClimate();reclassTerrain();
+  if(rose)chronicleNote('god','New land rose from the sea by a shaping hand.','#8a9a7b');
+  if(sank)chronicleNote('god','Land sank beneath the waves.','#3aa6e0');
+  return crossed;
+}
+
+// Meteor: strike a target (defaults to the densest life for maximum drama), cratering terrain and wiping
+// fauna + flora in the blast radius. Returns the number of creatures killed.
+function _pickStrikeTarget(){
+  var live=[];for(var a=0;a<fauna.length;a++)if(fauna[a])live.push(fauna[a]);
+  if(live.length){var f=live[(eRng()*live.length)|0];return [f.x,f.y];}
+  var guard=200;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;if(grid[idx(x,y)]!==T.OCEAN)return [x,y];}
+  return [W>>1,H>>1];
+}
+function meteorStrike(tx,ty){
+  if(tx===undefined||ty===undefined){var t=_pickStrikeTarget();tx=t[0];ty=t[1];}
+  if(!inb(tx,ty))return 0;
+  var R=CFG.meteorRadius|0,killed=0;
+  for(var yy=ty-R;yy<=ty+R;yy++)for(var xx=tx-R;xx<=tx+R;xx++){
+    if(!inb(xx,yy))continue;
+    var ddx=xx-tx,ddy=yy-ty,dist=Math.sqrt(ddx*ddx+ddy*ddy);if(dist>R+0.5)continue;
+    var i=idx(xx,yy);
+    killed+=_killLifeAt(i);                                         // wipe life in the blast (with kill particles)
+    if(dist<=1){grid[i]=T.OCEAN;elev[i]=0;coastTTL[i]=0;}           // molten impact basin at the centre
+    else elev[i]=clamp((elev[i]||0)-CFG.meteorCraterDepth*(1-dist/(R+1)),0,10); // scorched, gouged rim
+  }
+  _compactLife();computeTemperature();computeAridity();applyClimate();reclassTerrain();
+  chronicleNote('god','A meteor struck the world'+(killed?', and '+killed+' creature'+(killed===1?'':'s')+' perished in the blast.':'.'),'#e07b39');
+  return killed;
+}
+
+// Drought: wither flora, hitting the driest ground hardest (arid interior + deserts scorch; wet oases persist).
+function droughtEvent(){
+  var withered=0;
+  for(var f=0;f<flora.length;f++){var fl=flora[f];if(!fl)continue;
+    var A=aridity[idx(fl.x,fl.y)]||5;
+    if(eRng()<clamp(CFG.droughtSeverity*(0.4+A/6),0,0.98)){flora[f]=null;withered++;}}
+  _compactLife();
+  chronicleNote('god','A withering drought swept the land'+(withered?'; '+withered+' plants shriveled away.':'.'),'#c9a24b');
+  return withered;
+}
+
+// Bloom: a sudden flush of new growth (the same weighted placement as a natural seed burst, just larger).
+function bloomEvent(){
+  var before=flora.length;
+  seedFloraCluster(CFG.bloomCount|0);
+  var sprang=flora.length-before;
+  chronicleNote('god','A great bloom carpeted the world with new growth'+(sprang?' ('+sprang+' plants).':'.'),'#3fcf6a');
+  return sprang;
+}
+
 // ===== Init & loop =====
 function initWorld(seedOverride){
   // Seed setup: use override if a valid number, else random (DOM-free core)
@@ -1671,3 +1764,5 @@ export { chronicle, chronicleNote, _crossLadder };
 // Additional live bindings for the river structural tests + headless probe (grid/elev are
 // reassigned in initWorld; in-place mutation of them from a test paints a synthetic surface).
 export { generateRivers, clearRivers, riverData, grid, elev, aridity, tempField, T, buildSnapshot };
+// God powers (chunk 3, pillar D): pure intervention cores the gate exercises directly (never run in step()).
+export { brushTerrain, meteorStrike, droughtEvent, bloomEvent };

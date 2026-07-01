@@ -201,7 +201,7 @@ describe('chronicle (the world\'s memory)', () => {
     expect(b).toEqual(a);
     // The chronicle actually observed the seeded life, and every event is well-formed.
     expect(sim.chronicle.records.peakHerb).toBeGreaterThan(0);
-    const kinds = new Set(['milestone', 'arrival', 'extinct', 'crash', 'vivid', 'record', 'lineage', 'terrain']);
+    const kinds = new Set(['milestone', 'arrival', 'extinct', 'crash', 'vivid', 'record', 'lineage', 'terrain', 'god']);
     for (const e of sim.chronicle.events) {
       expect(e.tick).toBeLessThanOrEqual(sim.tick);
       expect(kinds.has(e.kind)).toBe(true);
@@ -269,4 +269,71 @@ describe('evolution visibility (size gene + lineage)', () => {
     expect(b).toEqual(a);
     expect(a.length).toBeGreaterThan(0);
   }, 30000);
+});
+
+// God powers (chunk 3, pillar D): deliberate interventions (land brush + meteor / drought / bloom). Each
+// mutates the world and logs a 'god' event to the Chronicle so the act has a visible consequence. These
+// are BEHAVIOR-touching, but they are only ever fired from the UI - never from step() - so they sit
+// outside the measured ecology loop. The step-determinism / balance-safe evidence is the unchanged
+// chunk-1/2 snapshot-replay tests above PLUS the harness before/after being byte-identical (interventions
+// never run in the harness). Here the gate covers each intervention's pure core does what it claims.
+describe('god powers (chunk 3, pillar D)', () => {
+  it('the land brush raises ocean into land and lowers land back into ocean', () => {
+    sim.initWorld(7); // a fresh world is essentially all ocean (land forms only through step())
+    const i = 40 * sim.W + 40;
+    expect(sim.grid[i]).toBe(sim.T.OCEAN);
+    const c0 = sim.landCoverage();
+    sim.brushTerrain(40, 40, +1); // raise
+    expect(sim.landCoverage()).toBeGreaterThan(c0);
+    expect(sim.grid[i]).not.toBe(sim.T.OCEAN);
+    const c1 = sim.landCoverage();
+    sim.brushTerrain(40, 40, -1); // lower the same disc back under the sea
+    expect(sim.landCoverage()).toBeLessThan(c1);
+    expect(sim.grid[i]).toBe(sim.T.OCEAN);
+  });
+
+  it('a meteor wipes out life in its blast radius and records the strike', () => {
+    sim.initWorld(2024);
+    for (let k = 0; k < 600; k++) sim.step();
+    sim.seedFaunaGroup('herbivore', 40);
+    const before = sim.chronicle.events.length;
+    const target = sim.fauna.find((f) => f);
+    const tx = target.x,
+      ty = target.y;
+    const killed = sim.meteorStrike(tx, ty); // explicit target -> deterministic (no eRng target pick)
+    expect(killed).toBeGreaterThan(0);
+    const R = sim.CFG.meteorRadius;
+    for (const f of sim.fauna) if (f) expect(Math.hypot(f.x - tx, f.y - ty)).toBeGreaterThan(R + 0.5);
+    expect(sim.grid[ty * sim.W + tx]).toBe(sim.T.OCEAN); // impact centre is an ocean crater
+    expect(sim.chronicle.events.length).toBeGreaterThan(before);
+    const last = sim.chronicle.events[sim.chronicle.events.length - 1];
+    expect(last.kind).toBe('god');
+    expect(last.text).toContain('meteor');
+  }, 20000);
+
+  it('a drought withers flora and records the event', () => {
+    sim.initWorld(555);
+    for (let k = 0; k < 600; k++) sim.step();
+    sim.seedFloraCluster(300);
+    const before = sim.flora.length;
+    expect(before).toBeGreaterThan(0);
+    const withered = sim.droughtEvent();
+    expect(withered).toBeGreaterThan(0);
+    expect(sim.flora.length).toBe(before - withered);
+    const last = sim.chronicle.events[sim.chronicle.events.length - 1];
+    expect(last.kind).toBe('god');
+    expect(last.text).toContain('drought');
+  }, 20000);
+
+  it('a bloom carpets the world with new flora and records the event', () => {
+    sim.initWorld(777);
+    for (let k = 0; k < 600; k++) sim.step(); // develop land so flora has somewhere to root
+    const before = sim.flora.length;
+    const sprang = sim.bloomEvent();
+    expect(sprang).toBeGreaterThan(0);
+    expect(sim.flora.length).toBe(before + sprang);
+    const last = sim.chronicle.events[sim.chronicle.events.length - 1];
+    expect(last.kind).toBe('god');
+    expect(last.text).toContain('bloom');
+  }, 20000);
 });
