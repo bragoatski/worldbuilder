@@ -458,6 +458,8 @@ hook('btnImportJSON',function(){
   input.onchange=function(e){var file=e.target.files[0];if(!file)return;var reader=new FileReader();reader.onload=function(ev){try{importJSON(JSON.parse(ev.target.result));}catch(err){var errBox=document.getElementById('err');if(errBox){errBox.style.display='block';errBox.textContent='Import error: '+err.message;}}};reader.readAsText(file);};
   input.click();
 });
+hook('btnCopyLink',copyWorldLink);   // shareable worlds (chunk 4): copy a ?w= permalink to this world
+hook('btnPostcard',copyPostcard);    // copy a Chronicle-driven postcard (world stats + recent history + link)
 var speedEl=document.getElementById('speed');if(speedEl)speedEl.addEventListener('input',function(e){speed=+e.target.value;});
 var mapSizeEl=document.getElementById('mapSize');if(mapSizeEl)mapSizeEl.addEventListener('change',function(e){W=H=+e.target.value;init();buildSliders();draw();});
 var pixEl=document.getElementById('pix');if(pixEl)pixEl.addEventListener('change',function(e){PIX=+e.target.value;resize();draw();});
@@ -1323,6 +1325,87 @@ function exportJSON(){try{var snapshot=buildSnapshot();var json=JSON.stringify(s
 function importJSON(data){try{if(!data||!data.meta||(data.meta.version!=='wb-land-base-1'&&data.meta.version!=='wb-eco-1'))throw new Error('Invalid snapshot format');if(data.meta.W!==W||data.meta.H!==H){W=data.meta.W;H=data.meta.H;resize();}tick=data.meta.tick||0;if(data.meta.seed!==undefined){_seed=data.meta.seed;sRng=mulberry32(_seed);var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;var seedInp=document.getElementById('seedInput');if(seedInp)seedInp.value=_seed;}if(data.meta.preset){activePreset=data.meta.preset;var psEl=document.getElementById('presetSelect');if(psEl)psEl.value=activePreset;}if(data.meta.world)WORLD=data.meta.world;if(data.meta.cfg){CFG.climateIntensity=data.meta.cfg.climateIntensity||1.0;CFG.climateSeasonLength=data.meta.cfg.climateSeasonLength||10000;}if(data.meta.sunlightPhase!==undefined)sunPhase=data.meta.sunlightPhase;grid=new Uint8Array(W*H);if(data.grid&&data.grid.length===W*H){grid=new Uint8Array(data.grid);}elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];if(data.rivers&&Array.isArray(data.rivers)){riverData=data.rivers;riverGenerated=true;}else{clearRivers();}reseedSunlight();computeSunlight();climateInit();computeTemperature();computeAridity();applyClimate();reclassTerrain();buildSliders();
   var cIE=document.getElementById('climateIntensity'),cIO=document.getElementById('climateIntensityOut');if(cIE&&cIO){cIE.value=CFG.climateIntensity;cIO.textContent=CFG.climateIntensity.toFixed(2);}var cSE=document.getElementById('climateSeasonLen'),cSO=document.getElementById('climateSeasonLenOut');if(cSE&&cSO){cSE.value=CFG.climateSeasonLength;cSO.textContent=CFG.climateSeasonLength;}draw();}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Import error: '+e.message;}}}
 
+// ===== Shareable worlds (chunk 4, thread 3) =====
+// A world is fully determined at GENESIS by its seed + config: terrain + ecology are deterministic from
+// the seeded RNG streams, and the WORLD meta is re-derived from the seed by pickWorldMeta. So a compact
+// "world code" of { seed, preset (UI label only), cfg-diff-from-default } reproduces the same world when
+// replayed - far smaller than the baked snapshot the JSON download ships, so it fits in a ?w= URL param.
+// A shared world is thus a link. Balance-safe: this only reads/writes CFG + re-inits (like the preset
+// selector), never touching step().
+var WORLD_CODE_VERSION = 1;
+// These CFG keys are DERIVED from elevationIntensity by applyElevationIntensity and recomputed on every
+// initWorld, so the world code ships elevationIntensity, not its derivatives. A default world then encodes
+// to an empty diff (minimal URL); on load initWorld re-derives them, so nothing is lost.
+var _DERIVED_CFG_KEYS = { clusterSpikeRate:1, clusterPlusChance:1, mountainAdjUpliftProb:1, hillAdjUpliftProb:1, rareSurgeProb:1 };
+// Pure: the current world's shareable recipe. cfg holds only the keys that DIFFER from DEFAULT_CFG (minus
+// the derived ones), so a default world encodes to almost nothing and a tuned one carries just its deltas.
+function buildWorldCode(){
+  var cfg={};
+  for(var k in CFG){ if(CFG.hasOwnProperty(k)&&!_DERIVED_CFG_KEYS[k]&&DEFAULT_CFG.hasOwnProperty(k)&&CFG[k]!==DEFAULT_CFG[k]) cfg[k]=CFG[k]; }
+  return { v:WORLD_CODE_VERSION, seed:_seed, preset:activePreset, cfg:cfg };
+}
+// Pure: apply a decoded world code. Reset CFG to defaults, layer the diff (KNOWN keys + matching type only
+// - the code is untrusted URL input), restore the preset label, then regenerate from the seed. Throws on a
+// malformed / unsupported code. Leaves DOM sync to the caller (mirrors the initWorld/init split).
+function applyWorldCode(data){
+  if(!data||typeof data!=='object') throw new Error('Invalid world code');
+  if(data.v!==WORLD_CODE_VERSION) throw new Error('Unsupported world code version: '+data.v);
+  if(typeof data.seed!=='number'||!isFinite(data.seed)) throw new Error('World code has no seed');
+  for(var k in DEFAULT_CFG){ if(DEFAULT_CFG.hasOwnProperty(k)) CFG[k]=DEFAULT_CFG[k]; }
+  if(data.cfg&&typeof data.cfg==='object'){
+    for(var ck in data.cfg){ if(Object.prototype.hasOwnProperty.call(data.cfg,ck)&&DEFAULT_CFG.hasOwnProperty(ck)&&typeof data.cfg[ck]===typeof DEFAULT_CFG[ck]) CFG[ck]=data.cfg[ck]; }
+  }
+  if(data.preset&&PRESETS[data.preset]) activePreset=data.preset;
+  initWorld(data.seed);
+  return data;
+}
+// URL-safe base64 of the JSON recipe (ASCII only: numeric CFG values + short preset names). btoa/atob
+// exist in both the browser and the Node test runner.
+function encodeWorldCode(data){ return btoa(JSON.stringify(data)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function decodeWorldCode(str){ var b64=String(str).replace(/-/g,'+').replace(/_/g,'/'); while(b64.length%4)b64+='='; return JSON.parse(atob(b64)); }
+// The ?w= param from the current URL (or null). DOM/location layer.
+function getWorldCodeParam(){ if(typeof location==='undefined'||!location.search) return null; var m=/[?&]w=([^&]+)/.exec(location.search); return m?decodeURIComponent(m[1]):null; }
+// Full permalink to the current world.
+function worldPermalink(){ var code=encodeWorldCode(buildWorldCode()); var base=(typeof location!=='undefined')?(location.origin+location.pathname):''; return base+'?w='+code; }
+// Brief label flash on a deck button (no exclamation marks - UI copy rule). Restore text is passed in so a
+// double-click during the flash cannot corrupt the label.
+function _flashBtn(btn,msg,restore){ if(!btn)return; if(btn._flashT)clearTimeout(btn._flashT); btn.textContent=msg; btn._flashT=setTimeout(function(){btn.textContent=restore;},1100); }
+// DOM: copy the permalink to the clipboard, and reflect it in the address bar so a manual bookmark works
+// too. Mirrors the seed-copy affordance already on the HUD.
+function copyWorldLink(){
+  var url=worldPermalink(), btn=document.getElementById('btnCopyLink');
+  try{ if(typeof history!=='undefined'&&history.replaceState) history.replaceState(null,'',url); }catch(e){}
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(function(){_flashBtn(btn,'link copied','Copy Link');},function(){_flashBtn(btn,'copy failed','Copy Link');});
+    else window.prompt('Copy this world link:',url);
+  }catch(e){ try{window.prompt('Copy this world link:',url);}catch(e2){} }
+}
+// A Chronicle-driven postcard: a short shareable blurb of the world + a couple of its story beats + the
+// link. Pure text (chronicleStats + the recent feed), ASCII, no exclamation marks.
+function worldPostcard(){
+  var s=chronicleStats();
+  var presetLbl=(activePreset&&PRESETS[activePreset]&&activePreset!=='balanced')?(' ('+PRESETS[activePreset].label+')'):'';
+  var lines=[];
+  lines.push('Worldbuilder world - seed '+_seed+presetLbl);
+  lines.push('Tick '+tick+' - '+Math.round(s.land*100)+'% land, '+s.flora+' flora, '+s.herb+' herbivores, '+s.carn+' carnivores');
+  if(s.maxSize>=1.3&&s.bigName) lines.push('Biggest: '+s.bigName+', '+s.maxSize.toFixed(1)+'x normal size');
+  if(s.oldestAge>0&&s.oldestName) lines.push('Oldest: '+s.oldestName+', age '+s.oldestAge);
+  // A few recent story beats; skip the boilerplate 'terrain' notes when there is richer history.
+  var ev=chronicle.events, beats=[];
+  for(var i=ev.length-1;i>=0&&beats.length<3;i--){ if(ev[i].kind!=='terrain') beats.push(ev[i]); }
+  if(beats.length===0){ for(var j=ev.length-1;j>=0&&beats.length<3;j--) beats.push(ev[j]); }
+  if(beats.length){ lines.push('Recent history:'); for(var b=beats.length-1;b>=0;b--) lines.push('  - t'+beats[b].tick+' '+beats[b].text); }
+  lines.push('Play this exact world: '+worldPermalink());
+  return lines.join('\n');
+}
+function copyPostcard(){
+  var text=worldPostcard(), btn=document.getElementById('btnPostcard');
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function(){_flashBtn(btn,'postcard copied','Postcard');},function(){_flashBtn(btn,'copy failed','Postcard');});
+    else window.prompt('Copy this postcard:',text);
+  }catch(e){ try{window.prompt('Copy this postcard:',text);}catch(e2){} }
+}
+
 // ===== HUD =====
 // Population graph drawing
 function drawPopGraph(){
@@ -1566,7 +1649,23 @@ function initWorld(seedOverride){
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
 }
+// Shareable worlds (chunk 4): the ?w= world code from the page URL, captured once at load. Consumed on the
+// FIRST init() only (so a later preset change / reset rolls a fresh world instead of re-restoring the link).
+var _pendingWorldCode = getWorldCodeParam();
 function init(){
+  if(_pendingWorldCode){
+    var wc=_pendingWorldCode; _pendingWorldCode=null;
+    try{
+      applyWorldCode(decodeWorldCode(wc)); // resets CFG, layers the diff, restores the preset, re-inits from the seed
+      chronicleNote('terrain','A shared world is restored.','#8a9a7b');
+      var seedElP=document.getElementById('seedInput');if(seedElP)seedElP.value=_seed;
+      var hSeedElP=document.getElementById('hSeed');if(hSeedElP)hSeedElP.textContent=_seed;
+      resize();syncUIToConfig();draw();
+      return;
+    }catch(e){
+      var errBox=document.getElementById('err');if(errBox){errBox.style.display='block';errBox.textContent='World link error: '+e.message+' - starting a fresh world.';}
+    }
+  }
   var seedEl=document.getElementById('seedInput');
   var seedVal=seedEl?seedEl.value.trim():'';
   initWorld(seedVal);
@@ -1766,3 +1865,7 @@ export { chronicle, chronicleNote, _crossLadder };
 export { generateRivers, clearRivers, riverData, grid, elev, aridity, tempField, T, buildSnapshot };
 // God powers (chunk 3, pillar D): pure intervention cores the gate exercises directly (never run in step()).
 export { brushTerrain, meteorStrike, droughtEvent, bloomEvent };
+// Shareable worlds (chunk 4, thread 3): the pure world-code recipe (seed + CFG diff) + its URL codec, so
+// the gate can prove build->encode->decode->apply round-trips to the same world. _seed/activePreset are
+// live bindings for the round-trip assertions. copyWorldLink/copyPostcard are DOM-only (not exported).
+export { buildWorldCode, applyWorldCode, encodeWorldCode, decodeWorldCode, worldPermalink, worldPostcard, _seed, activePreset };

@@ -337,3 +337,73 @@ describe('god powers (chunk 3, pillar D)', () => {
     expect(last.text).toContain('bloom');
   }, 20000);
 });
+
+// Shareable worlds (chunk 4, thread 3): a world is fully determined at genesis by seed + CFG (terrain +
+// ecology are deterministic from the seeded streams; WORLD is re-derived from the seed), so a compact
+// "world code" reproduces it. Three properties matter. (1) The recipe round-trips: build -> encode ->
+// decode -> build is byte-identical, and only NON-DEFAULT CFG keys ride along. (2) Applying a code
+// reproduces the SAME evolving world (deterministic replay). (3) The decoder is robust to untrusted URL
+// input (bad version / missing seed rejected; unknown or wrong-typed CFG keys ignored). The copy buttons +
+// address-bar reflection are gate-blind DOM, verified in the browser.
+describe('shareable worlds (world-code permalink)', () => {
+  it('the recipe round-trips through encode/decode and carries only non-default CFG', () => {
+    // applyWorldCode({cfg:{}}) resets CFG to defaults (prior tests leave CFG mutated) then inits a clean world.
+    sim.applyWorldCode({ v: 1, seed: 12345, cfg: {} });
+    const codeDefault = sim.buildWorldCode();
+    expect(codeDefault.seed).toBe(12345);
+    expect(codeDefault.v).toBe(1);
+    expect(Object.keys(codeDefault.cfg).length).toBe(0); // a default world encodes to an empty diff
+
+    sim.CFG.floraSpawnChance = 0.05; // two deliberate off-default tweaks
+    sim.CFG.maxLandCap = 0.5;
+    const tuned = sim.buildWorldCode();
+    expect(tuned.cfg.floraSpawnChance).toBe(0.05);
+    expect(tuned.cfg.maxLandCap).toBe(0.5);
+    const decoded = sim.decodeWorldCode(sim.encodeWorldCode(tuned));
+    expect(decoded).toEqual(tuned); // base64url round-trip is lossless
+  });
+
+  it('applying a world code reproduces the same evolving world', () => {
+    sim.initWorld(31337);
+    sim.CFG.maxLandCap = 0.6; // a tuned world so the CFG diff is actually exercised
+    const code = sim.encodeWorldCode(sim.buildWorldCode());
+    function fingerprint() {
+      sim.applyWorldCode(sim.decodeWorldCode(code));
+      expect(sim._seed).toBe(31337); // the seed came back
+      expect(sim.CFG.maxLandCap).toBe(0.6); // the tuned CFG came back
+      for (let i = 0; i < 300; i++) sim.step();
+      return sim.landCoverage();
+    }
+    const a = fingerprint();
+    const b = fingerprint();
+    expect(b).toBe(a); // same recipe -> same world, twice
+  }, 30000);
+
+  it('applyWorldCode resets to defaults before layering the diff', () => {
+    sim.initWorld(1);
+    sim.CFG.maxLandCap = 0.42; // a leftover tweak the next code does NOT mention
+    sim.applyWorldCode({ v: 1, seed: 2, cfg: { floraSpawnChance: 0.033 } });
+    expect(sim.CFG.floraSpawnChance).toBe(0.033); // the code's key applied
+    expect(sim.CFG.maxLandCap).toBe(0.9); // the leftover was reset to the default (not carried over)
+    expect(sim._seed).toBe(2);
+  });
+
+  it('rejects malformed codes and ignores unknown / wrong-typed CFG keys (untrusted input)', () => {
+    expect(() => sim.applyWorldCode(null)).toThrow();
+    expect(() => sim.applyWorldCode({ v: 999, seed: 1 })).toThrow(); // unsupported version
+    expect(() => sim.applyWorldCode({ v: 1 })).toThrow(); // no seed
+    sim.applyWorldCode({ v: 1, seed: 7, preset: 'not-a-preset', cfg: { notARealKey: 42, maxLandCap: 'big' } });
+    expect(sim._seed).toBe(7);
+    expect(sim.CFG.notARealKey).toBeUndefined(); // unknown key dropped
+    expect(typeof sim.CFG.maxLandCap).toBe('number'); // wrong-typed value ignored -> stays the default number
+  });
+
+  it('the postcard names the world and embeds a permalink', () => {
+    sim.initWorld(2024);
+    for (let i = 0; i < 300; i++) sim.step();
+    const pc = sim.worldPostcard();
+    expect(pc).toContain('seed 2024');
+    expect(pc).toContain('?w=');
+    expect(sim.worldPermalink()).toContain('?w=');
+  }, 20000);
+});
