@@ -185,7 +185,7 @@ block: brush raise/lower land<->sea, meteor wipes+craters+logs, drought withers+
 The RENDER + the brush/event feel are gate-blind DOM -> eyeball in the live app (Raise/Lower then click the map;
 Meteor/Drought/Bloom and watch the Chronicle + the map react).
 
-## Shareable worlds - Living World chunk 4 (2026-06-30) - DONE + DEPLOYING (code 30f9117)
+## Shareable worlds - Living World chunk 4 (2026-06-30) - DONE + DEPLOYED (main ecd62a8, ff'd 7ed0da8..ecd62a8 + pushed, CI success, live bundle index-BBeJNJbL.js confirmed HTTP 200)
 Thread 3 (shareable worlds): a world is a shareable LINK. Insight: a world is fully determined at GENESIS by
 its **seed + config** (terrain + ecology are deterministic from the seeded streams; `WORLD` is re-derived from
 the seed by `pickWorldMeta`), so a compact world code `{ v, seed, preset, cfg-diff-from-default }` reproduces
