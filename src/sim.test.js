@@ -201,7 +201,7 @@ describe('chronicle (the world\'s memory)', () => {
     expect(b).toEqual(a);
     // The chronicle actually observed the seeded life, and every event is well-formed.
     expect(sim.chronicle.records.peakHerb).toBeGreaterThan(0);
-    const kinds = new Set(['milestone', 'arrival', 'extinct', 'crash', 'vivid', 'record', 'lineage', 'terrain', 'god']);
+    const kinds = new Set(['milestone', 'arrival', 'extinct', 'crash', 'vivid', 'record', 'lineage', 'terrain', 'god', 'scenario']);
     for (const e of sim.chronicle.events) {
       expect(e.tick).toBeLessThanOrEqual(sim.tick);
       expect(kinds.has(e.kind)).toBe(true);
@@ -406,4 +406,111 @@ describe('shareable worlds (world-code permalink)', () => {
     expect(pc).toContain('?w=');
     expect(sim.worldPermalink()).toContain('?w=');
   }, 20000);
+});
+
+// Scenarios + objectives (chunk 5, pillar E): named starting setups (preset + fixed seed + initial life)
+// with a win/lose OBSERVER. Two halves, both balance-safe like chunks 3-4. (1) The OBSERVER
+// (evaluateScenario) is a PURE reducer of the world's stats over time - it is the gate-testable core, so
+// win/lose logic is proven headlessly. (2) The SETUP (applyScenarioDef) runs only from a button / permalink,
+// never step(), and reuses the same initWorld re-genesis the preset selector uses, so the measured ecology
+// loop is byte-identical (the harness before/after is the balance proof; here we prove the setup is
+// deterministic + reproducible, which is also what makes a scenario shareable). The panel render is
+// gate-blind DOM, verified in the browser.
+describe('scenarios + objectives (chunk 5, pillar E)', () => {
+  // --- the pure win/lose observer ---
+  it('establish goal: reaches "won" only when every tier meets the target, then latches', () => {
+    const def = { objective: { goal: 'establish', need: { flora: 800, herb: 60, carn: 20 } } };
+    let st = { state: 'active', phase: 'reaching', establishedTick: null, progress: 0 };
+    st = sim.evaluateScenario(def, { flora: 400, herb: 30, carn: 5 }, 100, st);
+    expect(st.state).toBe('active');
+    expect(st.progress).toBeGreaterThan(0);
+    expect(st.progress).toBeLessThan(1);
+    st = sim.evaluateScenario(def, { flora: 900, herb: 70, carn: 25 }, 200, st);
+    expect(st.state).toBe('won');
+    st = sim.evaluateScenario(def, { flora: 0, herb: 0, carn: 0 }, 300, st); // a later collapse
+    expect(st.state).toBe('won'); // terminal states latch
+  });
+
+  it('endure goal: establishes, holds for the duration, then wins', () => {
+    const def = { objective: { goal: 'endure', establish: { flora: 100, herb: 20, carn: 5 }, floor: { herb: 1 }, duration: 1000 } };
+    let st = { state: 'active', phase: 'establishing', establishedTick: null, progress: 0 };
+    st = sim.evaluateScenario(def, { flora: 10, herb: 2, carn: 0 }, 50, st); // warming up: never a loss
+    expect(st).toMatchObject({ state: 'active', phase: 'establishing' });
+    st = sim.evaluateScenario(def, { flora: 150, herb: 30, carn: 8 }, 500, st); // establish -> clock starts
+    expect(st).toMatchObject({ state: 'active', phase: 'holding', establishedTick: 500 });
+    st = sim.evaluateScenario(def, { flora: 150, herb: 30, carn: 8 }, 1000, st); // halfway through the hold
+    expect(st.state).toBe('active');
+    expect(st.progress).toBeCloseTo(0.5, 5);
+    st = sim.evaluateScenario(def, { flora: 150, herb: 30, carn: 8 }, 1500, st); // duration elapsed -> won
+    expect(st.state).toBe('won');
+  });
+
+  it('endure goal: a drop below the floor AFTER establishment is a loss (and latches)', () => {
+    const def = { objective: { goal: 'endure', establish: { flora: 100, herb: 20 }, floor: { herb: 1 }, duration: 1000 } };
+    let st = { state: 'active', phase: 'establishing', establishedTick: null, progress: 0 };
+    st = sim.evaluateScenario(def, { flora: 150, herb: 30 }, 500, st); // establish
+    expect(st.phase).toBe('holding');
+    st = sim.evaluateScenario(def, { flora: 150, herb: 0 }, 700, st); // grazers wiped out
+    expect(st.state).toBe('lost');
+    st = sim.evaluateScenario(def, { flora: 150, herb: 50 }, 800, st); // a later recovery
+    expect(st.state).toBe('lost'); // stays lost
+  });
+
+  // --- setup: arming, determinism (== shareability), clearing ---
+  it('applyScenarioDef warms terrain, seeds initial life, arms the objective, and reproduces the same world', () => {
+    function start() {
+      sim.applyScenarioDef(sim.SCENARIOS.balance);
+      const herb = sim.fauna.filter((f) => f && f.type === 'herbivore').length;
+      const carn = sim.fauna.filter((f) => f && f.type === 'carnivore').length;
+      return { seed: sim._seed, tick: sim.tick, flora: sim.flora.length, herb, carn };
+    }
+    const a = start();
+    expect(sim.activeScenario).toBeTruthy();
+    expect(sim.activeScenario.def.id).toBe('balance');
+    expect(sim.activeScenario.status.state).toBe('active');
+    expect(a.seed).toBe(2024); // the scenario's fixed seed
+    expect(sim.landCoverage()).toBeGreaterThan(0.005); // terrain was warmed to a small starting landmass (grows during play)
+    expect(a.herb).toBeGreaterThan(0); // initial grazers were seeded onto land
+    expect(a.carn).toBeGreaterThan(0); // initial predators too
+    const b = start();
+    expect(b).toEqual(a); // same scenario -> byte-identical starting world (deterministic + shareable)
+    sim.clearScenario();
+    expect(sim.activeScenario).toBeNull();
+  }, 90000);
+
+  it('a scenario is a shareable permalink: the world code carries the id and re-arms the objective', () => {
+    sim.applyScenarioDef(sim.SCENARIOS.iceage);
+    const code = sim.buildWorldCode();
+    expect(code.scen).toBe('iceage');
+    expect(code.seed).toBe(1888);
+    const decoded = sim.decodeWorldCode(sim.encodeWorldCode(code));
+    expect(decoded.scen).toBe('iceage'); // survives the base64url round-trip
+    function fingerprint() {
+      sim.applyWorldCode(decoded); // trusted built-in scenario -> rebuilt from our own def
+      expect(sim.activeScenario.def.id).toBe('iceage');
+      expect(sim._seed).toBe(1888);
+      const herb = sim.fauna.filter((f) => f && f.type === 'herbivore').length;
+      return { land: sim.landCoverage(), flora: sim.flora.length, herb };
+    }
+    const a = fingerprint();
+    const b = fingerprint();
+    expect(b).toEqual(a); // the scenario link reproduces the same starting world
+  }, 90000);
+
+  it('is balance-safe: a scenario run replays identically (the observer never touches fauna/flora/RNG)', () => {
+    function run() {
+      sim.applyScenarioDef(sim.SCENARIOS.balance);
+      for (let i = 0; i < 300; i++) sim.step(); // scenarioSample runs every 10 ticks throughout
+      return sim.fauna
+        .filter((f) => f)
+        .map((f) => `${f.id}:${f.x},${f.y}:${f.energy.toFixed(3)}:${f.size.toFixed(4)}`);
+    }
+    const a = run();
+    const b = run();
+    expect(b).toEqual(a);
+    expect(a.length).toBeGreaterThan(0);
+    // A plain world code clears the scenario, so scenarioSample reverts to a no-op on a sandbox world.
+    sim.applyWorldCode({ v: 1, seed: 1, cfg: {} });
+    expect(sim.activeScenario).toBeNull();
+  }, 90000);
 });

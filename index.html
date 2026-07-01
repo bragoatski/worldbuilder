@@ -499,6 +499,19 @@
   .chron-row .chron-tick { flex:0 0 auto; color:var(--fg-faint); font-variant-numeric:tabular-nums; }
   .chron-empty { font-family:var(--mono); font-size:10px; color:var(--fg-dim); font-style:italic; padding:4px 0; }
 
+  /* Objective panel (active scenario goal + progress) */
+  .obj-empty { font-family:var(--mono); font-size:10px; color:var(--fg-dim); font-style:italic; padding:2px 0; line-height:1.5; }
+  .obj-title { font-family:var(--mono); font-size:12px; color:var(--fg); font-weight:600; }
+  .obj-desc { font-family:var(--mono); font-size:10px; color:var(--fg-dim); line-height:1.45; margin:3px 0 6px; }
+  .obj-state { font-family:var(--mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
+  .obj-bar { height:5px; border-radius:3px; background:var(--bg); overflow:hidden; margin:4px 0 7px; }
+  .obj-bar > i { display:block; height:100%; border-radius:3px; transition:width .3s ease; }
+  .obj-tiers { display:flex; flex-direction:column; gap:2px; }
+  .obj-tier { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
+  .obj-tier.met { color:var(--green); }
+  .obj-tier span:last-child { font-variant-numeric:tabular-nums; }
+  .obj-timer { font-family:var(--mono); font-size:10px; color:var(--fg-dim); margin-top:5px; font-variant-numeric:tabular-nums; }
+
   /* Placement mode */
   .place-active { background:var(--accent-dim) !important; border-color:var(--accent) !important; color:var(--accent) !important; }
   .place-banner { display:none; padding:2px 8px; font-family:var(--mono); font-size:10px; color:var(--amber); background:var(--amber-dim); border-radius:3px; margin-left:6px; }
@@ -615,6 +628,18 @@
     </div>
 
     <div class="seg">
+      <span class="seg-lbl">Scenario</span>
+      <select id="scenarioSelect" style="width:138px;">
+        <option value="">Sandbox (free play)</option>
+        <option value="genesis">Genesis</option>
+        <option value="balance">The Long Balance</option>
+        <option value="iceage">Ice Age Refuge</option>
+        <option value="volcanic">Trial by Fire</option>
+      </select>
+      <button class="btn btn-seed" id="btnStartScenario" title="Start the selected scenario (a preset + seed + a goal to play toward)">Start</button>
+    </div>
+
+    <div class="seg">
       <span class="seg-lbl">Populate</span>
       <button class="btn btn-seed" id="btnSpawnFlora" title="Seed 15 flora">Flora</button>
       <button class="btn btn-seed" id="btnSpawnHerb" title="Seed 8 herbivores">Herb</button>
@@ -679,6 +704,18 @@
           </div>
           <div class="panel-body inspector-body" id="inspector">
             <div class="insp-empty">Click a tile to inspect</div>
+          </div>
+        </div>
+
+        <!-- Objective (active scenario goal + progress) -->
+        <div class="panel" id="panelObjective">
+          <div class="panel-head" onclick="togglePanel('panelObjective')">
+            <span class="chev">▼</span>
+            <h3>Objective</h3>
+            <span class="badge" id="objectiveBadge" style="display:none;"></span>
+          </div>
+          <div class="panel-body">
+            <div id="objectiveBody"><div class="obj-empty">No scenario active. Pick one from the Scenario deck to play toward a goal.</div></div>
           </div>
         </div>
 

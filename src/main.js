@@ -224,19 +224,20 @@ var CFG={
 var DEFAULT_CFG = {};
 (function(){for(var k in CFG) if(CFG.hasOwnProperty(k)) DEFAULT_CFG[k]=CFG[k];})();
 
-function applyPreset(name){
-  var p=PRESETS[name]; if(!p) return;
+// Pure (DOM-free) core: reset CFG to defaults, then layer a preset's cfg + toggles. Returns false for an
+// unknown preset. Shared by applyPreset (which adds the DOM sync) and the scenario setup (chunk 5), so a
+// scenario can build a preset's world without touching the DOM (mirrors the initWorld/init split).
+function _applyPresetCfg(name){
+  var p=PRESETS[name]; if(!p) return false;
   activePreset=name;
-  // Reset CFG to defaults
   for(var k in DEFAULT_CFG) if(DEFAULT_CFG.hasOwnProperty(k)) CFG[k]=DEFAULT_CFG[k];
-  // Apply preset overrides
   for(var ck in p.cfg) if(p.cfg.hasOwnProperty(ck)) CFG[ck]=p.cfg[ck];
-  // Apply toggles
   if(p.toggles.seasonalTilt!==undefined) CFG.seasonalTilt=p.toggles.seasonalTilt;
   if(p.toggles.anomalies!==undefined) CFG.anomalies=p.toggles.anomalies;
   if(p.toggles.volcanoAsh!==undefined) CFG.volcanoAsh=p.toggles.volcanoAsh;
-  syncUIToConfig();
+  return true;
 }
+function applyPreset(name){ if(_applyPresetCfg(name)) syncUIToConfig(); }
 function syncUIToConfig(){
   // Terrain sliders (rebuilt by buildSliders)
   buildSliders(); applyElevationIntensity();
@@ -431,6 +432,8 @@ hook('btnSpawnFlora',function(){seedFloraCluster(15);draw();});
 hook('btnSpawnHerb',function(){seedFaunaGroup('herbivore',8);draw();});
 hook('btnSpawnCarn',function(){seedFaunaGroup('carnivore',4);draw();});
 hook('btnRivers',function(){generateRivers();computeAridity();applyClimate();reclassTerrain();draw();});
+// Scenarios (chunk 5): Start plays the selected scenario; the empty "Sandbox" option rolls a plain world.
+hook('btnStartScenario',function(){var sel=document.getElementById('scenarioSelect');var id=sel?sel.value:'';if(id)startScenario(id);else{running=false;init();buildSliders();draw();}});
 // Placement / brush mode (fauna placement + the god-power land brush share the click machinery)
 var PLACE_BTN_IDS={herbivore:'btnPlaceHerb',carnivore:'btnPlaceCarn',raise:'btnBrushRaise',lower:'btnBrushLower'};
 var PLACE_LABELS={herbivore:'Click tile to place herbivore',carnivore:'Click tile to place carnivore',raise:'Click the map to RAISE land',lower:'Click the map to LOWER land'};
@@ -1266,7 +1269,7 @@ function draw(){
     else if(p.type==='starve'){ctx.fillStyle='#888';ctx.beginPath();ctx.arc(px+PIX/2,py+PIX/2,PIX/3,0,Math.PI*2);ctx.fill();}
     else if(p.type==='age'){ctx.fillStyle='#aaa';ctx.fillRect(px+1,py+PIX/2,PIX-2,1);}
   }ctx.globalAlpha=1.0;deathParticles=aliveParticles;
-  drawHUD();renderChronicle();updateFollow();
+  drawHUD();renderChronicle();renderObjective();updateFollow();
 }
 
 // ===== Inspector =====
@@ -1342,7 +1345,9 @@ var _DERIVED_CFG_KEYS = { clusterSpikeRate:1, clusterPlusChance:1, mountainAdjUp
 function buildWorldCode(){
   var cfg={};
   for(var k in CFG){ if(CFG.hasOwnProperty(k)&&!_DERIVED_CFG_KEYS[k]&&DEFAULT_CFG.hasOwnProperty(k)&&CFG[k]!==DEFAULT_CFG[k]) cfg[k]=CFG[k]; }
-  return { v:WORLD_CODE_VERSION, seed:_seed, preset:activePreset, cfg:cfg };
+  var code={ v:WORLD_CODE_VERSION, seed:_seed, preset:activePreset, cfg:cfg };
+  if(activeScenario) code.scen=activeScenario.def.id; // chunk 5: a scenario link carries its id so the objective re-arms on the recipient
+  return code;
 }
 // Pure: apply a decoded world code. Reset CFG to defaults, layer the diff (KNOWN keys + matching type only
 // - the code is untrusted URL input), restore the preset label, then regenerate from the seed. Throws on a
@@ -1351,11 +1356,16 @@ function applyWorldCode(data){
   if(!data||typeof data!=='object') throw new Error('Invalid world code');
   if(data.v!==WORLD_CODE_VERSION) throw new Error('Unsupported world code version: '+data.v);
   if(typeof data.seed!=='number'||!isFinite(data.seed)) throw new Error('World code has no seed');
+  // Chunk 5: a scenario permalink names a TRUSTED built-in scenario. Rebuild it from OUR OWN def (preset +
+  // seed + initial life + objective) so the objective re-arms on the recipient's world, ignoring the URL cfg
+  // diff entirely - only the known scenario id rides along, which is safer than trusting arbitrary URL cfg.
+  if(data.scen&&SCENARIOS[data.scen]){ applyScenarioDef(SCENARIOS[data.scen]); return data; }
   for(var k in DEFAULT_CFG){ if(DEFAULT_CFG.hasOwnProperty(k)) CFG[k]=DEFAULT_CFG[k]; }
   if(data.cfg&&typeof data.cfg==='object'){
     for(var ck in data.cfg){ if(Object.prototype.hasOwnProperty.call(data.cfg,ck)&&DEFAULT_CFG.hasOwnProperty(ck)&&typeof data.cfg[ck]===typeof DEFAULT_CFG[ck]) CFG[ck]=data.cfg[ck]; }
   }
   if(data.preset&&PRESETS[data.preset]) activePreset=data.preset;
+  clearScenario(); // a plain world code is a sandbox world, not a scenario
   initWorld(data.seed);
   return data;
 }
@@ -1632,6 +1642,209 @@ function bloomEvent(){
   return sprang;
 }
 
+// ===== Scenarios + objectives (chunk 5, pillar E): named starting setups with a win/lose observer =====
+// A scenario is a starting RECIPE (a preset + a fixed seed + a burst of initial life) plus an OBJECTIVE.
+// Both halves are balance-safe by the same argument as chunks 3-4: the SETUP (applyScenarioDef) runs only
+// from a button / a scenario permalink, NEVER inside step(), so the measured eRng ecology loop is untouched;
+// and the OBSERVER (evaluateScenario / scenarioSample) is PURE + read-only - it reads the world's stats and
+// writes only the Chronicle + the scenario status, never fauna/flora/RNG - exactly like chronicleSample. A
+// scenario reuses the chunk-4 world-code machinery (a `scen` field on the world code) so it is shareable too.
+//
+// Objective goals:
+//  - 'establish': REACH the `need` tier-counts (no lose). e.g. Genesis: coax a full food web into being.
+//  - 'endure':    first REACH `establish`, THEN HOLD `floor` for `duration` ticks; a drop below the floor
+//                 AFTER establishment = lose. The two-phase shape sidesteps the cold start - a barren world
+//                 warming up is never a failure, only a COLLAPSE after life has taken hold is.
+var SCENARIOS = {
+  genesis: {
+    id:'genesis', label:'Genesis', preset:'balanced', seed:777,
+    blurb:'Coax a barren world into a full, three-tier food web.',
+    warmupLand:0.008, seedFlora:30, seedHerb:0, seedCarn:0,
+    objective:{ goal:'establish', need:{flora:800,herb:60,carn:20},
+      desc:'Bring flora, grazers, and predators all to strength.',
+      winText:'a full three-tier food web took hold.' }
+  },
+  balance: {
+    id:'balance', label:'The Long Balance', preset:'balanced', seed:2024,
+    blurb:'Once life takes hold, keep all three trophic levels alive for 4000 ticks.',
+    warmupLand:0.012, seedFlora:60, seedHerb:24, seedCarn:6,
+    objective:{ goal:'endure', establish:{flora:500,herb:40,carn:12}, floor:{flora:1,herb:1,carn:1}, duration:4000,
+      desc:'Hold flora, grazers, and predators together for 4000 ticks after they establish.',
+      winText:'the three-tier balance held for 4000 ticks.',
+      loseText:'a trophic level collapsed and the balance broke.' }
+  },
+  iceage: {
+    id:'iceage', label:'Ice Age Refuge', preset:'iceage', seed:1888,
+    blurb:'Shelter life through the long cold: keep grazers alive for 3000 ticks after they establish.',
+    warmupLand:0.010, seedFlora:40, seedHerb:16, seedCarn:4,
+    objective:{ goal:'endure', establish:{flora:150,herb:16}, floor:{herb:1}, duration:3000,
+      desc:'Keep herbivores alive through the cold for 3000 ticks after they establish.',
+      winText:'grazers endured the long cold for 3000 ticks.',
+      loseText:'the last grazers froze out.' }
+  },
+  volcanic: {
+    id:'volcanic', label:'Trial by Fire', preset:'volcanic', seed:909,
+    blurb:'Sustain a full food web on restless volcanic ground for 3000 ticks.',
+    warmupLand:0.012, seedFlora:50, seedHerb:20, seedCarn:6,
+    objective:{ goal:'endure', establish:{flora:400,herb:30,carn:10}, floor:{flora:1,herb:1,carn:1}, duration:3000,
+      desc:'Keep all three trophic levels alive on volcanic ground for 3000 ticks after they establish.',
+      winText:'a full food web survived the volcanic trial for 3000 ticks.',
+      loseText:'the volcanic world burned its food web away.' }
+  }
+};
+var SCENARIO_WARMUP_CAP = 4000;   // hard ceiling on the terrain warmup so setup can never loop forever
+var SCENARIO_SAMPLE_EVERY = 10;   // ticks between objective evaluations (matches the chronicle cadence)
+var activeScenario = null;        // { def, startTick, status } or null (a free-play sandbox world)
+
+// Pure: does the world (stats s) meet ALL tier thresholds in `req`? Absent tiers (null/undefined) are ignored.
+function _meetsTiers(req,s){
+  if(!req) return true;
+  if(req.flora!=null&&s.flora<req.flora) return false;
+  if(req.herb!=null&&s.herb<req.herb) return false;
+  if(req.carn!=null&&s.carn<req.carn) return false;
+  return true;
+}
+// Pure: 0..1 progress toward the WEAKEST tier's ratio in `req` (how close the least-satisfied tier is).
+function _tierProgress(req,s){
+  if(!req) return 1;
+  var p=1;
+  if(req.flora>0) p=Math.min(p,s.flora/req.flora);
+  if(req.herb>0)  p=Math.min(p,s.herb/req.herb);
+  if(req.carn>0)  p=Math.min(p,s.carn/req.carn);
+  return clamp(p,0,1);
+}
+// The status a freshly-armed objective starts in.
+function initialScenarioStatus(def){
+  return { state:'active', phase:def.objective.goal==='endure'?'establishing':'reaching', establishedTick:null, progress:0 };
+}
+// PURE win/lose observer (the gate-testable core). Given the objective def, a stats snapshot, the current
+// tick, and the PRIOR status, return the NEW status. No side effects, no RNG, no DOM: a scenario's outcome
+// is a deterministic function of the world's state over time, so it is balance-safe + headless-reproducible.
+function evaluateScenario(def,s,curTick,prev){
+  var o=def.objective;
+  if(prev&&(prev.state==='won'||prev.state==='lost')) return prev; // terminal states latch
+  if(o.goal==='establish'){
+    if(_meetsTiers(o.need,s)) return { state:'won', phase:'done', establishedTick:prev?prev.establishedTick:null, progress:1 };
+    return { state:'active', phase:'reaching', establishedTick:null, progress:_tierProgress(o.need,s) };
+  }
+  // endure: establishing -> holding -> (won at duration | lost on a post-establishment collapse)
+  var establishing=!prev||prev.phase!=='holding';
+  if(establishing){
+    if(_meetsTiers(o.establish,s)) return { state:'active', phase:'holding', establishedTick:curTick, progress:0 };
+    return { state:'active', phase:'establishing', establishedTick:null, progress:_tierProgress(o.establish,s) };
+  }
+  if(!_meetsTiers(o.floor,s)) return { state:'lost', phase:'done', establishedTick:prev.establishedTick, progress:prev.progress };
+  var elapsed=curTick-prev.establishedTick;
+  if(elapsed>=o.duration) return { state:'won', phase:'done', establishedTick:prev.establishedTick, progress:1 };
+  return { state:'active', phase:'holding', establishedTick:prev.establishedTick, progress:clamp(elapsed/o.duration,0,1) };
+}
+// Seed a scenario's initial life. Runs right after initWorld (a freshly-seeded eRng), so the eRng draw ORDER
+// is fixed => a scenario reproduces the same initial life every time (deterministic + shareable).
+function _seedScenarioLife(def){
+  if(def.seedFlora) seedFloraCluster(def.seedFlora);
+  if(def.seedHerb)  seedFaunaGroup('herbivore',def.seedHerb);
+  if(def.seedCarn)  seedFaunaGroup('carnivore',def.seedCarn);
+}
+// PURE core: build a scenario's world (preset cfg + seed + initial life) and ARM its objective. Runs only
+// from startScenario / a scenario permalink - NEVER in step() - so, like the preset selector + god powers,
+// the measured ecology loop is byte-identical. Leaves DOM sync to the caller (mirrors the initWorld/init split).
+function applyScenarioDef(def){
+  _applyPresetCfg(def.preset);
+  initWorld(def.seed);              // resets the world + the chronicle; re-seeds all three RNG streams
+  // Warm the terrain to a SMALL starting landmass so life has somewhere to root: a fresh world is all ocean,
+  // and land forms only through step(). Kept low deliberately - a scenario starts from small beginnings and
+  // the world DEVELOPS during play toward the establish thresholds (the two-phase objective never fails while
+  // still establishing). Deterministic for a fixed seed (step advances the seeded streams identically), so a
+  // scenario reproduces the same starting world every time - which is what makes it shareable. activeScenario
+  // is still null here, so scenarioSample is a no-op during the warmup (only chronicleSample narrates it).
+  // This SYNC warm is used by the gate + a scenario permalink boot; the deck button warms ASYNC (startScenario)
+  // so the tab stays responsive and the world visibly forms.
+  var target=def.warmupLand||0.01;
+  while(tick<SCENARIO_WARMUP_CAP && landCoverage()<target) step();
+  _seedScenarioLife(def);
+  activeScenario={ def:def, startTick:tick, status:initialScenarioStatus(def) };
+  chronicleNote('scenario','Scenario begun - '+def.label+': '+def.objective.desc,'#8fd0ff');
+  return activeScenario;
+}
+function clearScenario(){ activeScenario=null; }
+// Read-only objective observer, run at the END of step() (right after chronicleSample) exactly like the
+// Chronicle: derive the world's stats, advance the pure evaluator, and narrate transitions into the
+// Chronicle. NO fauna/flora/RNG mutation => the measured ecology loop is byte-identical whether or not a
+// scenario is active (and it early-returns entirely in the harness/tests, which never arm a scenario).
+function scenarioSample(){
+  if(!activeScenario) return;
+  if(tick%SCENARIO_SAMPLE_EVERY!==0) return;
+  var prev=activeScenario.status; if(prev.state!=='active') return; // decided - stop re-evaluating (still shown)
+  var def=activeScenario.def, s=chronicleStats(), next=evaluateScenario(def,s,tick,prev);
+  if(next.state==='won') chronicleNote('scenario','Scenario complete - '+def.label+': '+def.objective.winText,'#7fdca4');
+  else if(next.state==='lost') chronicleNote('scenario','Scenario failed - '+def.label+': '+(def.objective.loseText||'the objective was lost.'),'#e88f6a');
+  else if(next.phase==='holding'&&prev.phase==='establishing') chronicleNote('scenario',def.label+': life has established - now hold it.','#9fb4c8');
+  activeScenario.status=next;
+}
+// DOM: the sidebar Objective panel - live goal, phase, progress bar, and the per-tier readout. Gate-blind
+// (verified in the live app); the pure status it renders is gate-covered via evaluateScenario.
+function _objTierRow(name,cur,req){ if(req==null) return ''; var ok=cur>=req; return '<div class="obj-tier'+(ok?' met':'')+'"><span>'+name+'</span><span>'+cur+' / '+req+'</span></div>'; }
+function renderObjective(){
+  var body=document.getElementById('objectiveBody'); if(!body) return;
+  var badge=document.getElementById('objectiveBadge');
+  if(!activeScenario){
+    body.innerHTML='<div class="obj-empty">No scenario active. Pick one from the Scenario deck to play toward a goal.</div>';
+    if(badge) badge.style.display='none';
+    return;
+  }
+  var def=activeScenario.def, st=activeScenario.status, o=def.objective;
+  if(st.phase==='preparing'){
+    body.innerHTML='<div class="obj-title">'+def.label+'</div><div class="obj-desc">'+o.desc+'</div>'
+      +'<div class="obj-state" style="color:var(--accent)">Preparing world</div>'
+      +'<div class="obj-bar"><i style="width:'+Math.round((st.progress||0)*100)+'%;background:var(--accent)"></i></div>'
+      +'<div class="obj-timer">Terrain is forming - life will take root shortly.</div>';
+    if(badge){ badge.style.display=''; badge.textContent='Preparing'; }
+    return;
+  }
+  var stateLbl=st.state==='won'?'Complete':st.state==='lost'?'Failed':(st.phase==='holding'?'Holding':st.phase==='establishing'?'Establishing':'In progress');
+  var stateColor=st.state==='won'?'var(--green)':st.state==='lost'?'var(--red)':'var(--accent)';
+  var pct=Math.round((st.progress||0)*100);
+  var s=chronicleStats();
+  var target=o.goal==='establish'?o.need:(st.phase==='holding'?o.floor:o.establish);
+  var html='<div class="obj-title">'+def.label+'</div><div class="obj-desc">'+o.desc+'</div>';
+  html+='<div class="obj-state" style="color:'+stateColor+'">'+stateLbl+'</div>';
+  html+='<div class="obj-bar"><i style="width:'+pct+'%;background:'+stateColor+'"></i></div>';
+  html+='<div class="obj-tiers">'+_objTierRow('Flora',s.flora,target.flora)+_objTierRow('Herbivores',s.herb,target.herb)+_objTierRow('Carnivores',s.carn,target.carn)+'</div>';
+  if(o.goal==='endure'&&st.phase==='holding'&&st.state==='active') html+='<div class="obj-timer">Held '+(tick-st.establishedTick)+' / '+o.duration+' ticks</div>';
+  body.innerHTML=html;
+  if(badge){ badge.style.display=''; badge.textContent=stateLbl; }
+}
+// DOM wrapper: start a scenario from the deck. Reaches the SAME deterministic world as the sync
+// applyScenarioDef (same initWorld(seed) -> step-to-target -> seed life), but warms the terrain
+// ASYNCHRONOUSLY in small chunks so the tab never freezes and the world visibly forms (a mini genesis).
+var _scenWarmTimer=null;
+function startScenario(id){
+  var def=SCENARIOS[id]; if(!def) return;
+  if(_scenWarmTimer){ clearTimeout(_scenWarmTimer); _scenWarmTimer=null; }
+  running=false;
+  _applyPresetCfg(def.preset);
+  initWorld(def.seed);
+  // A 'preparing' placeholder so the Objective panel shows warmup progress (armed for real once life is seeded).
+  activeScenario={ def:def, startTick:0, status:{state:'active',phase:'preparing',establishedTick:null,progress:0} };
+  var seedElP=document.getElementById('seedInput'); if(seedElP) seedElP.value=_seed;
+  var hSeedElP=document.getElementById('hSeed'); if(hSeedElP) hSeedElP.textContent=_seed;
+  resize(); syncUIToConfig();
+  var op=document.getElementById('panelObjective'); if(op) op.classList.remove('collapsed');
+  var target=def.warmupLand||0.01;
+  function warmChunk(){
+    _scenWarmTimer=null;
+    for(var n=0;n<40 && tick<SCENARIO_WARMUP_CAP && landCoverage()<target;n++) step();
+    if(activeScenario) activeScenario.status.progress=clamp(landCoverage()/target,0,1);
+    draw();
+    if(tick<SCENARIO_WARMUP_CAP && landCoverage()<target){ _scenWarmTimer=setTimeout(warmChunk,0); return; }
+    _seedScenarioLife(def);                                   // land is ready -> seed the initial life
+    activeScenario.startTick=tick; activeScenario.status=initialScenarioStatus(def);
+    chronicleNote('scenario','Scenario begun - '+def.label+': '+def.objective.desc,'#8fd0ff');
+    running=true; draw();                                     // hand off to the normal loop, which now plays
+  }
+  warmChunk();
+}
+
 // ===== Init & loop =====
 function initWorld(seedOverride){
   // Seed setup: use override if a valid number, else random (DOM-free core)
@@ -1656,7 +1869,13 @@ function init(){
   if(_pendingWorldCode){
     var wc=_pendingWorldCode; _pendingWorldCode=null;
     try{
-      applyWorldCode(decodeWorldCode(wc)); // resets CFG, layers the diff, restores the preset, re-inits from the seed
+      var decoded=decodeWorldCode(wc);
+      // A scenario permalink: route through the async startScenario so the boot stays responsive and the
+      // world visibly forms (it re-arms the same objective + reaches the same deterministic world).
+      if(decoded&&typeof decoded==='object'&&decoded.v===WORLD_CODE_VERSION&&decoded.scen&&SCENARIOS[decoded.scen]){
+        startScenario(decoded.scen); return;
+      }
+      applyWorldCode(decoded); // resets CFG, layers the diff, restores the preset, re-inits from the seed
       chronicleNote('terrain','A shared world is restored.','#8a9a7b');
       var seedElP=document.getElementById('seedInput');if(seedElP)seedElP.value=_seed;
       var hSeedElP=document.getElementById('hSeed');if(hSeedElP)hSeedElP.textContent=_seed;
@@ -1668,6 +1887,7 @@ function init(){
   }
   var seedEl=document.getElementById('seedInput');
   var seedVal=seedEl?seedEl.value.trim():'';
+  clearScenario(); // a plain new world (reset / roll seed / map-size / preset change) leaves any scenario
   initWorld(seedVal);
   chronicleNote('terrain','A new world begins.','#8a9a7b');
   var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;
@@ -1684,7 +1904,7 @@ function step(){
   // (The old code suppressed this whenever climate was on, which froze the base and made the seasonal delta
   // accumulate only once genesis stopped - the regime-dependence + drift bug. Base is climate-independent.)
   if(genesisChanged||tick%20===1){computeTemperature();computeAridity();}
-  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();chronicleSample();
+  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();chronicleSample();scenarioSample();
 }
 function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
@@ -1869,3 +2089,7 @@ export { brushTerrain, meteorStrike, droughtEvent, bloomEvent };
 // the gate can prove build->encode->decode->apply round-trips to the same world. _seed/activePreset are
 // live bindings for the round-trip assertions. copyWorldLink/copyPostcard are DOM-only (not exported).
 export { buildWorldCode, applyWorldCode, encodeWorldCode, decodeWorldCode, worldPermalink, worldPostcard, _seed, activePreset };
+// Scenarios (chunk 5, pillar E): the pure win/lose observer + the setup core the gate exercises directly.
+// evaluateScenario is a pure reducer (def, stats, tick, prevStatus) -> newStatus; applyScenarioDef arms a
+// scenario (runs only from a button / permalink, never step()); activeScenario is a live binding.
+export { SCENARIOS, evaluateScenario, applyScenarioDef, clearScenario, activeScenario };
