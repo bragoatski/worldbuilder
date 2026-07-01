@@ -247,7 +247,7 @@ Pillar E: named starting setups + win/lose objectives on top of the sandbox. Shi
   (balance-safe regardless, since they only affect win/lose feel) - eyeball whether each scenario is winnable
   and fun, and tune the numbers. The async warmup is ~5-12s of visible world-forming.
 
-## Speciation + trophic-depth experiment - Living World chunk 6 (2026-06-30) - DONE + DEPLOYING
+## Speciation + trophic-depth experiment - Living World chunk 6 (2026-06-30) - DONE + DEPLOYED (main b58f4be, ff'd da4a4c1..b58f4be + pushed, CI success, live bundle index-D09CKDhj.js confirmed HTTP 200 + contains the chunk-6 code)
 Pillar C (speciation) SHIPPED; trophic depth built as a measured DEFAULT-OFF experiment that the harness
 shelved (flag rather than guess). Two commits: `c3273dc` (speciation) + `f23a95c` (scavenger).
 
