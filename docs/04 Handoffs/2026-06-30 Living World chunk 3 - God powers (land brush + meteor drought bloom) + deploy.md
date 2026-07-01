@@ -65,9 +65,11 @@ Working tree was clean at start (branch `ecology-balance`, == `main` == `d7d0191
 ahead). Check `git status` + mtime before editing if another session may be active; stage only your own paths.
 
 ## Deploy
-Code commit `a25978a`; local build bundle `index-CmijjgF9.js`. Deploying = ff `main` + push (GitHub Pages CI
-builds + publishes `dist/`); a follow-up `docs(status): mark chunk 3 DEPLOYED` records the final main SHA +
-the confirmed live bundle hash (the `fea8107` pattern). Live: https://bragoatski.github.io/worldbuilder/
+DONE 2026-06-30 (Kevin's per-chunk deploy in the prompt). Code `a25978a` + docs `7ed0da8`; ff `main`
+`d7d0191 -> 7ed0da8` + pushed. GitHub Pages CI built + published; the live site serves HTTP 200 with bundle
+`assets/index-CmijjgF9.js` (matches the local build). This deploy-marker STATUS/handoff fix sits on
+`ecology-balance` one docs commit ahead of `main` (swept in next chunk, the `fea8107` pattern).
+Live: https://bragoatski.github.io/worldbuilder/
 
 ## NEXT (chunk 4): Shareable worlds (thread 3)
 Seed + CFG -> URL permalink (builds on the JSON export) + a "copy world link" action; optionally a

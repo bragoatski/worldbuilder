@@ -161,7 +161,7 @@ Make evolution VISIBLE (pillar A). Shipped, balance PROVEN safe (harness byte-id
   follow camera + panels are gate-blind DOM -> need an eyeball in the live app (follow a creature, watch
   it stay centered; check the size markers + Lineage panel + size events in the Chronicle).
 
-## God powers - Living World chunk 3 (2026-06-30) - DONE, deploying (code a25978a; local build bundle index-CmijjgF9.js)
+## God powers - Living World chunk 3 (2026-06-30) - DONE + DEPLOYED (main 7ed0da8, ff'd + pushed, CI success, live bundle index-CmijjgF9.js confirmed HTTP 200)
 God-game agency (pillar D): deliberate interventions with Chronicle-logged consequence. First BEHAVIOR-touching
 chunk, but **balance-safe BY CONSTRUCTION** - proven with a harness before/after (see below). Shipped:
 - **Land brush** (`brushTerrain(cx,cy,dir)`): a "God" deck seg -> Raise / Lower buttons set a `placeMode`;
