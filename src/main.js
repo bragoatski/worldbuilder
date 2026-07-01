@@ -223,19 +223,27 @@ var CFG={
   meteorRadius:4, meteorCraterDepth:3.0,   // meteor: blast/crater radius + centre-to-rim elevation gouge
   droughtSeverity:0.5,                     // drought: base per-plant kill prob (scaled up on arid ground)
   bloomCount:250,                          // bloom: plants seeded in a burst (weighted placement)
-  // Trophic depth EXPERIMENT (chunk 6): a SCAVENGER (detritivore) tier that eats CARRION - the corpses of
-  // dead fauna, an energy flux the current 3-tier web wastes. Chosen as the trophic addition least likely to
-  // break the C2 balance because it adds NO predation pressure on living herbivores/carnivores (it feeds only
-  // on death that already happens), unlike an apex tier (which stacks a 4th level and amplifies the paradox of
-  // enrichment). DEFAULT OFF: it is a fauna BEHAVIOR change, so it ships on only if the harness measures it
-  // neutral-to-better vs C2 (flag rather than guess). Flag off => no carrion is created and no scavenger code
-  // runs => the eRng stream is byte-identical to C2.
-  scavengersEnabled:false,
+  // Trophic depth (chunk 7): a SCAVENGER (detritivore) tier that eats CARRION - the corpses of dead fauna, an
+  // energy flux the 3-tier web otherwise wastes. Chosen as the trophic addition least likely to break C2
+  // because it adds NO predation pressure on the living tiers (it feeds only on death that already happens),
+  // unlike an apex tier (which stacks a 4th predator level and amplifies the paradox of enrichment). SHIPPED ON
+  // in chunk 7 after the take-2 tuning below made it viable + balance-neutral: harness --scav=12 at 12 seeds ==
+  // C2 (extinction 0%, carn-persistence 75% 9/12, cap-hits 0) with scavenger-persistence 100% (final scav ~11,
+  // above the rescue floor => genuinely reproducing). Chunk 6 shipped it default-OFF because the untuned tier
+  // starved (0% persistence). Flag off is STILL byte-identical to C2 (no carrion created, no scavenger code
+  // runs) -> the --scav=0 harness run remains the C2 balance proof.
+  scavengersEnabled:true,
   scavengerSpeed:15,                       // move cooldown (between herbivore 20 and carnivore 16)
-  scavengerEatGain:20,                     // energy per carrion consumed
+  scavengerEatGain:35,                     // energy per carrion consumed (take-2: 20->35 so a single find sustains a wanderer between corpses)
   scavengerStartEnergy:55, scavengerMaxEnergy:110,
   scavengerReproThreshold:88, scavengerReproCost:44,
-  carrionMaxAge:100                        // ticks a corpse persists before it rots away uneaten
+  carrionMaxAge:300,                       // ticks a corpse persists before rotting (take-2: 100->300 so carrion accumulates + post-crash death pulses feed a scavenger bloom)
+  // Scavenger immigration RESCUE (take-2): a carrion-dependent analog of knob D. Scavengers re-immigrate while
+  // they are scarce AND corpses are present, so the detritivore tier cannot hit absorbing-zero on a lean stretch.
+  // Guarded on scavengersEnabled (off => not even the eRng draw runs => byte-identical to C2).
+  scavengerRescueRate:0.0004,              // per-carrion per-tick immigration prob while scarce
+  scavengerRescueMinCarrion:6,             // need a real death flux present before immigrants arrive
+  scavengerRescueScavCap:6                 // stop rescuing once the tier is established (rescue, not subsidy)
 };
 // Snapshot defaults for preset reset
 var DEFAULT_CFG = {};
@@ -448,6 +456,7 @@ hook('btnReset',function(){running=false;init();buildSliders();applyElevationInt
 hook('btnSpawnFlora',function(){seedFloraCluster(15);draw();});
 hook('btnSpawnHerb',function(){seedFaunaGroup('herbivore',8);draw();});
 hook('btnSpawnCarn',function(){seedFaunaGroup('carnivore',4);draw();});
+hook('btnSpawnScav',function(){seedFaunaGroup('scavenger',4);draw();});
 hook('btnRivers',function(){generateRivers();computeAridity();applyClimate();reclassTerrain();draw();});
 // Scenarios (chunk 5): Start plays the selected scenario; the empty "Sandbox" option rolls a plain world.
 hook('btnStartScenario',function(){var sel=document.getElementById('scenarioSelect');var id=sel?sel.value:'';if(id)startScenario(id);else{running=false;init();buildSliders();draw();}});
@@ -1178,13 +1187,18 @@ function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]=
 function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
 function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
 function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;
-  var hc=0,cc=0;for(var i=0;i<fauna.length;i++){var a=fauna[i];if(a){if(a.type==='herbivore')hc++;else cc++;}}
+  // Count the three tiers SEPARATELY: lumping scavengers into cc would starve knob D's carnivore rescue of
+  // headroom once scavengers exist (a confound). scavengers are 0 when the flag is off, so cc == carnivores as before.
+  var hc=0,cc=0,sc=0;for(var i=0;i<fauna.length;i++){var a=fauna[i];if(a){if(a.type==='herbivore')hc++;else if(a.type==='scavenger')sc++;else cc++;}}
   // Baseline herbivore immigration trickle (preserves the old 0.7*spawnChance rate).
   if(eRng()<CFG.faunaSpawnChance*0.7)spawnFaunaAt('herbivore');
   // Knob D: prey-dependent carnivore RESCUE. Immigration probability scales with prey
   // abundance and only fires while predators are scarce, so predators cannot go
   // permanently extinct while prey are plentiful (the absorbing-zero failure mode).
-  if(cc<CFG.carnivoreRescueCarnCap&&hc>=CFG.carnivoreRescueMinPrey&&eRng()<CFG.carnivoreRescueRate*hc)spawnFaunaAt('carnivore');}
+  if(cc<CFG.carnivoreRescueCarnCap&&hc>=CFG.carnivoreRescueMinPrey&&eRng()<CFG.carnivoreRescueRate*hc)spawnFaunaAt('carnivore');
+  // Scavenger RESCUE (take-2): carrion-dependent immigration while scavengers are scarce, so the detritivore tier
+  // cannot hit absorbing-zero. Guarded on the flag so the off-path draws no eRng (byte-identical to C2).
+  if(CFG.scavengersEnabled&&sc<CFG.scavengerRescueScavCap&&carrion.length>=CFG.scavengerRescueMinCarrion&&eRng()<CFG.scavengerRescueRate*carrion.length)spawnFaunaAt('scavenger');}
 var _floraAtTile,_herbAtTile,_carnAtTile,_scavAtTile,_carrionAtTile;
 function buildSpatialIndex(){_floraAtTile={};_herbAtTile={};_carnAtTile={};_scavAtTile={};_carrionAtTile={};for(var i=0;i<flora.length;i++){var f=flora[i];if(!f)continue;var k=idx(f.x,f.y);if(!_floraAtTile[k])_floraAtTile[k]=[];_floraAtTile[k].push(i);}for(var j=0;j<fauna.length;j++){var a=fauna[j];if(!a)continue;var k2=idx(a.x,a.y);if(a.type==='herbivore'){if(!_herbAtTile[k2])_herbAtTile[k2]=[];_herbAtTile[k2].push(j);}else if(a.type==='scavenger'){if(!_scavAtTile[k2])_scavAtTile[k2]=[];_scavAtTile[k2].push(j);}else{if(!_carnAtTile[k2])_carnAtTile[k2]=[];_carnAtTile[k2].push(j);}}
   // Carrion index (scavenger food; empty unless scavengers are enabled -> off is byte-identical).
@@ -1208,6 +1222,9 @@ function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]
     // out from other scavengers so they don't all pile on one carcass (mild conspecific crowding).
     var crH=_carrionAtTile[ti];if(crH)score+=Math.min(crH.length,4)*3;
     var adjS=neighbors4(tx,ty);for(var sj=0;sj<adjS.length;sj++){var crA=_carrionAtTile[idx(adjS[sj][0],adjS[sj][1])];if(crA)score+=crA.length*1.4;}
+    // Carrion scent (take-2): scan ring 2-4 so a wanderer homes in on a distant kill/crash corpse field
+    // (diminishing signal, mirrors the carnivore prey-scent scan). This is the lever that finds sparse food.
+    for(var cdy=-4;cdy<=4;cdy++){for(var cdx=-4;cdx<=4;cdx++){var cd=Math.abs(cdx)+Math.abs(cdy);if(cd<2||cd>4)continue;var csx=tx+cdx,csy=ty+cdy;if(!inb(csx,csy))continue;var crS=_carrionAtTile[idx(csx,csy)];if(crS)score+=crS.length*(cd===2?0.6:cd===3?0.35:0.2);}}
     var selfS=_scavAtTile[ti];if(selfS)score-=selfS.length*1.0;
   }else{
     // Carnivore prey tracking: immediate tile (strong), ring 1 (medium), ring 2-3 (scent)
