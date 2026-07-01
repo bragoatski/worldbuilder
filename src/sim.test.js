@@ -590,3 +590,54 @@ describe('speciation (chunk 6, pillar C)', () => {
     expect(reg.byKey[A.key].peakPop).toBe(12);
   });
 });
+
+// Trophic depth: the SCAVENGER experiment (chunk 6). A detritivore tier that eats CARRION (dead-fauna
+// corpses) - the trophic addition least likely to break the C2 balance because it adds no predation pressure
+// on the living tiers, only harvests the death flux. It is a fauna BEHAVIOR change, so it is DEFAULT-OFF and
+// ships on only if the harness measures it neutral-to-better vs C2 (measure -> A/B -> keep-if-better). Two
+// gate properties matter here: (1) OFF is byte-identical (no carrion created, no scavenger code runs) - the
+// harness scav=0 run == C2 is the balance proof; here we assert no carrion/scavenger appears with the flag
+// off; (2) the shipped code is CORRECT + DETERMINISTIC when on (carrion is created on death and consumed,
+// and a run replays identically - snapshot/replay-safe, no stray Math.random).
+describe('trophic depth: scavenger experiment (chunk 6, default-off)', () => {
+  it('flag OFF (default): fauna die but no carrion is created and no scavenger arises', () => {
+    expect(sim.CFG.scavengersEnabled).toBe(false);
+    sim.initWorld(555);
+    for (let i = 0; i < 700; i++) sim.step();
+    sim.seedFloraCluster(40); sim.seedFaunaGroup('herbivore', 30); sim.seedFaunaGroup('carnivore', 10);
+    for (let i = 0; i < 300; i++) sim.step(); // deaths happen, but with the flag off no corpse is dropped
+    expect(sim.carrion.length).toBe(0);
+    expect(sim.fauna.some((f) => f && f.type === 'scavenger')).toBe(false);
+  }, 60000);
+
+  it('flag ON: fauna deaths drop carrion that scavengers consume, and the run is deterministic', () => {
+    function run() {
+      sim.CFG.scavengersEnabled = true;
+      sim.initWorld(2024);
+      for (let i = 0; i < 1200; i++) sim.step();
+      sim.seedFloraCluster(40);
+      sim.seedFaunaGroup('herbivore', 40);
+      sim.seedFaunaGroup('carnivore', 12);
+      sim.seedFaunaGroup('scavenger', 12);
+      let maxCarrion = 0, ateSeen = false;
+      for (let i = 0; i < 700; i++) {
+        sim.step();
+        if (sim.carrion.length > maxCarrion) maxCarrion = sim.carrion.length;
+        // a scavenger above its start energy can only have gotten there by eating carrion (its sole food)
+        if (sim.fauna.some((f) => f && f.type === 'scavenger' && f.energy > sim.CFG.scavengerStartEnergy)) ateSeen = true;
+      }
+      const fp = sim.fauna.filter((f) => f).map((f) => `${f.id}:${f.type}:${f.x},${f.y}:${f.energy.toFixed(2)}`);
+      return { maxCarrion, ateSeen, fp };
+    }
+    let a, b;
+    try {
+      a = run();
+      b = run();
+    } finally {
+      sim.CFG.scavengersEnabled = false; // never leak the flag into other tests (CFG is a persistent global)
+    }
+    expect(a.maxCarrion).toBeGreaterThan(0); // deaths dropped corpses onto the map
+    expect(a.ateSeen).toBe(true); // scavengers fed on them (gained energy above their start)
+    expect(b.fp).toEqual(a.fp); // scavenger behavior is deterministic (no stray Math.random -> snapshot-safe)
+  }, 120000);
+});
