@@ -210,7 +210,7 @@ deterministic replay, default-reset, untrusted-input robustness, postcard) + bui
 **Gate-blind (DOM):** the Copy Link / Postcard buttons + clipboard + address-bar + `init()`'s `?w=` boot branch
 -> eyeball in the live app (load a shared link, confirm the same world; see the chunk-4 handoff checklist).
 
-## Scenarios + light objectives - Living World chunk 5 (2026-06-30) - DONE + DEPLOYED (main <SHA>, ff'd + pushed, CI success, live bundle index-CEEBKIas.js)
+## Scenarios + light objectives - Living World chunk 5 (2026-06-30) - DONE + DEPLOYED (main da4a4c1, ff'd ecd62a8..da4a4c1 + pushed, CI success, live bundle index-CEEBKIas.js confirmed HTTP 200)
 Pillar E: named starting setups + win/lose objectives on top of the sandbox. Shipped, balance PROVEN safe
 (harness before/after byte-identical - see below):
 - **Four scenarios** (`SCENARIOS` in `src/main.js`), each = a preset + a FIXED seed + a small terrain warmup
