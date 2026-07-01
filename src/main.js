@@ -1025,7 +1025,7 @@ function generateSpeciesName(entity,type){
   return genus+' '+hab+suf;
 }
 function getSpeciesName(entity,type){
-  if(entity.gen<5) return null; // too young a lineage
+  if(entity.gen<SPECIES_MIN_GEN) return null; // too young a lineage (same gate as the speciation registry)
   if(!entity._speciesName) entity._speciesName=generateSpeciesName(entity,type);
   return entity._speciesName;
 }
@@ -1269,7 +1269,7 @@ function draw(){
     else if(p.type==='starve'){ctx.fillStyle='#888';ctx.beginPath();ctx.arc(px+PIX/2,py+PIX/2,PIX/3,0,Math.PI*2);ctx.fill();}
     else if(p.type==='age'){ctx.fillStyle='#aaa';ctx.fillRect(px+1,py+PIX/2,PIX-2,1);}
   }ctx.globalAlpha=1.0;deathParticles=aliveParticles;
-  drawHUD();renderChronicle();renderObjective();updateFollow();
+  drawHUD();renderChronicle();renderObjective();renderSpecies();updateFollow();
 }
 
 // ===== Inspector =====
@@ -1489,6 +1489,19 @@ function newChronicle(){
       herbGenRung:0, carnGenRung:0, oldestAge:0, landRung:0, sizeRung:0, peakSize:0, firstCarn:false } };
 }
 var chronicle = newChronicle();
+// Speciation registry (chunk 6, pillar C): the world's MEMORY of its named species - which have emerged
+// (diverged) and which have died out. Module state like chronicle/speciesNameCache: reset in initWorld,
+// round-trips snapshot/restore. Read-only from the sim's view (never touched by faunaStep) -> balance-safe.
+// A species must have bred through this many generations AND be this numerous to be "established" - so a
+// lone drifted individual (or a shallow, brand-new lineage) is not announced. Tuned to this boom-bust world:
+// generational depth grows ~1 per ~500 ticks and RESETS on each population crash (survivors are gen-0
+// immigrants), so gen>=3/pop>=6 surfaces the real established clusters at healthy peaks without waiting for
+// the rare gen-5 sustained boom. Balance-neutral (observation only) so this is a story/pacing knob, not a
+// balance one. Also gates getSpeciesName, so "old enough to have a name" == "old enough to be a species".
+var SPECIES_MIN_GEN = 3;
+var SPECIES_MIN_POP = 6;
+function newSpeciesRegistry(){ return { byKey:{}, everCount:0 }; }
+var speciesRegistry = newSpeciesRegistry();
 // Highest ladder value <= value, but only if it exceeds the previously-crossed rung (else prevRung).
 function _crossLadder(ladder,value,prevRung){var hit=prevRung;for(var i=0;i<ladder.length;i++){if(value>=ladder[i]&&ladder[i]>hit)hit=ladder[i];}return hit;}
 function _capType(t){return t==='herbivore'?'Herbivore':t==='carnivore'?'Carnivore':(t?t.charAt(0).toUpperCase()+t.slice(1):'Creature');}
@@ -1561,6 +1574,88 @@ function renderChronicle(){
   if(rec){ var r=chronicle.records; var topGen=Math.max(r.herbGenRung,r.carnGenRung);
     rec.innerHTML='<span>Events <b>'+chronicle.events.length+'</b></span><span>Peak herb <b>'+r.peakHerb+'</b></span><span>Peak carn <b>'+r.peakCarn+'</b></span><span>Top gen <b>'+topGen+'</b></span><span>Oldest <b>'+r.oldestAge+'</b></span><span>Biggest <b>'+(r.peakSize?r.peakSize.toFixed(2)+'×':'--')+'</b></span>'; }
   var badge=document.getElementById('chronicleBadge'); if(badge) badge.textContent=String(chronicle.events.length);
+}
+
+// ======================================================================
+//  SPECIATION (chunk 6, pillar C): lineage drift -> named, diverging species
+// ======================================================================
+// A "species" is a cluster of living fauna sharing a genome SIGNATURE - the SAME (tier, hue, climate-pref)
+// buckets that generateSpeciesName already keys its binomial on, so one signature is 1:1 with one name. As
+// drift (mutateFaunaChild shifting hue / prefArid / prefTemp) carries a lineage's descendants into a new
+// bucket, a new signature appears among the living -> a species has DIVERGED. This is PURE OBSERVATION over
+// the existing genome: speciesSample() reads fauna, updates the registry, and narrates births/extinctions
+// into the Chronicle, drawing NO eRng and mutating no fauna/flora -> the measured ecology loop is
+// byte-identical (same proof shape as chronicleSample; the harness runs it and the numbers are unchanged).
+// Reproductive isolation (mate choice) is a SEPARATE, behavior-touching, harness-gated experiment - by
+// design NOT here (roadmap: "tracking + naming first; reproductive isolation as a separate experiment").
+function speciesKey(f){ return f.type+'|'+Math.floor(f.hue/20)+'|'+Math.floor(f.prefArid/2.5)+'|'+Math.floor(f.prefTemp/2.5); }
+// Pure census of the LIVING fauna, bucketed into species (defaults to the module fauna list; takes an
+// explicit list so the gate can exercise the bucketing on synthetic genomes). Returns entries sorted by
+// population desc: {key,type,name,pop,maxGen,maxSize,vivid}. The most-evolved member represents the species
+// for naming (all members of a key share buckets, so the name is the same either way).
+function speciesCensus(list){ list=list||fauna; var m={};
+  for(var i=0;i<list.length;i++){var f=list[i];if(!f)continue;var k=speciesKey(f);var e=m[k];
+    if(!e){e=m[k]={key:k,type:f.type,rep:f,pop:0,maxGen:0,maxSize:0,vivid:0};}
+    e.pop++; if(f.gen>e.maxGen)e.maxGen=f.gen; if((f.size||1)>e.maxSize)e.maxSize=(f.size||1); if(f.vivid)e.vivid++;
+    if(f.gen>e.rep.gen)e.rep=f;
+  }
+  var arr=[];for(var kk in m){var e2=m[kk];e2.name=generateSpeciesName(e2.rep,e2.type);delete e2.rep;arr.push(e2);}
+  arr.sort(function(a,b){return b.pop-a.pop||(a.key<b.key?-1:1);}); // pop desc, key as a stable tiebreak
+  return arr;
+}
+// Pure reducer (gate-testable like evaluateScenario): advance the registry from a census at a tick. Mutates
+// `reg` (registers a newly-established species, updates peak population, flips extinct/re-emerged) and
+// RETURNS the narration events to log - so all the birth/death bookkeeping is exercised on synthetic census
+// sequences without a slow world. A species is EXTINCT only when it has no living member at all (not merely
+// dipped under the establishment floor). Terminal-ish: extinct latches until a member reappears.
+function updateSpeciesRegistry(census,reg,curTick){
+  if(!reg.byKey){reg.byKey={};} if(reg.everCount===undefined)reg.everCount=0;
+  var b=reg.byKey, events=[], alive={};
+  for(var a=0;a<census.length;a++) alive[census[a].key]=true; // any living member (even below the pop floor)
+  for(var i=0;i<census.length;i++){var c=census[i];
+    if(c.maxGen<SPECIES_MIN_GEN||c.pop<SPECIES_MIN_POP) continue; // not yet an established species
+    var rec=b[c.key];
+    if(!rec){ // never registered -> a new species has diverged
+      b[c.key]={key:c.key,name:c.name,type:c.type,firstTick:curTick,peakPop:c.pop,extinct:false,extinctTick:null};
+      reg.everCount++;
+      events.push({kind:'species',text:'A new '+(c.type==='herbivore'?'grazer':'predator')+' species diverged: '+c.name+'.',color:c.type==='herbivore'?'#7fd0a0':'#e0a0a0'});
+    } else { if(c.pop>rec.peakPop)rec.peakPop=c.pop;
+      if(rec.extinct){ rec.extinct=false;rec.extinctTick=null; events.push({kind:'species',text:rec.name+' has re-emerged.',color:'#9fb4c8'}); }
+    }
+  }
+  for(var k in b){ var r=b[k]; if(r.extinct||alive[k]) continue; // registered, non-extinct, now gone -> extinct
+    r.extinct=true; r.extinctTick=curTick; events.push({kind:'species',text:r.name+' has gone extinct.',color:'#8a95a0'}); }
+  return events;
+}
+// Read-only observer on the step path (end of step(), after scenarioSample), on the Chronicle cadence. Builds
+// the census, advances the pure registry reducer, and logs its events into the Chronicle. No eRng, no fauna
+// mutation -> harness byte-identical (like chronicleSample).
+function speciesSample(){
+  if(tick%CHRONICLE_SAMPLE_EVERY!==0) return;
+  if(!speciesRegistry||!speciesRegistry.byKey) speciesRegistry=newSpeciesRegistry();
+  var events=updateSpeciesRegistry(speciesCensus(),speciesRegistry,tick);
+  for(var i=0;i<events.length;i++) chronicleAdd(events[i].kind,events[i].text,events[i].color);
+}
+// DOM (gate-blind): the Species sidebar panel - the living census of established species + a records line.
+// The pure census/registry it renders are gate-covered; the panel itself is verified in the live app.
+function renderSpecies(){
+  var body=document.getElementById('speciesBody'); if(!body) return;
+  var census=speciesCensus();
+  var shown=census.filter(function(c){return c.maxGen>=SPECIES_MIN_GEN&&c.pop>=SPECIES_MIN_POP;});
+  if(!shown.length){ body.innerHTML='<div class="chron-empty">No distinct species yet. Lineages must diverge and mature.</div>'; }
+  else{ var html='';
+    for(var i=0;i<shown.length;i++){var c=shown[i];var icon=c.type==='herbivore'?'🐇':'🐺';
+      html+='<div class="sp-row"><span class="sp-icon">'+icon+'</span><span class="species-name sp-name">'+c.name+'</span>'
+        +'<span class="sp-stat">×'+c.pop+'</span><span class="sp-stat">g'+c.maxGen+'</span>'
+        +(c.maxSize>=1.3?'<span class="sp-stat">'+c.maxSize.toFixed(1)+'×</span>':'')
+        +(c.vivid?'<span class="sp-vivid">✨</span>':'')+'</div>';
+    }
+    body.innerHTML=html;
+  }
+  var recEl=document.getElementById('speciesRecords');
+  if(recEl){ var extinct=0;for(var ek in speciesRegistry.byKey)if(speciesRegistry.byKey[ek].extinct)extinct++;
+    recEl.innerHTML='<span>Living <b>'+shown.length+'</b></span><span>Emerged <b>'+speciesRegistry.everCount+'</b></span><span>Extinct <b>'+extinct+'</b></span>'; }
+  var badge=document.getElementById('speciesBadge'); if(badge) badge.textContent=String(shown.length);
 }
 
 // ===== God powers (chunk 3, pillar D): deliberate interventions with Chronicle-logged consequence =====
@@ -1858,7 +1953,7 @@ function initWorld(seedOverride){
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
   tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
-  popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};chronicle=newChronicle();placeMode='none';clearRivers();resetZoomPan();
+  popHistory={flora:[],herb:[],carn:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];speciesNameCache={};chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();placeMode='none';clearRivers();resetZoomPan();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
 }
@@ -1904,7 +1999,7 @@ function step(){
   // (The old code suppressed this whenever climate was on, which froze the base and made the seasonal delta
   // accumulate only once genesis stopped - the regime-dependence + drift bug. Base is climate-independent.)
   if(genesisChanged||tick%20===1){computeTemperature();computeAridity();}
-  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();chronicleSample();scenarioSample();
+  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();chronicleSample();scenarioSample();speciesSample();
 }
 function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
@@ -2038,7 +2133,7 @@ function snapshotState(){
     seed:_seed, tick:tick, W:W, H:H,
     floraIdCounter:floraIdCounter, faunaIdCounter:faunaIdCounter,
     yearlyVariation:yearlyVariation, sunPhase:sunPhase, riverGenerated:riverGenerated,
-    WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache, chronicle:chronicle,
+    WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache, chronicle:chronicle, speciesRegistry:speciesRegistry,
     // terrain + volcano fields
     grid:grid, elev:elev, aridity:aridity, tempField:tempField, sunlight:sunlight,
     coastTTL:coastTTL, adjCooldown:adjCooldown, ringDone:ringDone, hillDecayCount:hillDecayCount,
@@ -2063,7 +2158,7 @@ function restoreState(snap){
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   floraIdCounter=s.floraIdCounter; faunaIdCounter=s.faunaIdCounter;
   yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; riverGenerated=s.riverGenerated;
-  WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle();
+  WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle(); speciesRegistry=s.speciesRegistry||newSpeciesRegistry();
   grid=s.grid; elev=s.elev; aridity=s.aridity; tempField=s.tempField; sunlight=s.sunlight;
   coastTTL=s.coastTTL; adjCooldown=s.adjCooldown; ringDone=s.ringDone; hillDecayCount=s.hillDecayCount;
   peakVolcano=s.peakVolcano; volcActive=s.volcActive; volcAge=s.volcAge; volcLife=s.volcLife;
@@ -2080,6 +2175,9 @@ function restoreState(snap){
 export { initWorld, runAssertions, step, landCoverage, seedFloraCluster, seedFaunaGroup, snapshotState, restoreState, CFG, flora, fauna, tick, W, H };
 // Chronicle (the world's memory): live binding + the pure helpers the gate exercises directly.
 export { chronicle, chronicleNote, _crossLadder };
+// Speciation (chunk 6, pillar C): the pure census/key/registry cores the gate exercises directly + the
+// registry live binding. speciesSample() (the step-path observer) is read-only -> harness byte-identical.
+export { speciesCensus, speciesKey, updateSpeciesRegistry, newSpeciesRegistry, speciesRegistry };
 // Additional live bindings for the river structural tests + headless probe (grid/elev are
 // reassigned in initWorld; in-place mutation of them from a test paints a synthetic surface).
 export { generateRivers, clearRivers, riverData, grid, elev, aridity, tempField, T, buildSnapshot };

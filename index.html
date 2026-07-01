@@ -520,6 +520,14 @@
   /* Species name styling */
   .species-name { font-style:italic; color:var(--teal); font-family:var(--sans); }
 
+  /* Species panel (chunk 6): the living census of diverged, named species */
+  .sp-list { max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; }
+  .sp-row { display:flex; align-items:baseline; gap:6px; font-family:var(--mono); font-size:10px; line-height:1.4; }
+  .sp-row .sp-icon { flex:0 0 auto; }
+  .sp-row .sp-name { flex:1 1 auto; font-size:11px; }
+  .sp-row .sp-stat { flex:0 0 auto; color:var(--fg-dim); font-variant-numeric:tabular-nums; }
+  .sp-row .sp-vivid { flex:0 0 auto; }
+
   /* Follow-a-creature: inspector button + lineage panel */
   .follow-btn { font-family:var(--mono); font-size:9px; color:var(--accent); background:var(--accent-dim); border:1px solid var(--accent-dim); border-radius:3px; padding:0 6px; cursor:pointer; vertical-align:middle; }
   .follow-btn:hover { border-color:var(--accent); }
@@ -850,6 +858,19 @@
           <div class="panel-body">
             <div class="chron-records" id="chronicleRecords"></div>
             <div class="chron-feed" id="chronicleFeed"><div class="chron-empty">No history yet. Press play and let the world unfold.</div></div>
+          </div>
+        </div>
+
+        <!-- Species (chunk 6): the living census of diverged, named species -->
+        <div class="panel" id="panelSpecies">
+          <div class="panel-head" onclick="togglePanel('panelSpecies')">
+            <span class="chev">▼</span>
+            <h3>Species</h3>
+            <span class="badge" id="speciesBadge">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="chron-records" id="speciesRecords"></div>
+            <div class="sp-list" id="speciesBody"><div class="chron-empty">No distinct species yet. Lineages must diverge and mature.</div></div>
           </div>
         </div>
 

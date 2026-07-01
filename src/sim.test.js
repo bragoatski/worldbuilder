@@ -514,3 +514,79 @@ describe('scenarios + objectives (chunk 5, pillar E)', () => {
     expect(sim.activeScenario).toBeNull();
   }, 90000);
 });
+
+// Speciation (chunk 6, pillar C): lineage drift becomes NAMED, DIVERGING species. Two halves. (1) The pure
+// CENSUS/KEY core buckets living fauna by the genome signature generateSpeciesName keys its binomial on
+// (tier + hue + climate-pref buckets), so one signature is 1:1 with one name - gate-testable on synthetic
+// genomes without a slow world. (2) The step-path OBSERVER (speciesSample) registers a species once it is
+// established and narrates births/extinctions into the Chronicle; it is read-only (no eRng, no fauna
+// mutation), so like chronicleSample the measured ecology loop is byte-identical (the harness before/after is
+// the balance proof; here we prove it round-trips deterministically through a snapshot). The panel is
+// gate-blind DOM. Reproductive isolation (mate choice) is deliberately NOT here - a separate harness-gated
+// experiment (roadmap: tracking + naming first).
+describe('speciation (chunk 6, pillar C)', () => {
+  it('the pure census buckets fauna by genome signature and names each species (1:1 with the key)', () => {
+    const list = [
+      { type: 'herbivore', hue: 40, prefArid: 3, prefTemp: 6, gen: 7, size: 1.0, vivid: 0 },
+      { type: 'herbivore', hue: 45, prefArid: 3, prefTemp: 6, gen: 5, size: 1.6, vivid: 1 }, // same buckets -> same species
+      { type: 'herbivore', hue: 40, prefArid: 8, prefTemp: 6, gen: 6, size: 1.0, vivid: 0 }, // different aridity bucket -> a distinct species
+    ];
+    const c = sim.speciesCensus(list);
+    expect(c.length).toBe(2); // two distinct species
+    expect(c[0].pop).toBe(2); // sorted by population desc
+    expect(c[1].pop).toBe(1);
+    expect(c[0].maxGen).toBe(7); // most-evolved member's generation
+    expect(c[0].maxSize).toBeCloseTo(1.6, 5); // largest member
+    expect(c[0].vivid).toBe(1);
+    expect(typeof c[0].name).toBe('string');
+    expect(c[0].name.length).toBeGreaterThan(0);
+    expect(c[0].name).not.toBe(c[1].name); // different signature -> different binomial
+    // the two same-bucket members would resolve to the same key/name
+    expect(sim.speciesKey(list[0])).toBe(sim.speciesKey(list[1]));
+    expect(sim.speciesKey(list[0])).not.toBe(sim.speciesKey(list[2]));
+  });
+
+  it('speciesKey is stable within a bucket and changes at a bucket boundary', () => {
+    const base = { type: 'herbivore', hue: 40, prefArid: 3.0, prefTemp: 6.0 };
+    const within = { type: 'herbivore', hue: 49, prefArid: 4.4, prefTemp: 7.4 }; // same floor buckets
+    const across = { type: 'herbivore', hue: 60, prefArid: 3.0, prefTemp: 6.0 }; // hue crosses 20 -> new genus bucket
+    expect(sim.speciesKey(within)).toBe(sim.speciesKey(base));
+    expect(sim.speciesKey(across)).not.toBe(sim.speciesKey(base));
+    // tier is part of the signature: a carnivore is never the same species as a herbivore
+    expect(sim.speciesKey({ ...base, type: 'carnivore' })).not.toBe(sim.speciesKey(base));
+  });
+
+  it('the registry reducer records divergence, extinction (latching), and re-emergence', () => {
+    const reg = sim.newSpeciesRegistry();
+    const A = { key: 'herbivore|2|1|2', type: 'herbivore', name: 'Aurpyr aridoides', pop: 8, maxGen: 4, maxSize: 1, vivid: 0 };
+    // (1) an established species (>= min gen & pop) diverges -> one 'diverged' event, registered
+    let ev = sim.updateSpeciesRegistry([A], reg, 100);
+    expect(reg.everCount).toBe(1);
+    expect(ev.map((e) => e.kind)).toEqual(['species']);
+    expect(ev[0].text).toContain('diverged');
+    expect(reg.byKey[A.key].firstTick).toBe(100);
+
+    // (2) below the establishment floor -> not registered, no event
+    ev = sim.updateSpeciesRegistry([A, { key: 'carnivore|10|0|1', type: 'carnivore', name: 'Cc dd', pop: 2, maxGen: 9, maxSize: 1, vivid: 0 }], reg, 110);
+    expect(reg.everCount).toBe(1); // the pop-2 carnivore is too small
+    expect(ev.length).toBe(0);
+    expect(reg.byKey[A.key].peakPop).toBe(8);
+
+    // (3) the species vanishes entirely -> extinct + latches (no repeat event)
+    ev = sim.updateSpeciesRegistry([], reg, 200);
+    expect(ev.length).toBe(1);
+    expect(ev[0].text).toContain('extinct');
+    expect(reg.byKey[A.key].extinct).toBe(true);
+    expect(reg.byKey[A.key].extinctTick).toBe(200);
+    ev = sim.updateSpeciesRegistry([], reg, 210);
+    expect(ev.length).toBe(0); // stays extinct silently
+
+    // (4) it re-establishes -> re-emerges (not a second 'diverged'), everCount unchanged
+    ev = sim.updateSpeciesRegistry([{ ...A, pop: 12, maxGen: 6 }], reg, 300);
+    expect(ev.length).toBe(1);
+    expect(ev[0].text).toContain('re-emerged');
+    expect(reg.everCount).toBe(1);
+    expect(reg.byKey[A.key].extinct).toBe(false);
+    expect(reg.byKey[A.key].peakPop).toBe(12);
+  });
+});
