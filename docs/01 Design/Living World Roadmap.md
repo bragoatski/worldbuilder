@@ -75,7 +75,14 @@ next-session prompt for the following chunk. One chunk per cycle.
    (`buildWorldCode`/`applyWorldCode` + a base64 codec), a boot-time one-shot restore, and a Share deck seg
    (Copy Link + a Chronicle-driven Postcard). Balance-safe (the only sim mutation is the same `initWorld`
    re-genesis the preset selector uses; nothing in `step()`).
-5. **Scenarios + objectives (pillar E).** A few setups + win-checks on top of the sandbox.
+5. **Scenarios + objectives (pillar E).** DONE 2026-06-30 (deployed). Four named starting setups (a preset +
+   a fixed seed + a small terrain warmup + a burst of initial life) - Genesis, The Long Balance, Ice Age
+   Refuge, Trial by Fire - each with a PURE win/lose observer (`evaluateScenario`) run read-only at the end of
+   `step()` (like chronicleSample), narrating progress into the Chronicle. Two objective shapes: `establish`
+   (reach tier counts) and `endure` (reach, then hold a floor for N ticks; a post-establishment collapse
+   loses). Reuses the chunk-4 world-code machinery (a `scen` field) so a scenario is a shareable permalink.
+   Balance-safe: setup runs only from a button / permalink (never step()), and the observer never touches
+   fauna/flora/RNG (harness before/after byte-identical).
 6. **Speciation (pillar C)** and **trophic depth** - the harness-heavy chunks, last.
 
 ## Done
@@ -96,3 +103,10 @@ next-session prompt for the following chunk. One chunk per cycle.
   boot, with a Share deck seg (Copy Link + a Chronicle-driven Postcard). Balance-safe (the only sim mutation is
   the `initWorld` re-genesis the preset selector already uses; nothing in `step()`). See STATUS + the
   2026-06-30 shareable-worlds handoff.
+- **Chunk 5 - Scenarios + objectives** (2026-06-30, deployed). Four named setups (preset + fixed seed + a small
+  async terrain warmup + a burst of initial life) with a PURE win/lose observer (`evaluateScenario`) run
+  read-only at the end of `step()`, narrating into the Chronicle; goals are `establish` (reach) and `endure`
+  (reach then hold N ticks; post-establishment collapse loses). A Scenario deck seg + an Objective sidebar
+  panel; a scenario is a shareable permalink (a `scen` field on the chunk-4 world code). Balance-safe (setup
+  runs only from a button / permalink, observer is read-only -> harness before/after byte-identical). See
+  STATUS + the 2026-06-30 scenarios handoff.

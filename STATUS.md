@@ -210,13 +210,50 @@ deterministic replay, default-reset, untrusted-input robustness, postcard) + bui
 **Gate-blind (DOM):** the Copy Link / Postcard buttons + clipboard + address-bar + `init()`'s `?w=` boot branch
 -> eyeball in the live app (load a shared link, confirm the same world; see the chunk-4 handoff checklist).
 
+## Scenarios + light objectives - Living World chunk 5 (2026-06-30) - DONE + DEPLOYED (main <SHA>, ff'd + pushed, CI success, live bundle index-CEEBKIas.js)
+Pillar E: named starting setups + win/lose objectives on top of the sandbox. Shipped, balance PROVEN safe
+(harness before/after byte-identical - see below):
+- **Four scenarios** (`SCENARIOS` in `src/main.js`), each = a preset + a FIXED seed + a small terrain warmup
+  + a burst of initial life + an objective: **Genesis** (balanced; establish a full 3-tier web), **The Long
+  Balance** (balanced; keep all three alive 4000 ticks after they establish), **Ice Age Refuge** (iceage;
+  keep grazers alive 3000 ticks), **Trial by Fire** (volcanic; keep a full web alive 3000 ticks). Deck seg
+  (Scenario dropdown + Start) + an **Objective sidebar panel** (goal, phase, progress bar, per-tier readout).
+- **Two objective shapes, one PURE observer** (`evaluateScenario(def,stats,tick,prevStatus)->newStatus`, the
+  gate-testable core): `establish` = REACH tier counts (no lose); `endure` = REACH `establish` then HOLD
+  `floor` for `duration` ticks, and a drop below the floor AFTER establishment loses. The two-phase shape
+  sidesteps the cold start (a world still warming up is never a failure). Terminal states latch.
+- **Read-only observer on the step path.** `scenarioSample()` runs at the END of `step()` right after
+  `chronicleSample()`, on the same 10-tick cadence: it derives stats, advances the pure evaluator, and
+  narrates transitions (`'scenario'` Chronicle events - begun / established / complete / failed). It NEVER
+  touches fauna/flora/RNG and early-returns entirely when no scenario is armed (the harness never arms one).
+- **Setup is a small ASYNC warmup.** A fresh world is all ocean (land forms only via `step()`), so
+  `startScenario` (deck button) warms terrain in 40-step chunks via `setTimeout` (tab stays responsive, the
+  world visibly forms) to a LOW land target (~1%), then seeds the initial life + arms the objective. Kept low
+  deliberately: a scenario starts small and DEVELOPS during play toward the establish thresholds. The pure
+  `applyScenarioDef` (sync, same deterministic path) is what the gate + a scenario permalink boot use.
+- **Shareable.** A scenario is a permalink: `buildWorldCode` adds a `scen` field; `applyWorldCode` re-arms the
+  named built-in (ignoring the URL cfg diff - only the trusted id + seed ride along). A `?w=` scenario link
+  boots via the async `startScenario` so the load stays responsive.
+- **Balance proof.** `measure --seeds=8` before vs after = BYTE-IDENTICAL: extinction 0% (0/8),
+  carn-persistence 75% (6/8), phase lag +127t, final fauna 73.6, final flora 2263.8, cap-hits 0 (== the C2
+  chunk-3/4 numbers). Gate GREEN: typecheck clean + lint 0 errors (32 warnings, unchanged legacy) + **28
+  tests** (was 22; new scenarios block: the pure evaluator's establish/endure/lose/latch logic, setup arms +
+  seeds + reproduces the same world, the scenario permalink round-trips + re-arms, and a scenario run replays
+  identically) + build (bundle `index-CEEBKIas.js`).
+- **Gate-blind (DOM):** the Scenario deck + Start button, the Objective panel render, the async warmup
+  animation, and the `?w=scen` boot branch. The pure cores are gate-covered; eyeball in the live app (start
+  each scenario, watch the world form + the Objective panel + Chronicle beats; open a scenario link).
+- **Open follow-ups (Tier B, for Kevin):** the win/lose THRESHOLDS + warmup targets are best-effort defaults
+  (balance-safe regardless, since they only affect win/lose feel) - eyeball whether each scenario is winnable
+  and fun, and tune the numbers. The async warmup is ~5-12s of visible world-forming.
+
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is now the driver; next chunk first,
 then the still-valid pre-roadmap backlog.
-0. **Living World chunk 5 - Scenarios + light objectives (pillar E).** A few starting setups + win-checks on
-   top of the sandbox (Genesis, Ice Age, "keep 3 trophic levels alive N ticks"). Depends on the Chronicle
-   (done). Roadmap has the remaining sequence after it (then speciation + trophic depth - the harness-heavy
-   chunks, last).
+0. **Living World chunk 6 - Speciation (pillar C) + trophic depth** - the harness-heavy chunks (last in the
+   roadmap). Speciation: lineage drift becomes named, diverging species (tracking + naming first; reproductive
+   isolation as a separate measured experiment). Trophic depth: apex / scavenger / omnivore tiers - richest
+   story fuel but most likely to break the C2 balance, so each goes through the harness measure -> A/B loop.
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence

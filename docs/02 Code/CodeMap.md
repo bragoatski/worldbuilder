@@ -72,6 +72,24 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
   Wired from the "God" deck seg (index.html): the brush is a `placeMode` (`'raise'`/`'lower'`, routed in the
   canvas click handler + `setPlaceMode`/`PLACE_BTN_IDS`/`PLACE_LABELS`); Meteor/Drought/Bloom fire once per
   button press. Gate-tested (`sim.test.js` god-powers block); exported for the tests.
+- **Scenarios + objectives (chunk 5, pillar E):** named starting setups + a win/lose observer, defined just
+  above `initWorld`. Data: `SCENARIOS` (genesis/balance/iceage/volcanic - each `{preset, seed, warmupLand,
+  seedFlora/Herb/Carn, objective}`), `SCENARIO_SAMPLE_EVERY`, `SCENARIO_WARMUP_CAP`, live `activeScenario`
+  (`{def,startTick,status}` or null). **Pure observer (the gate-testable core):** `evaluateScenario(def,stats,
+  curTick,prevStatus)->newStatus` (goals `establish` = reach `need`; `endure` = reach `establish` then hold
+  `floor` for `duration`, post-establishment collapse loses; terminal latch), helpers `_meetsTiers`/
+  `_tierProgress`/`initialScenarioStatus`. **Setup:** `_applyPresetCfg` (pure preset-cfg core shared with
+  `applyPreset`), `applyScenarioDef` (SYNC: preset + `initWorld(seed)` + step-to-`warmupLand` + `_seedScenarioLife`
+  + arm - used by the gate + a scenario permalink boot), `clearScenario`. **Observer wrapper:** `scenarioSample()`
+  runs at the END of `step()` right after `chronicleSample()` (read-only; narrates `'scenario'` Chronicle events;
+  early-returns with no scenario -> harness byte-identical). **DOM (gate-blind):** `renderObjective`/`_objTierRow`
+  (Objective panel, in the `draw()` tail), `startScenario`/`_scenWarmTimer` (deck button: ASYNC 40-step
+  chunked warmup so the tab stays responsive + the world visibly forms, then seeds + arms). Wired from the
+  "Scenario" deck seg (`scenarioSelect` + `btnStartScenario`) + the `#panelObjective` sidebar panel.
+  **Shareable:** `buildWorldCode` adds a `scen` field; `applyWorldCode` re-arms the named built-in (trusted id
+  + seed only, ignores URL cfg); `init()`'s `?w=` branch routes a scen-link through the async `startScenario`.
+  Balance-safe (setup never in `step()`; observer read-only). Exports: `SCENARIOS, evaluateScenario,
+  applyScenarioDef, clearScenario, activeScenario`.
 - **Loop:** `init`, `step` (the per-tick pipeline; ends with `chronicleSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.
