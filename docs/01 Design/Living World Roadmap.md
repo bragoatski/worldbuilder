@@ -83,7 +83,12 @@ next-session prompt for the following chunk. One chunk per cycle.
    loses). Reuses the chunk-4 world-code machinery (a `scen` field) so a scenario is a shareable permalink.
    Balance-safe: setup runs only from a button / permalink (never step()), and the observer never touches
    fauna/flora/RNG (harness before/after byte-identical).
-6. **Speciation (pillar C)** and **trophic depth** - the harness-heavy chunks, last.
+6. **Speciation (pillar C)** DONE 2026-06-30 (deployed, balance byte-identical). Lineage drift -> named,
+   diverging species: a species = a genome SIGNATURE (the buckets `generateSpeciesName` keys on), tracked by a
+   read-only observer + a pure registry reducer + a Species panel. Reproductive isolation deferred (its own
+   experiment). **Trophic depth (scavenger)** built as a DEFAULT-OFF measured experiment; the 8-seed A/B did
+   NOT clear the keep-if-better bar (scavengers went 0% persistent; carrion too sparse), so it ships off and
+   its viability+balance tuning becomes a future trophic chunk (chunk 7). See STATUS + the chunk-6 handoff.
 
 ## Done
 - **Chunk 1 - The Chronicle** (2026-06-29, deployed). Pure event engine on the step path + Chronicle
@@ -110,3 +115,14 @@ next-session prompt for the following chunk. One chunk per cycle.
   panel; a scenario is a shareable permalink (a `scen` field on the chunk-4 world code). Balance-safe (setup
   runs only from a button / permalink, observer is read-only -> harness before/after byte-identical). See
   STATUS + the 2026-06-30 scenarios handoff.
+- **Chunk 6 - Speciation (pillar C) + trophic-depth experiment** (2026-06-30, deployed). SPECIATION (shipped):
+  lineage drift -> named, diverging species. A species = a genome SIGNATURE (the tier+hue+climate-pref buckets
+  `generateSpeciesName` keys its binomial on, so one signature is 1:1 with one name); as drift shifts a lineage
+  into a new bucket a species diverges. Pure `speciesCensus` + `updateSpeciesRegistry` reducer (gate-tested) +
+  a read-only `speciesSample()` observer + a Species sidebar panel + snapshot-safe `speciesRegistry` memory.
+  Balance BYTE-IDENTICAL (harness 8-seed == C2). Threshold `gen>=3`/`pop>=6` (gen depth grows slowly + resets
+  on crashes, so the inherited gen>=5 gate never fired). Reproductive isolation deferred. TROPHIC DEPTH
+  (default-off experiment): a SCAVENGER detritivore eating `carrion[]`, behind `CFG.scavengersEnabled`; the
+  8-seed `--scav=12` A/B FAILED the keep-if-better bar (scavenger-persistence 0%, extinction 0->13%,
+  carn-persistence 75->63%), so it ships off + flagged for a future viability/balance tuning loop. See STATUS +
+  the 2026-06-30 speciation handoff.

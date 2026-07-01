@@ -247,13 +247,58 @@ Pillar E: named starting setups + win/lose objectives on top of the sandbox. Shi
   (balance-safe regardless, since they only affect win/lose feel) - eyeball whether each scenario is winnable
   and fun, and tune the numbers. The async warmup is ~5-12s of visible world-forming.
 
+## Speciation + trophic-depth experiment - Living World chunk 6 (2026-06-30) - DONE + DEPLOYING
+Pillar C (speciation) SHIPPED; trophic depth built as a measured DEFAULT-OFF experiment that the harness
+shelved (flag rather than guess). Two commits: `c3273dc` (speciation) + `f23a95c` (scavenger).
+
+**SPECIATION (shipped, balance BYTE-IDENTICAL to C2).** Lineage drift becomes named, diverging species.
+- A species = a genome SIGNATURE: the SAME (tier, hue, climate-pref) buckets `generateSpeciesName` keys its
+  binomial on (`speciesKey(f)=type|floor(hue/20)|floor(prefArid/2.5)|floor(prefTemp/2.5)`), so one signature
+  is 1:1 with one name. As drift (`mutateFaunaChild` shifting hue/prefArid/prefTemp) carries a lineage's
+  descendants into a new bucket, a new signature appears among the living -> a species has DIVERGED. No new
+  per-creature genome, no eRng -> observation only.
+- Pure cores (gate-tested on synthetic data): `speciesCensus(list=fauna)` buckets living fauna into named
+  per-species entries; `updateSpeciesRegistry(census,reg,tick)->events` is a PURE REDUCER (like
+  `evaluateScenario`) that registers a species once established, narrates divergence / extinction (latching) /
+  re-emergence. `speciesSample()` runs at the END of `step()` (after `scenarioSample`), Chronicle cadence,
+  read-only -> harness proved BYTE-IDENTICAL to C2 (extinction 0%, carn-persistence 75% 6/8, phase lag +127t,
+  final fauna 73.6, flora 2263.8, cap-hits 0).
+- Threshold `SPECIES_MIN_GEN=3` / `SPECIES_MIN_POP=6` (also gates `getSpeciesName`): generational depth grows
+  ~1/500 ticks and RESETS on population crashes, so the inherited gen>=5 gate almost never fired (empty panel);
+  gen>=3/pop>=6 surfaces the real established clusters at healthy peaks. Balance-neutral pacing knob.
+- `speciesRegistry` module memory (reset in `initWorld`, round-trips snapshot/restore). A **Species sidebar
+  panel** (`renderSpecies`, gate-blind DOM): the living census (name / tier icon / pop / gen / size / vivid) +
+  an emerged/extinct records line. New Chronicle `'species'` events (divergence / extinction / re-emergence).
+- Reproductive isolation (mate choice) deliberately NOT built - it is behavior-touching, its own harness loop.
+- Gate: typecheck clean + lint 0 errors (32 warnings unchanged) + 33 tests (was 28) + build.
+
+**TROPHIC DEPTH - SCAVENGER (built, ships DEFAULT-OFF; the A/B shelved it).** A detritivore tier eating
+`carrion[]` (corpses), the trophic addition least likely to break C2 (no predation pressure on the living
+tiers - it harvests the death flux, unlike an apex tier). Behind `CFG.scavengersEnabled` (default off ->
+`_dropCarrion` no-op + no scavenger code -> eRng byte-identical to C2). Full sim (carrion lifecycle in the step
+path + snapshot/restore; makeFauna/mutateFaunaChild/buildSpatialIndex/scoreTileForFauna/faunaStep scavenger
+branches; render marker + carrion specks) + harness `--scav=N` A/B instrument + tests (flag-off no-carrion
+guard + flag-on carrion-created/consumed + deterministic). **A/B VERDICT (8 seeds, `--scav=12`): FAILS
+keep-if-better -> stays off.** Scavenger-persistence 0% (0/8; they starve - carrion mean ~11 corpses is too
+sparse for a wanderer), and herb/carn did not improve (extinction 0->13%, carn-persistence 75->63%, partly
+reshuffle noise; cap-hits 0). Viability + balance tuning is its own loop (see NEXT). Scaffolding + instrument
+banked default-off (byte-identical to C2), exactly like the reverted fauna-distribution / auto-rivers
+experiments - measured, shelved, documented, not deleted.
+
+**Gate-blind (DOM, eyeball in the live app):** the Species panel (watch species diverge + go extinct as the
+world booms/busts; open the panel, check names/pop/gen); if you flip `CFG.scavengersEnabled` on in the console,
+the olive-brown hollow-square scavengers + dark carrion specks + the scavenger species rows.
+
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is now the driver; next chunk first,
 then the still-valid pre-roadmap backlog.
-0. **Living World chunk 6 - Speciation (pillar C) + trophic depth** - the harness-heavy chunks (last in the
-   roadmap). Speciation: lineage drift becomes named, diverging species (tracking + naming first; reproductive
-   isolation as a separate measured experiment). Trophic depth: apex / scavenger / omnivore tiers - richest
-   story fuel but most likely to break the C2 balance, so each goes through the harness measure -> A/B loop.
+0. **Trophic depth, take 2 - make the scavenger VIABLE + balance-safe (its own tuning loop).** The chunk-6
+   scaffolding + the `--scav` harness instrument are in place (default-off). The A/B showed the scavenger
+   starves (0% persistence; carrion too sparse) AND perturbs C2, so it needs a real measure->A/B->keep-if-better
+   loop: raise carrion density/nutrition (longer `carrionMaxAge`, higher `scavengerEatGain`) and/or scavenger
+   foraging range, and/or add a small immigration rescue (like knob D) so it cannot instantly die; re-measure at
+   >=10 seeds (persistence is noisy below that) and require neutral-to-better herb/carn + non-zero scavenger
+   persistence + 0 cap-hits before flipping the default on. THEN the apex + omnivore tiers, each its own loop.
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence

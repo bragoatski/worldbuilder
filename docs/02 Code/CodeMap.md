@@ -90,7 +90,29 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
   + seed only, ignores URL cfg); `init()`'s `?w=` branch routes a scen-link through the async `startScenario`.
   Balance-safe (setup never in `step()`; observer read-only). Exports: `SCENARIOS, evaluateScenario,
   applyScenarioDef, clearScenario, activeScenario`.
-- **Loop:** `init`, `step` (the per-tick pipeline; ends with `chronicleSample()`), `loop`.
+- **Speciation (chunk 6, pillar C):** lineage drift -> named, diverging species. A species = a cluster of
+  living fauna sharing a genome SIGNATURE - the SAME (tier, hue, climate-pref) buckets `generateSpeciesName`
+  keys its binomial on, so one signature is 1:1 with one name; as drift shifts a lineage into a new bucket a
+  new species appears. Pure cores: `speciesKey(f)` (the bucket string), `speciesCensus(list=fauna)` (buckets
+  living fauna -> named per-species entries, pop desc), `updateSpeciesRegistry(census,reg,tick)` (pure reducer
+  like `evaluateScenario`: registers a species once established `gen>=SPECIES_MIN_GEN(3)` & `pop>=SPECIES_MIN_POP(6)`,
+  narrates divergence/extinction[latch]/re-emergence, returns events). Observer: `speciesSample()` at the END
+  of `step()` (after `scenarioSample`), Chronicle cadence, read-only -> harness BYTE-IDENTICAL (proven 8-seed
+  == C2). Memory: `speciesRegistry` (`newSpeciesRegistry()`, reset in `initWorld`, round-trips snapshot/restore).
+  `getSpeciesName` gate coupled to `SPECIES_MIN_GEN`. DOM (gate-blind): `renderSpecies()` (Species sidebar
+  panel: living census + emerged/extinct records) in the `draw()` tail. Exports: `speciesCensus, speciesKey,
+  updateSpeciesRegistry, newSpeciesRegistry, speciesRegistry`.
+- **Trophic depth: SCAVENGER experiment (chunk 6, DEFAULT-OFF `CFG.scavengersEnabled`):** a detritivore tier
+  that eats CARRION (corpses). `carrion[]` (module state, reset in `initWorld`, snapshot/restore) is pushed by
+  `_dropCarrion(x,y)` on fauna death in `faunaStep` (starve/age/carnivore-kill) and consumed by scavengers;
+  it ages out at `CFG.carrionMaxAge`. `makeFauna`/`mutateFaunaChild` have a scavenger branch (olive-brown,
+  `scavenger*` CFG energy/speed/repro); `buildSpatialIndex` adds `_scavAtTile`/`_carrionAtTile`;
+  `scoreTileForFauna` has a scavenger branch (seek carrion + mild self-crowding); `faunaStep` has a scavenger
+  eat branch. Render: hollow-square marker + dark carrion specks. Harness A/B via `--scav=N` (seeds N
+  scavengers + toggles the flag in the measured window). **Flag OFF => no carrion, no scavenger code runs =>
+  eRng byte-identical to C2.** Ships default-OFF pending the harness verdict (see Engineering Lessons + STATUS).
+  Export: `carrion`.
+- **Loop:** `init`, `step` (the per-tick pipeline; ends `chronicleSample();scenarioSample();speciesSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.
 
