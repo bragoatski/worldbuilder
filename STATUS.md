@@ -320,7 +320,7 @@ now try/finally-isolated; one chunk-2 single-seed inheritance test disables the 
 hollow-square scavengers + dark carrion specks appear by default now; the `Scav` populate button; watch a
 post-crash corpse field draw scavengers in + a scavenger species row in the Species panel.
 
-## Trophic depth take 3 - APEX predator VIABLE + shipped ON - Living World chunk 8 (2026-07-02) - DONE + deploying
+## Trophic depth take 3 - APEX predator VIABLE + shipped ON - Living World chunk 8 (2026-07-02) - DONE + DEPLOYED (main 7c13750, ff'd 16be8b4..7c13750 + pushed; live bundle index-Dootdbvb.js, CI publishing)
 Added a 4th trophic level: an APEX predator (dark-crimson solid diamond, 🦁) that hunts the MID-tier consumers
 (carnivores + scavengers). This was the HARD fight the roadmap predicted - it stacks a level on the fragile
 carnivore tier - so it was built default-off behind `CFG.apexEnabled`, mirroring the chunk-7 scavenger recipe,
