@@ -320,14 +320,48 @@ now try/finally-isolated; one chunk-2 single-seed inheritance test disables the 
 hollow-square scavengers + dark carrion specks appear by default now; the `Scav` populate button; watch a
 post-crash corpse field draw scavengers in + a scavenger species row in the Species panel.
 
+## Trophic depth take 3 - APEX predator VIABLE + shipped ON - Living World chunk 8 (2026-07-02) - DONE + deploying
+Added a 4th trophic level: an APEX predator (dark-crimson solid diamond, 🦁) that hunts the MID-tier consumers
+(carnivores + scavengers). This was the HARD fight the roadmap predicted - it stacks a level on the fragile
+carnivore tier - so it was built default-off behind `CFG.apexEnabled`, mirroring the chunk-7 scavenger recipe,
+and A/B'd against the chunk-7 shipped baseline (scavengers on). The design that cleared the bar keeps predation
+LIGHT: the apex is RARE (rescue cap 5) + eats SLOWLY (`apexEatSpeed` 26 vs carnivore 18) + banks a lot per kill
+(`apexEatGain` 95, `apexMaxEnergy` 180) so it needs FEW kills to persist (the scavenger take-2 lesson: high
+per-find gain => fewer feeds => lighter pressure). Prey base = carnivores + scavengers via the existing
+`_carn/_scav` indices (no new prey index); ring-2-4 SCENT to find dispersed prey; a mid-prey-dependent
+immigration RESCUE (`apexRescue*`, knob-D analog, flag-guarded). `naturalFaunaSpawn` now counts FOUR tiers
+separately (apex no longer lumped into the carnivore count -> knob D's carnivore rescue keeps its headroom).
+
+**A/B verdict (measure -> A/B -> keep-if-better, 12 seeds): PASS, shipped ON.** Reference (`--scav=12`, apex
+off; byte-identical to the chunk-7 baseline): extinction 0%, carn-persistence 75% (9/12), scav 100% (mean 11.1),
+cap-hits 0, final fauna 60.5 / flora 2210. Treatment (`--scav=12 --apex=8`): extinction 0%, **carn-persistence
+75% -> 83% (10/12)**, scav 100% (mean 11.3), **apex-persistence 100% (12/12, mean 3.7)**, cap-hits 0, final
+fauna 40.5 / flora 2252. Every existing tier is neutral-to-BETTER (carn-persistence actually ROSE; carn
+oscillation amplitude fell 6.7 -> 4.7 - the apex DAMPS the carnivore boom-bust), the new tier persists 100%,
+0 cap-hits. Bar cleared, so `apexEnabled` defaults ON. **HONEST caveats (Tier B, for Kevin's eyeball):**
+(1) the apex is RESCUE-SUSTAINED, not self-reproducing (mean 3.7 sits at the rescue floor ~5; unlike the
+scavenger which reproduces above its cap). A self-reproducing apex would need a richer prey base (e.g. letting
+it also take herbivores), which risks the balance - deferred. (2) It is a real TROPHIC CASCADE: total fauna
+drops ~60 -> ~40 (steadier too: sd 49 -> 26) and flora ticks up (2210 -> 2252). That is the textbook top-down
+effect (a stabilizing trim of the boom-bust), not a collapse - but the world does read as somewhat LESS crowded.
+If you dislike the thinner feel, the flag flips back off (byte-identical) or the apex can be made even rarer.
+Flag OFF is byte-identical to the chunk-7 baseline (`--apex=0` is the proof). Added an `Apex` populate button.
+Gate GREEN: typecheck clean + lint 0 errors (32 warnings unchanged) + **37 tests** (was 34; +3 apex: shipped-
+default-ON, flag-OFF byte-identical, flag-ON hunt+deterministic) + build (bundle `index-Dootdbvb.js`).
+**Gate-blind (DOM), eyeball in the live app:** dark-crimson diamond apex (🦁 in the Species/Inspector panels)
+appear by default; the `Apex` populate button; watch the apex crop carnivores/scavengers + the total population
+settle lower + steadier + an apex species row in the Species panel.
+
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is the driver; next chunk first,
 then the still-valid pre-roadmap backlog.
-0. **Trophic depth take 3 - APEX predator tier, then OMNIVORE, each its own loop.** Scavenger is DONE (chunk 7,
-   shipped ON). The next trophic levels are the harder ones (an apex predator stacks a 4th level and directly
-   amplifies the paradox of enrichment; an omnivore blurs the herb/carn coupling), so each is its own
-   default-off measure->A/B->keep-if-better loop with the same bar (neutral-to-better on the existing tiers +
-   non-zero persistence for the new tier + 0 cap-hits). Reuse the `--scav`-style harness instrument pattern.
+0. **Trophic depth take 4 - the OMNIVORE tier (its own loop).** Apex is DONE (chunk 8, shipped ON). The omnivore
+   is the last planned trophic tier and a different kind of hard: it eats BOTH flora and fauna (blurs the
+   herb/carn coupling), so it competes with herbivores AND carnivores at once. Same default-off
+   measure->A/B->keep-if-better loop, same bar (neutral-to-better on ALL existing tiers - herb/carn/scav/apex -
+   + non-zero omnivore persistence + 0 cap-hits). Reuse the `--scav`/`--apex`-style harness instrument
+   (add `--omni=N` + an `omnivoreEnabled` flag). Watch competition-with-herbivores as the likely balance risk.
+   (Optional follow-up if desired: make the APEX self-reproducing via a broader prey base - deferred from chunk 8.)
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence

@@ -34,9 +34,9 @@ option because it would genuinely use the sim.
   bloom; the Chronicle/telemetry as the feedback that closes the loop.
 - **E. Scenarios + light objectives** - starting setups + win-conditions on top of the sandbox
   (Genesis, Ice Age, "keep 3 trophic levels alive 10k ticks"). Depends on B.
-- (Trophic levels: SCAVENGER shipped in chunk 7 (2026-07-01, balance-neutral). Still parked: APEX
-  predator + OMNIVORE - richest story fuel but most likely to break the C2 balance, so each gets its
-  own measured loop, not a bundled push.)
+- (Trophic levels: SCAVENGER shipped in chunk 7 (2026-07-01, balance-neutral), APEX shipped in chunk 8
+  (2026-07-02, neutral-to-better). Still parked: OMNIVORE (eats flora + fauna) - its own measured loop,
+  the last planned trophic tier.)
 
 ## The balance constraint (non-negotiable)
 The hard-won C2 predator-prey balance must not silently regress. So:
@@ -98,6 +98,13 @@ next-session prompt for the following chunk. One chunk per cycle.
    (final scav ~11, above the rescue floor => genuinely reproducing), so `CFG.scavengersEnabled` ships ON
    (flag-off still byte-identical to C2). NEXT trophic tiers: APEX predator, then OMNIVORE - each its own
    measure -> A/B -> keep-if-better loop. See STATUS + the chunk-7 handoff.
+8. **Trophic depth take 3 - APEX predator viable + shipped ON** DONE 2026-07-02 (deployed, neutral-to-BETTER).
+   A 4th-level predator hunting the mid-tier consumers (carnivores + scavengers), tuned WEAK + RARE (slow eat,
+   high per-kill gain, low rescue cap) so predation stays light. `--scav=12 --apex=8` @ 12 seeds vs the chunk-7
+   baseline: extinction 0%, carn-persistence 75%->83%, scav 100%, cap-hits 0, apex-persistence 100% (mean ~3.7,
+   rescue-sustained). It DAMPS the carnivore boom-bust (a stabilizing top-down cascade; total fauna 60->40,
+   flora up). `CFG.apexEnabled` ships ON (flag-off byte-identical). NEXT trophic tier: OMNIVORE (eats flora +
+   fauna). See STATUS + the chunk-8 handoff.
 
 ## Done
 - **Chunk 1 - The Chronicle** (2026-06-29, deployed). Pure event engine on the step path + Chronicle
@@ -146,3 +153,12 @@ next-session prompt for the following chunk. One chunk per cycle.
   with scavenger-persistence 100% (final scav mean 11.1). `CFG.scavengersEnabled` now defaults ON; flag-off is
   still byte-identical to C2 (`--scav=0` remains the proof). Added a `Scav` spawn button. See STATUS + the
   2026-07-01 chunk-7 handoff.
+- **Chunk 8 - Trophic depth take 3: APEX predator viable + shipped ON** (2026-07-02, deployed, neutral-to-BETTER).
+  A 4th-level predator (dark-crimson diamond, 🦁) hunting the mid-tier consumers (carnivores + scavengers) via
+  the existing `_carn/_scav` indices + ring-2-4 scent; tuned WEAK + RARE (slow `apexEatSpeed` 26, high
+  `apexEatGain` 95 + `apexMaxEnergy` 180, low rescue cap 5) so predation stays light, with a mid-prey-dependent
+  immigration RESCUE (`apexRescue*`, knob-D analog). `naturalFaunaSpawn` now counts four tiers separately. A/B
+  `--scav=12 --apex=8` @ 12 seeds vs the chunk-7 baseline: extinction 0%, carn-persistence 75%->83%, scav 100%,
+  cap-hits 0, apex-persistence 100% (mean ~3.7, rescue-sustained not self-reproducing). It DAMPS the carnivore
+  boom-bust (carn amp 6.7->4.7) - a stabilizing top-down cascade (total fauna 60->40, flora up). `CFG.apexEnabled`
+  ships ON (flag-off byte-identical). Added an `Apex` spawn button. See STATUS + the 2026-07-02 chunk-8 handoff.

@@ -115,6 +115,18 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
   window). **Flag OFF => no carrion, no scavenger code runs => eRng byte-identical to C2** (the `--scav=0` run
   is the C2 proof). Chunk-7 take-2 tuning made it viable + balance-neutral (harness `--scav=12` @ 12 seeds ==
   C2 with scavenger-persistence 100%); see Engineering Lessons + STATUS. Export: `carrion`.
+- **Trophic depth: APEX predator tier (chunk 8, SHIPPED DEFAULT-ON `CFG.apexEnabled`):** a 4th-level predator
+  that hunts the MID-tier consumers (carnivores + scavengers). `makeFauna`/`mutateFaunaChild` have an apex
+  branch (dark-crimson 342-358 hue, `apex*` CFG energy/speed/repro/eatGain); `buildSpatialIndex` adds
+  `_apexAtTile`; `scoreTileForFauna` has an apex branch (seek carn+scav via the existing indices + ring-2-4
+  SCENT + mild self-crowding - NO new prey index); `faunaStep` has an apex hunt branch (kills a carn/scav,
+  drops carrion, flashes a 'kill' particle); `naturalFaunaSpawn` counts FOUR tiers separately + has a
+  mid-prey-dependent apex RESCUE (`apexRescue*` CFG, guarded on the flag). Render: solid DIAMOND marker; 🦁
+  species/inspector icon; `btnSpawnApex` seeds 3. Harness A/B via `--apex=N`. Tuned WEAK+RARE (slow eat, high
+  per-kill gain, low rescue cap) so predation stays light. **Flag OFF => no apex fauna => no apex code runs =>
+  byte-identical to the chunk-7 baseline** (`--apex=0` is the proof). A/B `--scav=12 --apex=8` @ 12 seeds was
+  neutral-to-BETTER (carn-persistence 75->83%, apex-persistence 100% rescue-sustained mean ~3.7, cap-hits 0);
+  it DAMPS the carnivore boom-bust (a top-down cascade: total fauna 60->40, flora up). See Engineering Lessons + STATUS.
 - **Loop:** `init`, `step` (the per-tick pipeline; ends `chronicleSample();scenarioSample();speciesSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.
