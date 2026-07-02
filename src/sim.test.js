@@ -240,16 +240,18 @@ describe('evolution visibility (size gene + lineage)', () => {
   }, 30000);
 
   it('lineages are shared by kin and the size gene diversifies through reproduction', () => {
-    // Isolate this chunk-2 inheritance mechanic from the chunk-7 trophic tier: scavengers compete for the pop
-    // cap and reshuffle the eRng stream, which for this specific seed suppresses reproduction inside the 500t
-    // window (aggregate reproduction is healthy - the harness shows final fauna ~60 over 1000t). The size-gene /
-    // lineage-kin behavior under test is independent of the scavenger tier, so measure it with the tier off.
+    // Isolate this chunk-2 inheritance mechanic from the chunk-7/8 trophic tiers: scavengers + apex compete for
+    // the pop cap and reshuffle the eRng stream, which for this specific seed suppresses reproduction inside the
+    // 500t window (aggregate reproduction is healthy - the harness shows tens of fauna over 1000t). The size-gene
+    // / lineage-kin behavior under test is independent of those tiers, so measure it with both off.
     let living;
     try {
       sim.CFG.scavengersEnabled = false;
+      sim.CFG.apexEnabled = false;
       living = warmAndSeed(909090, 30, 8, 500);
     } finally {
-      sim.CFG.scavengersEnabled = true; // restore the shipped default
+      sim.CFG.scavengersEnabled = true; // restore the shipped defaults
+      sim.CFG.apexEnabled = true;
     }
     expect(living.some((f) => f.gen > 0)).toBe(true); // descendants exist
     const counts = {};
@@ -657,5 +659,59 @@ describe('trophic depth: scavenger (chunk 7, shipped default-on)', () => {
     expect(a.maxCarrion).toBeGreaterThan(0); // deaths dropped corpses onto the map
     expect(a.ateSeen).toBe(true); // scavengers fed on them (gained energy above their start)
     expect(b.fp).toEqual(a.fp); // scavenger behavior is deterministic (no stray Math.random -> snapshot-safe)
+  }, 120000);
+});
+
+// Trophic depth take 3: the APEX predator tier (chunk 8, SHIPPED default-ON). A 4th-level predator that hunts
+// the MID-tier consumers (carnivores + scavengers). The HARDER trophic addition - it stacks a level on the
+// fragile carnivore tier - so it was built default-off and flipped on only after the A/B cleared the bar: harness
+// --scav=12 --apex=8 @ 12 seeds is neutral-to-BETTER than the chunk-7 baseline (extinction 0%, carn-persistence
+// 75%->83%, scav 100%, cap-hits 0) with apex-persistence 100% (rescue-sustained, mean ~3.7). Gate properties:
+// (1) the shipped default is ON; (2) with the flag OFF no apex ever arises (nothing seeds it + the rescue is
+// guarded) so the apex code never runs - byte-identical; (3) when on, an apex gains energy above its start ONLY
+// by killing prey, and a run replays identically.
+describe('trophic depth: apex predator (chunk 8, shipped default-on)', () => {
+  it('the shipped default is ON', () => {
+    expect(sim.CFG.apexEnabled).toBe(true);
+  });
+  it('flag OFF is byte-identical: no apex ever arises, even with mid-tier prey present', () => {
+    try {
+      sim.CFG.apexEnabled = false;
+      sim.initWorld(777);
+      for (let i = 0; i < 700; i++) sim.step();
+      sim.seedFloraCluster(40); sim.seedFaunaGroup('herbivore', 30); sim.seedFaunaGroup('carnivore', 10);
+      for (let i = 0; i < 300; i++) sim.step();
+      expect(sim.fauna.some((f) => f && f.type === 'apex')).toBe(false);
+    } finally {
+      sim.CFG.apexEnabled = true; // restore the shipped default
+    }
+  }, 60000);
+  it('flag ON: apex hunt mid-tier prey (gain energy above start) and the run is deterministic', () => {
+    function run() {
+      sim.CFG.apexEnabled = true;
+      sim.initWorld(2024);
+      for (let i = 0; i < 1200; i++) sim.step();
+      sim.seedFloraCluster(40);
+      sim.seedFaunaGroup('herbivore', 40);
+      sim.seedFaunaGroup('carnivore', 16);
+      sim.seedFaunaGroup('apex', 10);
+      let ateSeen = false;
+      for (let i = 0; i < 700; i++) {
+        sim.step();
+        // an apex above its start energy can only have gotten there by killing prey (its sole food)
+        if (sim.fauna.some((f) => f && f.type === 'apex' && f.energy > sim.CFG.apexStartEnergy)) ateSeen = true;
+      }
+      const fp = sim.fauna.filter((f) => f).map((f) => `${f.id}:${f.type}:${f.x},${f.y}:${f.energy.toFixed(2)}`);
+      return { ateSeen, fp };
+    }
+    let a, b;
+    try {
+      a = run();
+      b = run();
+    } finally {
+      sim.CFG.apexEnabled = true; // restore the shipped default (CFG is a persistent global)
+    }
+    expect(a.ateSeen).toBe(true); // apex fed on mid-tier prey (gained energy above their start)
+    expect(b.fp).toEqual(a.fp); // apex behavior is deterministic (no stray Math.random -> snapshot-safe)
   }, 120000);
 });
