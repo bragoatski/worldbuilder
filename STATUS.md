@@ -352,7 +352,7 @@ default-ON, flag-OFF byte-identical, flag-ON hunt+deterministic) + build (bundle
 appear by default; the `Apex` populate button; watch the apex crop carnivores/scavengers + the total population
 settle lower + steadier + an apex species row in the Species panel.
 
-## Trophic depth take 4 - OMNIVORE VIABLE + shipped ON - Living World chunk 9 (2026-07-02) - DONE + deploying
+## Trophic depth take 4 - OMNIVORE VIABLE + shipped ON - Living World chunk 9 (2026-07-02) - DONE + DEPLOYED (main 2e8fb4b, ff'd d6c0b1f..2e8fb4b + pushed; live bundle index-ptO1yoOK.js, CI success)
 Added the 5th and LAST planned trophic tier: an OMNIVORE (dusky-plum solid TRIANGLE, 🐗) that eats BOTH flora AND
 herbivore prey, so it competes with herbivores (for plants) AND carnivores (for prey) at once. This was a
 DIFFERENT kind of hard than the sparse-food scav/apex: its staple (flora) is ABUNDANT, so the risk was
