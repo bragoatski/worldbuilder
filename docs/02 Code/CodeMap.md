@@ -1,16 +1,18 @@
 # CodeMap - Worldbuilder
 
-## Project structure (as of 2026-06-22, branch `professionalize-codebase`)
-The app is now a Vite + TS project, not a single file:
+## Project structure (updated 2026-07-03: the sim core is split out of main.js into src/sim.js, chunk 10)
+Vite + TS project. The DOM-free SIMULATION is now a separate module from the UI shell:
 - **`index.html`** - HTML shell + CSS; loads `src/main.js` as an ES module.
-- **`src/main.js`** (~1670 lines) - the whole sim + UI, top-level module scope (former IIFE). Sections + key symbols are mapped below. Pure entry points are EXPORTED at the bottom: `initWorld(seed)`, `runAssertions()`, `step`, `seedFloraCluster`, `seedFaunaGroup`, `landCoverage`, `snapshotState()`/`restoreState(snap)` (warm-once ecology replay; see Engineering Lessons - Snapshot/restore), and live `flora`/`fauna`/`tick`/`CFG`/`W`/`H`. `init` = DOM wrapper over `initWorld`; `runTests` = DOM wrapper over `runAssertions`.
-- **`src/sim.test.js`** - vitest: runs the ~52 in-page assertions headless (the automated gate).
-- **`scripts/harness.mjs`** - `npm run measure`, the multi-seed ecosystem measurement tool (also reports a flora-distribution block: coverage, flora-vs-land aridity, desert/near-water share).
-- **`scripts/flora-ab.mjs`** - warm-per-variant high-land A/B for flora distribution + balance (the instrument for the flora-clustering/thinning work; edit its VARIANTS to sweep knobs).
-- **`scripts/headless-dom.mjs`** - permissive Proxy DOM stub so `main.js` imports cleanly in Node (interim, until the sim core splits into its own `sim.js`).
+- **`src/sim.js`** (~1650 lines) - the DOM-free SIMULATION CORE. State + the three RNG streams, PRESETS/CFG, climate, biomes, terrain genesis, rivers GENERATION (`generateRivers`/`clearRivers`), ecology (flora/fauna + scavenger/apex/omnivore), the chronicle SAMPLER, speciation, scenarios CORE, god powers, snapshot/restore, `initWorld`/`step`/`runAssertions`, and the world-code cores. **Imports cleanly in Node with NO DOM stub** - nothing here touches document/window/canvas (proven: `node -e "import('./src/sim.js')"` loads). Exports its public API at the bottom (~130 names: live state bindings + pure functions) for the shell + the headless consumers. Three setters (`setWorldSize`/`setActiveScenario`/`setDeathParticles`) exist ONLY because ES module bindings are read-only from the importer, so the shell writes those via setters (see Engineering Lessons - The sim/UI split).
+- **`src/main.js`** (~800 lines) - the browser UI SHELL. Rendering (`draw`/`drawRivers`/`drawHUD`/`drawPopGraph`/`renderChronicle`/`renderSpecies`/`renderObjective`/`renderLineagePanel`), canvas + zoom/pan + the follow-camera, ALL DOM wiring + sliders + panels, inspector/tooltip, export/import DOM wrappers, `applyPreset`/`syncUIToConfig`, `startScenario` (async warmup), `init`/`loop`/`boot`, and the `?w=` boot restore. The ONLY file that touches the DOM. Imports the sim core at the top (the import list is exhaustive - eslint `no-undef` would flag any omission).
+- **`src/sim.test.js`** - vitest: imports `src/sim.js` DIRECTLY (no stub) and runs the ~40 headless assertions (the automated gate).
+- **`scripts/harness.mjs`** - `npm run measure`, the multi-seed ecosystem measurement tool (also reports a flora-distribution block); imports `src/sim.js` directly.
+- **`scripts/flora-ab.mjs` / `river-diag.mjs` / `season-probe.mjs` / `make-preview-world.mjs`** - manual A/B + diagnostic probes; all import `src/sim.js` directly.
 - **`eslint.config.js`, `vite.config.js`, `tsconfig.json`, `.github/workflows/ci.yml`** - toolchain.
 
-Gate: `npm run typecheck && npm run lint && npm test` (+ `npm run build`). The function inventory below is still accurate for `src/main.js`; line numbers are approximate (re-grep by function name).
+Gate: `npm run typecheck && npm run lint && npm test` (+ `npm run build`). For a PURE refactor, also prove `npm run measure` is BYTE-IDENTICAL before/after (the C2-balance safety net).
+
+**Where a symbol lives (chunk 10):** the inventory below still lists the right symbol NAMES + section order, but each now lives in `src/sim.js` (the pure ones) or `src/main.js` (the render/DOM ones). Rule of thumb: if it touches the DOM (draw*/render*/inspect/tooltip/hooks/sliders/canvas/export-import wrappers/follow-camera/init/loop/boot) it is in `main.js`; everything else (the whole simulation) is in `sim.js`. Re-grep by name in either file for exact lines.
 
 ---
 

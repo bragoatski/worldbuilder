@@ -391,6 +391,38 @@ or the omnivore can be made even rarer (lower `omnivoreRescueOmniCap` / `omnivor
 panels) appear by default; the `Omni` populate button; watch them graze + occasionally hunt + an omnivore species
 row in the Species panel. The omnivore render + the `Omni` button are gate-blind.
 
+## Deep cleanup: split the sim core into src/sim.js - chunk 10 (2026-07-03) - DONE (gate green + byte-identical); NOT YET DEPLOYED
+Split the DOM-free SIMULATION out of the 2362-line `src/main.js` into its own `src/sim.js`, removed the interim
+`scripts/headless-dom.mjs` Proxy DOM stub, and repointed every headless consumer to import the pure core directly.
+This was the pre-roadmap "optional deep cleanup" (old NEXT item 3). A PURE refactor - no rate/behavior change - so
+the safety net was a BYTE-IDENTICAL `npm run measure` before/after (it matched exactly => the C2 balance is provably
+untouched), plus the standard gate.
+- **`src/sim.js` (~1650 lines)** = the DOM-free core: state + 3 RNG streams, PRESETS/CFG, climate, biomes, terrain
+  genesis, river GENERATION, ecology (flora/fauna + scavenger/apex/omnivore), chronicle sampler, speciation,
+  scenarios core, god powers, snapshot/restore, `initWorld`/`step`/`runAssertions`, world-code cores. Touches NO
+  document/window/canvas (proven: `node -e "import('./src/sim.js')"` loads with no stub; a DOM-token grep is empty).
+  Exports ~130 names (live state bindings + pure fns).
+- **`src/main.js` (~800 lines)** = the browser UI shell: rendering, canvas + zoom/pan + follow-camera, all DOM wiring
+  + sliders + panels, inspector/tooltip, export/import DOM wrappers, `applyPreset`/`syncUIToConfig`, `startScenario`,
+  `init`/`loop`/`boot`, the `?w=` boot restore. The ONLY file touching the DOM; imports the sim core at the top.
+- **Split seams (chunk 10):** because ES module bindings are read-only from the importer, the shell writes sim state
+  via three new setters (`setWorldSize`/`setActiveScenario`/`setDeathParticles`) and a pure `applySnapshot(data)` core
+  (the DOM-free half of `importJSON`, mirroring the existing `buildSnapshot`/`exportJSON` split). Two view-couplings
+  (`resetZoomPan()` + `placeMode` reset) were relocated out of `initWorld` into the browser new-world callers,
+  preserving the UX exactly. Method + the eslint `no-undef`/`no-import-assign` nets are in Engineering Lessons
+  (The sim/UI split).
+- **Consumers repointed, stub deleted:** `sim.test.js`, `harness.mjs`, `flora-ab.mjs`, `river-diag.mjs`,
+  `season-probe.mjs`, `make-preview-world.mjs` now `import '../src/sim.js'` directly; `scripts/headless-dom.mjs` gone.
+- **Gate GREEN:** typecheck clean + lint 0 errors (32 warnings, unchanged legacy) + **40 tests** (all pass, imported
+  through `sim.js` with no stub) + build (bundle `index-C_LGWuYk.js`). `npm run measure` BYTE-IDENTICAL to baseline
+  (extinction 0%, carn-persistence 50% 3/6, final fauna 49.3, flora 2119.2, cap-hits 0).
+- **GATE-BLIND (the reason it is not yet deployed):** the render/UI shell is not exercised by the automated gate.
+  Confidence is high (build resolves the module graph; eslint `no-undef` proves every shell reference is imported so
+  there is no boot-time ReferenceError; all DOM code moved verbatim; the only behavior changes are the setters +
+  relocated resets + `importJSON` split, all behavior-preserving). But per the gate-blind rule this wants a browser
+  eyeball before deploy (Playwright paused): open the app, confirm it boots + draws, then reset/roll-seed/map-size,
+  save+load a JSON world, and start a scenario. Deploy = ff `main` + push (Pages CI) once eyeballed.
+
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is the driver; the trophic-depth arc is now
 COMPLETE (scavenger + apex + omnivore all shipped ON). Remaining is the still-valid pre-roadmap backlog + optional
@@ -409,10 +441,10 @@ trophic follow-ups.
    that won't need its own BFS) and the LAND-ADAPTIVE pattern (`floraLandThin`) for changing high-land
    behavior without disturbing the low-land C2 balance.
 2. ~~**Beaches:** cut or cosmetic-only coastline pass~~ DONE 2026-06-25: beaches removed entirely (Kevin's call).
-3. **Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js` (removes the interim DOM stub, enables strict per-module TS). Touches the render/UI shell the gate can't see, so it needs its own browser verify + redeploy - a focused follow-up, not reflexive.
+3. ~~**Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js`~~ DONE 2026-07-03 (chunk 10; see the section above). The interim DOM stub is gone; `sim.js` is a clean per-module TS target now (further TS strictening - `// @ts-check` or a `.ts` rename - is a small optional follow-up). Still pending: the one-time browser eyeball before deploy.
 
 ## Known gaps
-- The headless harness imports the browser entry `main.js` via a permissive DOM stub (`scripts/headless-dom.mjs`); interim until the sim core is split out.
+- ~~The headless harness imports the browser entry `main.js` via a permissive DOM stub~~ RESOLVED 2026-07-03 (chunk 10): the sim core is split into `src/sim.js` and the stub is deleted; consumers import the pure core directly.
 - Terrain genesis is slow (~3-4k ticks to ~30% land); ecology studies must warm up accordingly.
 - ESLint runs `eslint:recommended` with legacy-pattern rules downgraded to warnings (19 advisory warnings in `main.js`); it errors only on genuinely new bugs.
 
