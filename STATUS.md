@@ -391,7 +391,7 @@ or the omnivore can be made even rarer (lower `omnivoreRescueOmniCap` / `omnivor
 panels) appear by default; the `Omni` populate button; watch them graze + occasionally hunt + an omnivore species
 row in the Species panel. The omnivore render + the `Omni` button are gate-blind.
 
-## Deep cleanup: split the sim core into src/sim.js - chunk 10 (2026-07-03) - DONE (gate green + byte-identical); NOT YET DEPLOYED
+## Deep cleanup: split the sim core into src/sim.js - chunk 10 (2026-07-03) - DONE + DEPLOYED (main 5d01334, live bundle index-C_LGWuYk.js, HTTP 200)
 Split the DOM-free SIMULATION out of the 2362-line `src/main.js` into its own `src/sim.js`, removed the interim
 `scripts/headless-dom.mjs` Proxy DOM stub, and repointed every headless consumer to import the pure core directly.
 This was the pre-roadmap "optional deep cleanup" (old NEXT item 3). A PURE refactor - no rate/behavior change - so
@@ -416,12 +416,17 @@ untouched), plus the standard gate.
 - **Gate GREEN:** typecheck clean + lint 0 errors (32 warnings, unchanged legacy) + **40 tests** (all pass, imported
   through `sim.js` with no stub) + build (bundle `index-C_LGWuYk.js`). `npm run measure` BYTE-IDENTICAL to baseline
   (extinction 0%, carn-persistence 50% 3/6, final fauna 49.3, flora 2119.2, cap-hits 0).
-- **GATE-BLIND (the reason it is not yet deployed):** the render/UI shell is not exercised by the automated gate.
-  Confidence is high (build resolves the module graph; eslint `no-undef` proves every shell reference is imported so
-  there is no boot-time ReferenceError; all DOM code moved verbatim; the only behavior changes are the setters +
-  relocated resets + `importJSON` split, all behavior-preserving). But per the gate-blind rule this wants a browser
-  eyeball before deploy (Playwright paused): open the app, confirm it boots + draws, then reset/roll-seed/map-size,
-  save+load a JSON world, and start a scenario. Deploy = ff `main` + push (Pages CI) once eyeballed.
+- **DEPLOYED (Kevin's call: deploy now).** ff `main` d402eec -> d364743 + pushed. First Pages run (#32) FAILED only
+  at the final `actions/deploy-pages@v4` step with GitHub's transient "Deployment failed, try again later." - NOT a
+  code fault (the `verify` job passed typecheck+lint+test+build; the artifact built + uploaded). Re-triggered with an
+  empty commit (`5d01334`); the retry published `index-C_LGWuYk.js` (HTTP 200 confirmed live). So `main` carries a
+  no-op re-trigger commit on top of the two chunk-10 commits.
+- **GATE-BLIND caveat (post-deploy sanity check, not a blocker):** the render/UI shell is not exercised by the
+  automated gate. Confidence is high (build resolves the module graph; eslint `no-undef` proves every shell reference
+  is imported so there is no boot-time ReferenceError; all DOM code moved verbatim; the only behavior changes are the
+  setters + relocated resets + `importJSON` split, all behavior-preserving). Worth a quick eyeball of the LIVE app
+  when convenient: confirm it boots + draws, then reset / roll-seed / change map-size, save+load a JSON world, and
+  start a scenario. If anything looks off, `main` can roll back to d402eec (the chunk-9 live bundle).
 
 ## NEXT (in order)
 The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is the driver; the trophic-depth arc is now
@@ -441,7 +446,7 @@ trophic follow-ups.
    that won't need its own BFS) and the LAND-ADAPTIVE pattern (`floraLandThin`) for changing high-land
    behavior without disturbing the low-land C2 balance.
 2. ~~**Beaches:** cut or cosmetic-only coastline pass~~ DONE 2026-06-25: beaches removed entirely (Kevin's call).
-3. ~~**Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js`~~ DONE 2026-07-03 (chunk 10; see the section above). The interim DOM stub is gone; `sim.js` is a clean per-module TS target now (further TS strictening - `// @ts-check` or a `.ts` rename - is a small optional follow-up). Still pending: the one-time browser eyeball before deploy.
+3. ~~**Optional deep cleanup:** split the DOM-free sim core out of `src/main.js` into its own `sim.js`~~ DONE 2026-07-03 (chunk 10; see the section above). The interim DOM stub is gone; `sim.js` is a clean per-module TS target now (further TS strictening - `// @ts-check` or a `.ts` rename - is a small optional follow-up). Deployed (live bundle index-C_LGWuYk.js); a post-deploy browser eyeball is a nice-to-have, not a blocker.
 
 ## Known gaps
 - ~~The headless harness imports the browser entry `main.js` via a permissive DOM stub~~ RESOLVED 2026-07-03 (chunk 10): the sim core is split into `src/sim.js` and the stub is deleted; consumers import the pure core directly.
