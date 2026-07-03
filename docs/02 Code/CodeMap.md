@@ -127,6 +127,21 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
   byte-identical to the chunk-7 baseline** (`--apex=0` is the proof). A/B `--scav=12 --apex=8` @ 12 seeds was
   neutral-to-BETTER (carn-persistence 75->83%, apex-persistence 100% rescue-sustained mean ~3.7, cap-hits 0);
   it DAMPS the carnivore boom-bust (a top-down cascade: total fauna 60->40, flora up). See Engineering Lessons + STATUS.
+- **Trophic depth: OMNIVORE tier (chunk 9, SHIPPED DEFAULT-ON `CFG.omnivoreEnabled`):** a generalist that eats
+  BOTH flora AND herbivore prey (competes with herbivores + carnivores at once). `makeFauna`/`mutateFaunaChild`
+  have an omnivore branch (dusky-plum 288-306 hue, `omnivore*` CFG energy/speed/repro + `omnivoreFloraEatGain` /
+  `omnivorePreyEatGain`); `buildSpatialIndex` adds `_omniAtTile`; `scoreTileForFauna` has an omnivore branch
+  (seek flora WEAKER than a herbivore + herbivore-prey scent ring 0-2 + `omnivoreCrowding` self-dispersion +
+  carn/apex avoidance); `faunaStep` has an omnivore eat branch (GRAZE flora on the tile as its staple, ELSE hunt
+  a herbivore - predation SECONDARY, only when no flora); `naturalFaunaSpawn` counts FIVE tiers separately + has
+  a broad-diet omnivore RESCUE (`omnivoreRescue*` CFG - prey OR flora, guarded on the flag). Render: solid
+  upward-TRIANGLE marker; 🐗 species/inspector icon; `btnSpawnOmni` seeds 3. Harness A/B via `--omni=N`. Tuned
+  RARE + INEFFICIENT (weaker per-feed than either specialist, slow breeding, low rescue cap) so it does not
+  out-compete - the risk here is COMPETITION, not starvation (unlike scav/apex). **Flag OFF => no omnivore fauna
+  => no omnivore code runs => byte-identical to the chunk-8 baseline** (`--omni=0` is the proof). A/B
+  `--scav=12 --apex=8 --omni=8` @ 24 seeds vs the chunk-8 baseline was neutral-to-better (carn 79->75% NEUTRAL,
+  apex 88->96%, scav 100%, omni-persistence 100% rare mean ~7.2, cap-hits 0); it re-crowds the world the apex
+  thinned (fauna 51->71). The first tuning BOOMED (mean 32, carn->67%); take-4a made it rare. See Engineering Lessons + STATUS.
 - **Loop:** `init`, `step` (the per-tick pipeline; ends `chronicleSample();scenarioSample();speciesSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.

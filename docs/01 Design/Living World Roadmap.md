@@ -35,8 +35,8 @@ option because it would genuinely use the sim.
 - **E. Scenarios + light objectives** - starting setups + win-conditions on top of the sandbox
   (Genesis, Ice Age, "keep 3 trophic levels alive 10k ticks"). Depends on B.
 - (Trophic levels: SCAVENGER shipped in chunk 7 (2026-07-01, balance-neutral), APEX shipped in chunk 8
-  (2026-07-02, neutral-to-better). Still parked: OMNIVORE (eats flora + fauna) - its own measured loop,
-  the last planned trophic tier.)
+  (2026-07-02, neutral-to-better), OMNIVORE shipped in chunk 9 (2026-07-02, neutral-to-better, re-crowds the
+  world). The trophic-depth arc is now COMPLETE - all planned tiers shipped ON.)
 
 ## The balance constraint (non-negotiable)
 The hard-won C2 predator-prey balance must not silently regress. So:
@@ -105,6 +105,15 @@ next-session prompt for the following chunk. One chunk per cycle.
    rescue-sustained). It DAMPS the carnivore boom-bust (a stabilizing top-down cascade; total fauna 60->40,
    flora up). `CFG.apexEnabled` ships ON (flag-off byte-identical). NEXT trophic tier: OMNIVORE (eats flora +
    fauna). See STATUS + the chunk-8 handoff.
+9. **Trophic depth take 4 - OMNIVORE viable + shipped ON** DONE 2026-07-02 (deployed, neutral-to-better). The 5th
+   and LAST planned trophic tier: a generalist eating BOTH flora AND herbivore prey (competes with herbivores +
+   carnivores at once). A DIFFERENT kind of hard - abundant staple => the risk is COMPETITION, not starvation - so
+   the scav/apex recipe was INVERTED: tuned RARE + INEFFICIENT (weak at both foods, slow breeding) so it cannot
+   out-compete. First tuning BOOMED (mean 32, carn->67% @12s); take-4a made it rare (mean ~7, rescue-sustained).
+   A/B `--scav=12 --apex=8 --omni=8` @ 24 seeds vs the chunk-8 baseline: extinction 0%, carn 79->75% (NEUTRAL,
+   1-seed swing - the 12-seed scare was reshuffle noise), scav 100%, apex 88->96% (better), omni-persistence 100%
+   (mean 7.2), cap-hits 0. It RE-CROWDS the world the apex thinned (fauna 51->71). `CFG.omnivoreEnabled` ships ON
+   (flag-off byte-identical). The trophic-depth arc is now COMPLETE. See STATUS + the chunk-9 handoff.
 
 ## Done
 - **Chunk 1 - The Chronicle** (2026-06-29, deployed). Pure event engine on the step path + Chronicle
@@ -162,3 +171,15 @@ next-session prompt for the following chunk. One chunk per cycle.
   cap-hits 0, apex-persistence 100% (mean ~3.7, rescue-sustained not self-reproducing). It DAMPS the carnivore
   boom-bust (carn amp 6.7->4.7) - a stabilizing top-down cascade (total fauna 60->40, flora up). `CFG.apexEnabled`
   ships ON (flag-off byte-identical). Added an `Apex` spawn button. See STATUS + the 2026-07-02 chunk-8 handoff.
+- **Chunk 9 - Trophic depth take 4: OMNIVORE viable + shipped ON** (2026-07-02, deployed, neutral-to-better). The
+  5th and last planned trophic tier (dusky-plum triangle, 🐗): a generalist eating BOTH flora AND herbivore prey,
+  competing with herbivores + carnivores at once. A DIFFERENT kind of hard - the staple (flora) is abundant, so the
+  risk is COMPETITION not starvation, and the scav/apex high-per-find-gain recipe INVERTED (it boomed to mean 32).
+  Tuned RARE + INEFFICIENT (`omnivoreFloraEatGain` 6 << herbivore 12, `omnivorePreyEatGain` 32 << carnivore 55,
+  slow breeding) so it stays rescue-sustained (mean ~7). Grazes as its staple, hunts a grazer only when no flora is
+  on its tile (secondary predation). `naturalFaunaSpawn` counts five tiers separately + a broad-diet rescue (prey OR
+  flora). A/B `--scav=12 --apex=8 --omni=8` @ 24 seeds vs the chunk-8 baseline: extinction 0%, carn 79->75%
+  (NEUTRAL, 1-seed swing - the 12-seed 83->67 was reshuffle noise), scav 100%, apex 88->96% (better),
+  omni-persistence 100% (mean 7.2), cap-hits 0. It RE-CROWDS the world the apex thinned (fauna 51->71).
+  `CFG.omnivoreEnabled` ships ON (flag-off byte-identical). Added an `Omni` spawn button. The trophic-depth arc is
+  now COMPLETE. See STATUS + the 2026-07-02 chunk-9 handoff.

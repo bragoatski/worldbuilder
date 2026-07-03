@@ -352,16 +352,54 @@ default-ON, flag-OFF byte-identical, flag-ON hunt+deterministic) + build (bundle
 appear by default; the `Apex` populate button; watch the apex crop carnivores/scavengers + the total population
 settle lower + steadier + an apex species row in the Species panel.
 
+## Trophic depth take 4 - OMNIVORE VIABLE + shipped ON - Living World chunk 9 (2026-07-02) - DONE + deploying
+Added the 5th and LAST planned trophic tier: an OMNIVORE (dusky-plum solid TRIANGLE, 🐗) that eats BOTH flora AND
+herbivore prey, so it competes with herbivores (for plants) AND carnivores (for prey) at once. This was a
+DIFFERENT kind of hard than the sparse-food scav/apex: its staple (flora) is ABUNDANT, so the risk was
+COMPETITION (over-success), not starvation. Built default-off behind `CFG.omnivoreEnabled`, A/B'd against the
+chunk-8 baseline, then flipped ON after it cleared the bar. All in `src/main.js` (+ an `Omni` button in
+`index.html`, harness `--omni` in `scripts/harness.mjs`, tests in `src/sim.test.js`).
+
+**The design that cleared the bar: RARE + INEFFICIENT (the inverse of scav/apex).** The scav/apex recipe
+(high-per-find gain + rescue floor) is WRONG for an omnivore - importing it made the tier BOOM (first tuning
+`omnivoreFloraEatGain` 9 / `omnivorePreyEatGain` 42 / `reproCost` 60 => omni mean 32 >> rescue cap, out-foraging
+herbivores + starving carnivores, carn 83->67% @12s, some seeds went 0H/0C). Take-4a inverted it: INEFFICIENT at
+BOTH foods (a generalist masters neither - floraEatGain 6 = half the herbivore's 12; preyEatGain 32 << carnivore
+55) + slow breeding (reproCost 60->80) => stays RARE + rescue-sustained (mean ~7, like the apex). It GRAZES as
+its staple and only hunts a grazer when no flora is on its tile (predation SECONDARY, light pressure on the herd).
+`naturalFaunaSpawn` now counts FIVE tiers separately; the rescue is a BROAD-DIET knob-D analog (fires while scarce
+AND prey OR flora is present).
+
+**A/B verdict (measure -> A/B -> keep-if-better, 24 seeds): PASS, shipped ON.** The 12-seed A/B first read a scary
+carn 83->67%, but that was reshuffle noise - at 24 seeds it tightened to a 1-seed swing (see Engineering Lessons
+"re-run at double the seeds"). Reference (`--scav=12 --apex=8`, omni off) == the chunk-8 baseline byte-identical
+(extinction 0%, carn 79% 19/24, scav 100% mean 10.7, apex 88% 21/24, cap-hits 0, final fauna 51.0). Treatment
+(`--scav=12 --apex=8 --omni=8`): extinction 0%, **carn 75% (18/24, NEUTRAL - a 1-seed diff, < 1 SE)**, scav 100%
+(mean 17.5), **apex 88->96% (23/24, BETTER)**, **omni-persistence 100% (24/24, mean 7.2 - rare, rescue-sustained)**,
+cap-hits 0, final fauna 70.8, herb min-floor 10.3 (worst 0) vs ref 11.8 (worst 0). Every existing tier
+neutral-to-better + the new tier persists + 0 cap-hits => bar cleared, so `omnivoreEnabled` defaults ON. **Nice
+counterbalance:** where the chunk-8 apex THINNED the world (top-down cascade, fauna 60->40), the omnivore RE-CROWDS
+it (fauna 51->71) - a consumer that recycles the abundant flora into more fauna. Flag OFF is byte-identical to the
+chunk-8 baseline (`--omni=0` is the proof). Added an `Omni` populate button. Gate GREEN: typecheck clean + lint 0
+errors (32 warnings unchanged) + **40 tests** (was 37; +3 omnivore: shipped-default-ON, flag-OFF byte-identical,
+flag-ON eats+deterministic; the chunk-2 inheritance test now disables all three trophic tiers) + build.
+**HONEST caveat (Tier B, for Kevin's eyeball):** carn-persistence is NEUTRAL by the numbers (79->75%, within
+noise), but the omnivore does add a whisper of competition/predation on herbivores - the world is more crowded and
+the herb min-floor sits a touch lower (10.3 vs 11.8). If it ever feels off, the flag flips back off (byte-identical)
+or the omnivore can be made even rarer (lower `omnivoreRescueOmniCap` / `omnivoreFloraEatGain`).
+**Gate-blind (DOM), eyeball in the live app:** dusky-plum solid-TRIANGLE omnivore (🐗 in the Species/Inspector
+panels) appear by default; the `Omni` populate button; watch them graze + occasionally hunt + an omnivore species
+row in the Species panel. The omnivore render + the `Omni` button are gate-blind.
+
 ## NEXT (in order)
-The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is the driver; next chunk first,
-then the still-valid pre-roadmap backlog.
-0. **Trophic depth take 4 - the OMNIVORE tier (its own loop).** Apex is DONE (chunk 8, shipped ON). The omnivore
-   is the last planned trophic tier and a different kind of hard: it eats BOTH flora and fauna (blurs the
-   herb/carn coupling), so it competes with herbivores AND carnivores at once. Same default-off
-   measure->A/B->keep-if-better loop, same bar (neutral-to-better on ALL existing tiers - herb/carn/scav/apex -
-   + non-zero omnivore persistence + 0 cap-hits). Reuse the `--scav`/`--apex`-style harness instrument
-   (add `--omni=N` + an `omnivoreEnabled` flag). Watch competition-with-herbivores as the likely balance risk.
-   (Optional follow-up if desired: make the APEX self-reproducing via a broader prey base - deferred from chunk 8.)
+The Living World Roadmap (`docs/01 Design/Living World Roadmap.md`) is the driver; the trophic-depth arc is now
+COMPLETE (scavenger + apex + omnivore all shipped ON). Remaining is the still-valid pre-roadmap backlog + optional
+trophic follow-ups.
+0. **Optional trophic follow-ups (Tier B, only if Kevin wants them).** (a) Make the APEX self-reproducing via a
+   broader prey base (e.g. also taking herbivores or omnivores) - deferred from chunk 8 as balance-risky, its own
+   A/B loop. (b) If the world now feels TOO crowded with the omnivore added (fauna 51->71) OR too thin, dial the
+   omnivore/apex rescue caps. (c) Let the apex also crop omnivores (currently it only hunts carn+scav) - would tie
+   the 5 tiers into one web, its own A/B.
 1. **Fauna distribution as a MEASURED ecology task** (Kevin asked: fauna rarer / crowd water / rare in
    deserts like the arctic). It is NOT a quick add - a naive version (harsh-biome avoidance + water
    attraction in `scoreTileForFauna`) regressed the C2 balance to 17% extinction / 50% carnivore-persistence
