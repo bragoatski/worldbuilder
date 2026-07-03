@@ -2,9 +2,7 @@
 // and report coverage + blobbiness (solid 2x2 river ratio - high = blobby sheets, low = dendritic lines).
 // The render is gate-blind; this picks the threshold by data. Run:
 //   node scripts/river-diag.mjs <seed> <warmup> <th1,th2,...>
-import { installDomStub } from './headless-dom.mjs';
-installDomStub();
-const sim = await import('../src/main.js');
+const sim = await import('../src/sim.js');
 
 const seed = parseInt(process.argv[2] || '202', 10);
 const warmup = parseInt(process.argv[3] || '6000', 10);

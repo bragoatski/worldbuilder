@@ -1,10 +1,8 @@
 // Warm terrain headless and serialize to the app's load format, so the browser can load a developed
 // world instantly (no in-browser warmup) for the gate-blind river visual verify. One-off tooling.
 // Run: node scripts/make-preview-world.mjs <seed> <warmup>
-import { installDomStub } from './headless-dom.mjs';
-installDomStub();
 import { writeFileSync, mkdirSync } from 'fs';
-const sim = await import('../src/main.js');
+const sim = await import('../src/sim.js');
 
 const seed = parseInt(process.argv[2] || '202', 10);
 const warmup = parseInt(process.argv[3] || '6000', 10);

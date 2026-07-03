@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { installDomStub } from '../scripts/headless-dom.mjs';
 
-installDomStub();
 
-const sim = await import('./main.js');
+const sim = await import('./sim.js');
 
 describe('in-page assertions (headless)', () => {
   it('every assertion passes after a fresh world init', () => {

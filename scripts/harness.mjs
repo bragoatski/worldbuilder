@@ -28,9 +28,7 @@
 // their own internally-consistent baseline, NOT byte-equal to the non-snapshot baseline. A/B tuning
 // within snapshot mode (same snapshot, only CFG differs) is still a clean comparison.
 
-import { installDomStub } from './headless-dom.mjs';
-installDomStub();
-const sim = await import('../src/main.js');
+const sim = await import('../src/sim.js');
 
 function parseArgs() {
   // Defaults aim for a DEVELOPED world: terrain genesis is slow, so ~3k warmup ticks are needed

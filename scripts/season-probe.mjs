@@ -13,9 +13,7 @@
 //                                       [--seasonlen=2000] [--intensity=1] [--seed=1000] [--off]
 //   --off : run the same window with seasons OFF (control - fields should hold steady).
 
-import { installDomStub } from './headless-dom.mjs';
-installDomStub();
-const sim = await import('../src/main.js');
+const sim = await import('../src/sim.js');
 
 function parseArgs() {
   const o = { warmup: 3000, ticks: 6000, every: 500, seasonlen: 2000, intensity: 1, seed: 1000, off: false };

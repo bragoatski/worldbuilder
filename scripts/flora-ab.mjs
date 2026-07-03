@@ -17,9 +17,7 @@
 //
 // Usage: node scripts/flora-ab.mjs [--seeds=4] [--warmup=6000] [--ticks=1500] [--herb=24] [--carn=8] [--flora=40]
 
-import { installDomStub } from './headless-dom.mjs';
-installDomStub();
-const sim = await import('../src/main.js');
+const sim = await import('../src/sim.js');
 
 function parseArgs() {
   const o = { seeds: 4, warmup: 6000, ticks: 1500, herb: 24, carn: 8, flora: 40, sample: 5 };
