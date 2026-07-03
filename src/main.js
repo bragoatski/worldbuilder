@@ -263,7 +263,42 @@ var CFG={
   // mid-tier prey (carn+scav) is present, capped low so it stays rare. Guarded on apexEnabled (off => no eRng).
   apexRescueRate:0.0008,                   // per mid-prey per-tick immigration prob while scarce (strong enough to hold a floor)
   apexRescueMinPrey:5,                      // need a few carnivores+scavengers present before an apex immigrates
-  apexRescueApexCap:5                       // keep apex RARE (rescue floor; it can breed above this if prey allow)
+  apexRescueApexCap:5,                      // keep apex RARE (rescue floor; it can breed above this if prey allow)
+  // Trophic depth take 4 (chunk 9): an OMNIVORE tier that eats BOTH flora AND herbivore prey - the last planned
+  // trophic tier and a DIFFERENT kind of hard. Unlike the sparse-food scavenger/apex (whose risk was starvation),
+  // the omnivore's staple (flora) is ABUNDANT, so its balance risk is the OPPOSITE: COMPETITION - it competes
+  // with herbivores for plants AND with carnivores for prey at once, blurring the herb/carn coupling the C2
+  // balance rests on. So it is tuned DELIBERATELY as a RARE, INEFFICIENT generalist (weaker per-feed than either
+  // specialist, breeds slowly, low rescue cap) so it cannot out-forage herbivores or over-hunt. It grazes as its
+  // staple (opportunistic) and only hunts a grazer when no flora is on its tile, so predation stays secondary.
+  // SHIPPED ON in chunk 9 after the A/B cleared the bar. First tuning (floraEatGain 9 / preyEatGain 42 /
+  // reproCost 60) BOOMED (omni mean 32 >> the rescue cap => self-reproducing hard, carn-persistence 83->67% @12s);
+  // take-4a (the values below: 6 / 32 / 80) made it RARE + rescue-sustained (omni mean ~7, near the rescue cap).
+  // A/B at 24 seeds vs the chunk-8 baseline (--scav=12 --apex=8 --omni=8 vs --omni=0): extinction 0% both,
+  // carn-persistence 79%->75% (a 1-seed swing, < 1 SE => NEUTRAL; the 12-seed 83->67 was reshuffle noise, see
+  // Engineering Lessons), scav 100% both, apex-persistence 88%->96% (BETTER), omni-persistence 100% (mean 7.2),
+  // cap-hits 0. Every existing tier neutral-to-better + the new tier persists => bar cleared. It re-crowds the
+  // world the apex thinned (final fauna 51->71). Flag OFF is byte-identical to the chunk-8 baseline (nothing
+  // seeds it + the rescue is guarded => no omnivore code runs) -> the --omni=0 harness run is the proof.
+  omnivoreEnabled:true,
+  omnivoreSpeed:17,                        // move cooldown (between herbivore 20 and carnivore 16)
+  omnivoreEatSpeed:20,                      // ticks between feeding actions (== herbivore graze pace)
+  // Take-4a re-tune: the first tuning (floraEatGain 9 / preyEatGain 42 / reproCost 60) BOOMED (omni mean 32,
+  // above the rescue cap => self-reproducing hard), out-foraging herbivores + starving carnivores (carn 83->67%).
+  // Cut BOTH per-feed gains (a generalist is master of neither) AND raise the repro cost (bigger post-breed climb
+  // => far slower breeding) so the omnivore stays RARE + rescue-sustained (like the apex), competing minimally.
+  omnivoreFloraEatGain:6,                  // energy per plant grazed - HALF the herbivore's 12 (a weak grazer that cannot out-compete the herd on flora)
+  omnivorePreyEatGain:32,                  // energy per herbivore killed - well below carnivore 55 (an opportunistic bite, not a jackpot that fuels a boom)
+  omnivoreStartEnergy:55, omnivoreMaxEnergy:110,
+  omnivoreReproThreshold:110, omnivoreReproCost:80, // breeds only at a full tank + pays a big cost -> a long refill climb -> slow breeding -> stays rare
+  omnivoreCrowding:1.5,                     // conspecific dispersion (fragments omnivores so they do not pile on the same flora/herbivore hotspots as the herd)
+  // Omnivore immigration RESCUE (broad-diet analog of knob D): re-immigrate while omnivores are scarce AND there
+  // is food - EITHER herbivore prey OR standing flora (a generalist survives on either), so the tier cannot hit
+  // absorbing-zero. Capped low so it stays rare. Guarded on omnivoreEnabled (off => no eRng => byte-identical).
+  omnivoreRescueRate:0.0006,               // per-tick immigration prob while scarce (scaled by prey abundance + a small flora-sustained floor)
+  omnivoreRescueMinPrey:3,                  // a few herbivores present triggers it
+  omnivoreRescueMinFlora:40,               // OR standing flora above this (the generalist floor, so it survives even when grazers are thin)
+  omnivoreRescueOmniCap:5                   // keep omnivore RARE (rescue floor; it can breed above this if food allows)
 };
 // Snapshot defaults for preset reset
 var DEFAULT_CFG = {};
@@ -370,7 +405,7 @@ function renderLineagePanel(f,died){
   var el=document.getElementById('lineagePanel'); if(!el) return;
   if(died){ el.innerHTML='<div class="lin-empty">The creature you were following has died. Follow another to keep watching the world evolve.</div>'; return; }
   if(!f){ el.innerHTML='<div class="lin-empty">Click a creature in the Inspector, then press Follow to track it and watch its lineage evolve.</div>'; return; }
-  var icon=f.type==='herbivore'?'🐇':(f.type==='scavenger'?'🦅':(f.type==='apex'?'🦁':'🐺'));
+  var icon=f.type==='herbivore'?'🐇':(f.type==='scavenger'?'🦅':(f.type==='apex'?'🦁':(f.type==='omnivore'?'🐗':'🐺')));
   var sName=getSpeciesName(f,f.type);
   var sw=hsv2hex(f.hue,f.sat,f.val);
   var sz=f.size||1;
@@ -478,6 +513,7 @@ hook('btnSpawnHerb',function(){seedFaunaGroup('herbivore',8);draw();});
 hook('btnSpawnCarn',function(){seedFaunaGroup('carnivore',4);draw();});
 hook('btnSpawnScav',function(){seedFaunaGroup('scavenger',4);draw();});
 hook('btnSpawnApex',function(){seedFaunaGroup('apex',3);draw();});
+hook('btnSpawnOmni',function(){seedFaunaGroup('omnivore',3);draw();});
 hook('btnRivers',function(){generateRivers();computeAridity();applyClimate();reclassTerrain();draw();});
 // Scenarios (chunk 5): Start plays the selected scenario; the empty "Sandbox" option rolls a plain world.
 hook('btnStartScenario',function(){var sel=document.getElementById('scenarioSelect');var id=sel?sel.value:'';if(id)startScenario(id);else{running=false;init();buildSliders();draw();}});
@@ -1181,7 +1217,7 @@ function floraStep(){if(!CFG.ecoActive)return;
 // Fauna
 // Vivid mutation palette: striking colors that stand out against earthy backdrop
 var VIVID_HUES=[210,25,290,50,355,175,320,140]; // blue, orange, purple, gold, crimson, cyan, magenta, lime
-function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var isH=(type==='herbivore');var isS=(type==='scavenger');var isA=(type==='apex');var pA=prefs?prefs.prefArid:clamp(tA+(eRng()*3-1.5),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(eRng()*3-1.5),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(eRng()*3-1.5),0,10);var tol=prefs?prefs.tolerance:(3.0+eRng()*1.5);
+function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var isH=(type==='herbivore');var isS=(type==='scavenger');var isA=(type==='apex');var isO=(type==='omnivore');var pA=prefs?prefs.prefArid:clamp(tA+(eRng()*3-1.5),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(eRng()*3-1.5),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(eRng()*3-1.5),0,10);var tol=prefs?prefs.tolerance:(3.0+eRng()*1.5);
   var vivid=prefs?!!prefs.vivid:false;
   var newId=++faunaIdCounter;
   // Cosmetic SIZE gene (heritable, rendered, balance-safe): founders start at 1.0x and the gene only
@@ -1198,20 +1234,21 @@ function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tem
   else if(isH){hue=35+eRng()*15;sat=0.05+eRng()*0.1;val=0.78+eRng()*0.17;} // warm cream/white
   else if(isS){hue=25+eRng()*20;sat=0.22+eRng()*0.12;val=0.42+eRng()*0.16;} // dull olive-brown (detritivore)
   else if(isA){hue=342+eRng()*16;sat=0.32+eRng()*0.16;val=0.3+eRng()*0.16;} // dark crimson (apex predator; non-wrapping 342-358 band)
+  else if(isO){hue=288+eRng()*18;sat=0.28+eRng()*0.16;val=0.38+eRng()*0.16;} // dusky plum/violet (omnivore generalist; distinct from cream/olive/crimson/charcoal)
   else{hue=210+eRng()*30;sat=0.05+eRng()*0.1;val=0.2+eRng()*0.18;} // charcoal/slate
-  // Per-type sat/val clamp ranges (scavenger = olive between cream herbivore + charcoal carnivore; apex = crimson).
-  var loSat=vivid?0.65:(isS?0.16:(isA?0.28:0.03)), hiSat=vivid?0.95:(isS?0.4:(isA?0.6:0.2));
-  var loVal=vivid?0.7:(isH?0.75:(isS?0.38:(isA?0.26:0.18))), hiVal=vivid?0.95:(isH?0.95:(isS?0.62:(isA?0.5:0.4)));
-  var startE=isH?CFG.herbivoreStartEnergy:(isS?CFG.scavengerStartEnergy:(isA?CFG.apexStartEnergy:CFG.carnivoreStartEnergy));
-  var maxE=isH?CFG.herbivoreMaxEnergy:(isS?CFG.scavengerMaxEnergy:(isA?CFG.apexMaxEnergy:CFG.carnivoreMaxEnergy));
+  // Per-type sat/val clamp ranges (scavenger = olive between cream herbivore + charcoal carnivore; apex = crimson; omnivore = plum).
+  var loSat=vivid?0.65:(isS?0.16:(isA?0.28:(isO?0.24:0.03))), hiSat=vivid?0.95:(isS?0.4:(isA?0.6:(isO?0.5:0.2)));
+  var loVal=vivid?0.7:(isH?0.75:(isS?0.38:(isA?0.26:(isO?0.34:0.18)))), hiVal=vivid?0.95:(isH?0.95:(isS?0.62:(isA?0.5:(isO?0.6:0.4))));
+  var startE=isH?CFG.herbivoreStartEnergy:(isS?CFG.scavengerStartEnergy:(isA?CFG.apexStartEnergy:(isO?CFG.omnivoreStartEnergy:CFG.carnivoreStartEnergy)));
+  var maxE=isH?CFG.herbivoreMaxEnergy:(isS?CFG.scavengerMaxEnergy:(isA?CFG.apexMaxEnergy:(isO?CFG.omnivoreMaxEnergy:CFG.carnivoreMaxEnergy)));
   return{id:newId,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,loSat,hiSat),val:clamp(val,loVal,hiVal),vivid:vivid,size:size,lineageId:lineageId,energy:startE,maxEnergy:maxE,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:isH?(x*7+y*13)%CFG.herbivoreSpeed:0,eatCD:isH?(x*11+y*5)%CFG.herbivoreEatSpeed:0};}
 function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;return Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));}
 function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
 function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
 function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;
-  // Count the tiers SEPARATELY: lumping scavengers/apex into cc would starve knob D's carnivore rescue of
-  // headroom once those tiers exist (a confound). Both are 0 when their flags are off, so cc == carnivores as before.
-  var hc=0,cc=0,sc=0,ac=0;for(var i=0;i<fauna.length;i++){var a=fauna[i];if(a){if(a.type==='herbivore')hc++;else if(a.type==='scavenger')sc++;else if(a.type==='apex')ac++;else cc++;}}
+  // Count the tiers SEPARATELY: lumping scavengers/apex/omnivore into cc would starve knob D's carnivore rescue
+  // of headroom once those tiers exist (a confound). All are 0 when their flags are off, so cc == carnivores as before.
+  var hc=0,cc=0,sc=0,ac=0,oc=0;for(var i=0;i<fauna.length;i++){var a=fauna[i];if(a){if(a.type==='herbivore')hc++;else if(a.type==='scavenger')sc++;else if(a.type==='apex')ac++;else if(a.type==='omnivore')oc++;else cc++;}}
   // Baseline herbivore immigration trickle (preserves the old 0.7*spawnChance rate).
   if(eRng()<CFG.faunaSpawnChance*0.7)spawnFaunaAt('herbivore');
   // Knob D: prey-dependent carnivore RESCUE. Immigration probability scales with prey
@@ -1223,9 +1260,13 @@ function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;
   if(CFG.scavengersEnabled&&sc<CFG.scavengerRescueScavCap&&carrion.length>=CFG.scavengerRescueMinCarrion&&eRng()<CFG.scavengerRescueRate*carrion.length)spawnFaunaAt('scavenger');
   // Apex RESCUE (chunk 8): mid-prey-dependent immigration while apex are scarce, so the 4th tier cannot hit
   // absorbing-zero. Guarded on apexEnabled (off => no eRng => byte-identical). Prey base = carnivores + scavengers.
-  if(CFG.apexEnabled&&ac<CFG.apexRescueApexCap&&(cc+sc)>=CFG.apexRescueMinPrey&&eRng()<CFG.apexRescueRate*(cc+sc))spawnFaunaAt('apex');}
-var _floraAtTile,_herbAtTile,_carnAtTile,_scavAtTile,_carrionAtTile,_apexAtTile;
-function buildSpatialIndex(){_floraAtTile={};_herbAtTile={};_carnAtTile={};_scavAtTile={};_carrionAtTile={};_apexAtTile={};for(var i=0;i<flora.length;i++){var f=flora[i];if(!f)continue;var k=idx(f.x,f.y);if(!_floraAtTile[k])_floraAtTile[k]=[];_floraAtTile[k].push(i);}for(var j=0;j<fauna.length;j++){var a=fauna[j];if(!a)continue;var k2=idx(a.x,a.y);if(a.type==='herbivore'){if(!_herbAtTile[k2])_herbAtTile[k2]=[];_herbAtTile[k2].push(j);}else if(a.type==='scavenger'){if(!_scavAtTile[k2])_scavAtTile[k2]=[];_scavAtTile[k2].push(j);}else if(a.type==='apex'){if(!_apexAtTile[k2])_apexAtTile[k2]=[];_apexAtTile[k2].push(j);}else{if(!_carnAtTile[k2])_carnAtTile[k2]=[];_carnAtTile[k2].push(j);}}
+  if(CFG.apexEnabled&&ac<CFG.apexRescueApexCap&&(cc+sc)>=CFG.apexRescueMinPrey&&eRng()<CFG.apexRescueRate*(cc+sc))spawnFaunaAt('apex');
+  // Omnivore RESCUE (chunk 9): broad-diet immigration while omnivores are scarce AND food exists - EITHER
+  // herbivore prey OR standing flora (a generalist survives on either). Scaled by prey abundance + a small
+  // constant so a flora-only world still holds a floor. Guarded on omnivoreEnabled (off => no eRng).
+  if(CFG.omnivoreEnabled&&oc<CFG.omnivoreRescueOmniCap&&(hc>=CFG.omnivoreRescueMinPrey||flora.length>=CFG.omnivoreRescueMinFlora)&&eRng()<CFG.omnivoreRescueRate*(hc+2))spawnFaunaAt('omnivore');}
+var _floraAtTile,_herbAtTile,_carnAtTile,_scavAtTile,_carrionAtTile,_apexAtTile,_omniAtTile;
+function buildSpatialIndex(){_floraAtTile={};_herbAtTile={};_carnAtTile={};_scavAtTile={};_carrionAtTile={};_apexAtTile={};_omniAtTile={};for(var i=0;i<flora.length;i++){var f=flora[i];if(!f)continue;var k=idx(f.x,f.y);if(!_floraAtTile[k])_floraAtTile[k]=[];_floraAtTile[k].push(i);}for(var j=0;j<fauna.length;j++){var a=fauna[j];if(!a)continue;var k2=idx(a.x,a.y);if(a.type==='herbivore'){if(!_herbAtTile[k2])_herbAtTile[k2]=[];_herbAtTile[k2].push(j);}else if(a.type==='scavenger'){if(!_scavAtTile[k2])_scavAtTile[k2]=[];_scavAtTile[k2].push(j);}else if(a.type==='apex'){if(!_apexAtTile[k2])_apexAtTile[k2]=[];_apexAtTile[k2].push(j);}else if(a.type==='omnivore'){if(!_omniAtTile[k2])_omniAtTile[k2]=[];_omniAtTile[k2].push(j);}else{if(!_carnAtTile[k2])_carnAtTile[k2]=[];_carnAtTile[k2].push(j);}}
   // Carrion index (scavenger food; empty unless scavengers are enabled -> off is byte-identical).
   for(var cj=0;cj<carrion.length;cj++){var cc=carrion[cj];if(!cc)continue;var ck=idx(cc.x,cc.y);if(!_carrionAtTile[ck])_carrionAtTile[ck]=[];_carrionAtTile[ck].push(cj);}}
 function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]||5)-f.prefArid,dT=(tempField[ti]||5)-f.prefTemp,dS=(sunlight[ti]||5)-f.prefSL;var score=(1-Math.sqrt(dA*dA+dT*dT+dS*dS)/15)*2;if(isHerb){var fH=_floraAtTile[ti];var floraCount=fH?fH.length:0;
@@ -1259,6 +1300,17 @@ function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]
     var adjA=neighbors4(tx,ty);for(var aj2=0;aj2<adjA.length;aj2++){var akk=idx(adjA[aj2][0],adjA[aj2][1]);var mA=(_carnAtTile[akk]?_carnAtTile[akk].length:0)+(_scavAtTile[akk]?_scavAtTile[akk].length:0);if(mA)score+=mA*1.5;}
     for(var ady=-4;ady<=4;ady++){for(var adx=-4;adx<=4;adx++){var ad=Math.abs(adx)+Math.abs(ady);if(ad<2||ad>4)continue;var asx=tx+adx,asy=ty+ady;if(!inb(asx,asy))continue;var akk2=idx(asx,asy);var mid2=(_carnAtTile[akk2]?_carnAtTile[akk2].length:0)+(_scavAtTile[akk2]?_scavAtTile[akk2].length:0);if(mid2)score+=mid2*(ad===2?0.6:ad===3?0.38:0.22);}}
     var selfA=_apexAtTile[ti];if(selfA)score-=selfA.length*1.0;
+  }else if(f.type==='omnivore'){
+    // Omnivore foraging: values BOTH flora (its abundant staple) and herbivore prey (an opportunistic bonus).
+    // The flora weight is DELIBERATELY weaker than a pure herbivore's 2.5 so it does not out-forage the grazers
+    // it competes with; a herbivore-prey scent (ring 0-2) lets it close on grazers; conspecific crowding
+    // disperses the omnivores so they do not pile on the herd's hotspots; predators (carnivores/apex) repel it.
+    var fO=_floraAtTile[ti];var floraO=fO?fO.length:0;score+=floraO*1.4;if(floraO<=1)score-=1.5;
+    var hO=_herbAtTile[ti];if(hO)score+=Math.min(hO.length,3)*1.6;
+    var adjO=neighbors4(tx,ty);for(var oj=0;oj<adjO.length;oj++){var okk=idx(adjO[oj][0],adjO[oj][1]);var ohN=_herbAtTile[okk];if(ohN)score+=ohN.length*0.7;var ofN=_floraAtTile[okk];if(ofN)score+=ofN.length*0.2;}
+    for(var ody=-2;ody<=2;ody++){for(var odx=-2;odx<=2;odx++){var od=Math.abs(odx)+Math.abs(ody);if(od!==2)continue;var osx=tx+odx,osy=ty+ody;if(!inb(osx,osy))continue;var ohS=_herbAtTile[idx(osx,osy)];if(ohS)score+=ohS.length*0.35;}}
+    var selfO=_omniAtTile[ti];if(selfO)score-=selfO.length*CFG.omnivoreCrowding;
+    var cO=_carnAtTile[ti];if(cO)score-=cO.length*1.5;var apO=_apexAtTile[ti];if(apO)score-=apO.length*2.0;
   }else{
     // Carnivore prey tracking: immediate tile (strong), ring 1 (medium), ring 2-3 (scent)
     var hH=_herbAtTile[ti];if(hH)score+=Math.min(hH.length,3)*3;
@@ -1279,9 +1331,9 @@ function mutateFaunaChild(parent,cx,cy){var mag=CFG.faunaMutationMag;
     // Inherited vivid: drift within bright range
     childHue=(parent.hue+randn()*10+360)%360;childSat=clamp(parent.sat+(eRng()-0.5)*0.08,0.65,0.95);childVal=clamp(parent.val+(eRng()-0.5)*0.06,0.7,0.95);
   } else {
-    // Normal: cream herbivores, olive-brown scavengers, crimson apex, charcoal carnivores
-    var isH=(parent.type==='herbivore'), isS=(parent.type==='scavenger'), isA=(parent.type==='apex');
-    childHue=clamp(parent.hue+randn()*8,isH?30:(isS?18:(isA?340:200)),isH?55:(isS?52:(isA?360:245)));childSat=clamp(parent.sat+(eRng()-0.5)*0.04,isS?0.16:(isA?0.28:0.03),isS?0.4:(isA?0.6:0.2));childVal=clamp(parent.val+(eRng()-0.5)*0.06,isH?0.75:(isS?0.38:(isA?0.26:0.18)),isH?0.95:(isS?0.62:(isA?0.5:0.4)));
+    // Normal: cream herbivores, olive-brown scavengers, crimson apex, plum omnivores, charcoal carnivores
+    var isH=(parent.type==='herbivore'), isS=(parent.type==='scavenger'), isA=(parent.type==='apex'), isO=(parent.type==='omnivore');
+    childHue=clamp(parent.hue+randn()*8,isH?30:(isS?18:(isA?340:(isO?285:200))),isH?55:(isS?52:(isA?360:(isO?310:245))));childSat=clamp(parent.sat+(eRng()-0.5)*0.04,isS?0.16:(isA?0.28:(isO?0.24:0.03)),isS?0.4:(isA?0.6:(isO?0.5:0.2)));childVal=clamp(parent.val+(eRng()-0.5)*0.06,isH?0.75:(isS?0.38:(isA?0.26:(isO?0.34:0.18))),isH?0.95:(isS?0.62:(isA?0.5:(isO?0.6:0.4))));
   }
   // Cosmetic size drifts on the cRng stream (balance-neutral); lineage id is inherited unchanged.
   var childSize=clamp((parent.size||1)+cRandn()*CFG.faunaSizeMutationMag,0.5,2.2);
@@ -1292,7 +1344,7 @@ function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefA
 function _dropCarrion(x,y){ if(CFG.scavengersEnabled) carrion.push({x:x,y:y,tick:tick}); }
 function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(eRng()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
   for(var oi2=0;oi2<order.length;oi2++){var fi=order[oi2];var f=fauna[fi];if(!f)continue;var isHerb=(f.type==='herbivore');var climateFit=computeFaunaClimateFit(f);var idleCost=isHerb?CFG.faunaIdleCost:(CFG.faunaIdleCost*0.6);f.energy-=(idleCost+CFG.faunaClimatePenalty*(1-climateFit));f.age++;if(f.energy<=0){deathParticles.push({x:f.x,y:f.y,type:'starve',tick:tick});_dropCarrion(f.x,f.y);fauna[fi]=null;continue;}if(f.age>=f.maxAge){deathParticles.push({x:f.x,y:f.y,type:'age',tick:tick});_dropCarrion(f.x,f.y);fauna[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){fauna[fi]=null;continue;}
-    f.moveCD--;f.eatCD--;if(f.moveCD<=0){f.moveCD=isHerb?CFG.herbivoreSpeed:(f.type==='scavenger'?CFG.scavengerSpeed:(f.type==='apex'?CFG.apexSpeed:CFG.carnivoreSpeed));var nbrs=neighbors4(f.x,f.y);var bestScore=scoreTileForFauna(f,f.x,f.y,isHerb);var bestPos=[f.x,f.y];for(var ni=0;ni<nbrs.length;ni++){var nx=nbrs[ni][0],ny=nbrs[ni][1];if(grid[idx(nx,ny)]===T.OCEAN)continue;var score=scoreTileForFauna(f,nx,ny,isHerb)+(eRng()-0.5)*0.5;if(score>bestScore){bestScore=score;bestPos=[nx,ny];}}if(bestPos[0]!==f.x||bestPos[1]!==f.y){f.x=bestPos[0];f.y=bestPos[1];f.energy-=CFG.faunaMoveCost;}}
+    f.moveCD--;f.eatCD--;if(f.moveCD<=0){f.moveCD=isHerb?CFG.herbivoreSpeed:(f.type==='scavenger'?CFG.scavengerSpeed:(f.type==='apex'?CFG.apexSpeed:(f.type==='omnivore'?CFG.omnivoreSpeed:CFG.carnivoreSpeed)));var nbrs=neighbors4(f.x,f.y);var bestScore=scoreTileForFauna(f,f.x,f.y,isHerb);var bestPos=[f.x,f.y];for(var ni=0;ni<nbrs.length;ni++){var nx=nbrs[ni][0],ny=nbrs[ni][1];if(grid[idx(nx,ny)]===T.OCEAN)continue;var score=scoreTileForFauna(f,nx,ny,isHerb)+(eRng()-0.5)*0.5;if(score>bestScore){bestScore=score;bestPos=[nx,ny];}}if(bestPos[0]!==f.x||bestPos[1]!==f.y){f.x=bestPos[0];f.y=bestPos[1];f.energy-=CFG.faunaMoveCost;}}
     var tileIdx=idx(f.x,f.y);
     // Eating gated by eatCD cooldown
     if(f.eatCD<=0){if(isHerb){var floraHere=_floraAtTile[tileIdx];if(floraHere&&floraHere.length>0){
@@ -1310,10 +1362,21 @@ function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIn
       // adjacent tile. A kill drops carrion (feeds the scavengers) and flashes a 'kill' particle.
       var apxTiles=[tileIdx];var adjP=neighbors4(f.x,f.y);for(var pti=0;pti<adjP.length;pti++){var pti2=idx(adjP[pti][0],adjP[pti][1]);if(grid[pti2]!==T.OCEAN)apxTiles.push(pti2);}
       var killed=false;for(var kt=0;kt<apxTiles.length&&!killed;kt++){var preyList=_carnAtTile[apxTiles[kt]]||_scavAtTile[apxTiles[kt]];if(preyList&&preyList.length>0){var aPreyIdx=preyList[0];if(fauna[aPreyIdx]){var aPrey=fauna[aPreyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.apexEatGain);deathParticles.push({x:aPrey.x,y:aPrey.y,type:'kill',tick:tick});_dropCarrion(aPrey.x,aPrey.y);fauna[aPreyIdx]=null;preyList.shift();f.eatCD=CFG.apexEatSpeed;killed=true;}}}
+    }else if(f.type==='omnivore'){
+      // Omnivore: opportunistic generalist making ONE feeding action per cooldown (shared eatCD, no double-dipping).
+      // Graze a plant on the current tile if one is there (its abundant staple, less efficiently than a herbivore),
+      // ELSE hunt a herbivore on the current/adjacent tile - so predation is SECONDARY (only when flora is absent),
+      // keeping its pressure on the herd light. A kill drops carrion + flashes a 'kill' particle like the predators.
+      var oFlora=_floraAtTile[tileIdx];
+      if(oFlora&&oFlora.length>0){var oEat=oFlora[0];if(flora[oEat]){var oPlant=flora[oEat];f.energy=Math.min(f.maxEnergy,f.energy+CFG.omnivoreFloraEatGain*(0.7+oPlant.health*0.5));
+        if(eRng()<CFG.floraRegrowthChance){floraRemnants.push({x:oPlant.x,y:oPlant.y,prefs:{prefArid:oPlant.prefArid,prefTemp:oPlant.prefTemp,prefSL:oPlant.prefSL,tolerance:oPlant.tolerance,hue:oPlant.hue,sat:oPlant.sat,val:oPlant.val,gen:oPlant.gen},tickDue:tick+CFG.floraRegrowthDelay});}
+        flora[oEat]=null;oFlora.shift();f.eatCD=CFG.omnivoreEatSpeed;}}
+      else{var oHuntTiles=[tileIdx];var adjO2=neighbors4(f.x,f.y);for(var ohi=0;ohi<adjO2.length;ohi++){var ohti=idx(adjO2[ohi][0],adjO2[ohi][1]);if(grid[ohti]!==T.OCEAN)oHuntTiles.push(ohti);}
+        var oHunted=false;for(var oht=0;oht<oHuntTiles.length&&!oHunted;oht++){var oHerb=_herbAtTile[oHuntTiles[oht]];if(oHerb&&oHerb.length>0){var oPreyIdx=oHerb[0];if(fauna[oPreyIdx]){var oPrey=fauna[oPreyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.omnivorePreyEatGain);deathParticles.push({x:oPrey.x,y:oPrey.y,type:'kill',tick:tick});_dropCarrion(oPrey.x,oPrey.y);fauna[oPreyIdx]=null;oHerb.shift();f.eatCD=CFG.omnivoreEatSpeed;oHunted=true;}}}}
     }else{
       // Carnivore hunting: check current tile AND adjacent tiles
       var huntTiles=[tileIdx];var adjH=neighbors4(f.x,f.y);for(var hi=0;hi<adjH.length;hi++){var hti=idx(adjH[hi][0],adjH[hi][1]);if(grid[hti]!==T.OCEAN)huntTiles.push(hti);}
-      var hunted=false;for(var ht=0;ht<huntTiles.length&&!hunted;ht++){var herbHere=_herbAtTile[huntTiles[ht]];if(herbHere&&herbHere.length>0){var preyIdx=herbHere[0];if(fauna[preyIdx]){var prey=fauna[preyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.carnivoreEatGain);deathParticles.push({x:prey.x,y:prey.y,type:'kill',tick:tick});_dropCarrion(prey.x,prey.y);fauna[preyIdx]=null;herbHere.shift();f.eatCD=CFG.carnivoreEatSpeed;hunted=true;}}}}}    var reproThresh=isHerb?CFG.faunaReproThreshold:(f.type==='scavenger'?CFG.scavengerReproThreshold:(f.type==='apex'?CFG.apexReproThreshold:CFG.carnivoreReproThreshold));var reproCost=isHerb?CFG.faunaReproCost:(f.type==='scavenger'?CFG.scavengerReproCost:(f.type==='apex'?CFG.apexReproCost:CFG.carnivoreReproCost));
+      var hunted=false;for(var ht=0;ht<huntTiles.length&&!hunted;ht++){var herbHere=_herbAtTile[huntTiles[ht]];if(herbHere&&herbHere.length>0){var preyIdx=herbHere[0];if(fauna[preyIdx]){var prey=fauna[preyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.carnivoreEatGain);deathParticles.push({x:prey.x,y:prey.y,type:'kill',tick:tick});_dropCarrion(prey.x,prey.y);fauna[preyIdx]=null;herbHere.shift();f.eatCD=CFG.carnivoreEatSpeed;hunted=true;}}}}}    var reproThresh=isHerb?CFG.faunaReproThreshold:(f.type==='scavenger'?CFG.scavengerReproThreshold:(f.type==='apex'?CFG.apexReproThreshold:(f.type==='omnivore'?CFG.omnivoreReproThreshold:CFG.carnivoreReproThreshold)));var reproCost=isHerb?CFG.faunaReproCost:(f.type==='scavenger'?CFG.scavengerReproCost:(f.type==='apex'?CFG.apexReproCost:(f.type==='omnivore'?CFG.omnivoreReproCost:CFG.carnivoreReproCost)));
     if(f.energy>=reproThresh&&fauna.length+newFauna.length<CFG.faunaMaxPop){var reproCands=neighbors4(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(reproCands.length>0){f.energy-=reproCost;var dest=reproCands[(eRng()*reproCands.length)|0];newFauna.push(eRng()<CFG.faunaMutationChance?mutateFaunaChild(f,dest[0],dest[1]):cloneFaunaChild(f,dest[0],dest[1]));}}}
   flora=flora.filter(function(f){return f!==null;});fauna=fauna.filter(function(f){return f!==null;});for(var j=0;j<newFauna.length;j++)fauna.push(newFauna[j]);
   // Carrion lifecycle: drop eaten (nulled) + rotted corpses. Empty when scavengers are off (never created).
@@ -1359,6 +1422,8 @@ function draw(){
       ctx.fillRect(apx+doff,apy+doff,dim,1);ctx.fillRect(apx+doff,apy+doff+dim-1,dim,1);ctx.fillRect(apx+doff,apy+doff,1,dim);ctx.fillRect(apx+doff+dim-1,apy+doff,1,dim);}
     else if(a.type==='apex'){ // solid diamond - the apex predator, distinct from square / hollow-square / cross
       for(var dr=0;dr<dim;dr++){var half=Math.min(dr,dim-1-dr);var dw=half*2+1;ctx.fillRect(apx+doff+(((dim-dw)/2)|0),apy+doff+dr,dw,1);}}
+    else if(a.type==='omnivore'){ // upward solid triangle (wide base) - the generalist, distinct from the other four
+      for(var tr=0;tr<dim;tr++){var tw=tr+1;if(tw>dim)tw=dim;ctx.fillRect(apx+doff+(((dim-tw)/2)|0),apy+doff+tr,tw,1);}}
     else{var mid=(dim/2)|0;ctx.fillRect(apx+doff+mid,apy+doff,1,1);ctx.fillRect(apx+doff,apy+doff+mid,dim,1);ctx.fillRect(apx+doff+mid,apy+doff+dim-1,1,1);if(dim>=3)ctx.fillRect(apx+doff+mid-1,apy+doff+1,3,1);}
     // Follow highlight: an accent ring around the creature the camera is tracking.
     if(a.id===followId){ctx.strokeStyle='#3b9eff';ctx.lineWidth=1;var rs=dim+4;var ro=((PIX-rs)/2)|0;ctx.strokeRect(apx+ro+0.5,apy+ro+0.5,rs-1,rs-1);}}}
@@ -1417,7 +1482,7 @@ function updateTooltip(ev){
   if((CFG.seasonalTilt||CFG.anomalies||CFG.volcanoAsh)&&baseTemp){var dT=(tempField[i]||0)-(baseTemp[i]||0),dA=(aridity[i]||0)-(baseArid[i]||0);html+='<hr class="tsep"><div class="kv">climate ΔT/ΔA <span>'+(dT>=0?'+':'')+dT.toFixed(2)+' / '+(dA>=0?'+':'')+dA.toFixed(2)+'</span></div><div class="kv">Season <span>'+Math.round(seasonPhase()*100)+'%</span></div>';}
   var tF=[],tA2=[];for(var fi=0;fi<flora.length;fi++){if(flora[fi]&&flora[fi].x===x&&flora[fi].y===y)tF.push(flora[fi]);}for(var ai=0;ai<fauna.length;ai++){if(fauna[ai]&&fauna[ai].x===x&&fauna[ai].y===y)tA2.push(fauna[ai]);}
   if(tF.length||tA2.length){html+='<hr class="tsep">';if(tF.length){var avgH=0;for(var fj=0;fj<tF.length;fj++)avgH+=tF[fj].health;avgH/=tF.length;var mG=0;for(var fk=0;fk<tF.length;fk++)if(tF[fk].gen>mG)mG=tF[fk].gen;html+='<div class="kv">🌿 ×'+tF.length+'/'+CFG.floraPerTileMax+' <span>hp:'+avgH.toFixed(2)+' gen≤'+mG+'</span></div>';if(mG>=5){var topF=null;for(var tf2=0;tf2<tF.length;tf2++){if(!topF||tF[tf2].gen>topF.gen)topF=tF[tf2];}if(topF){var tfName=getSpeciesName(topF,'flora');if(tfName)html+='<div class="kv" style="font-style:italic;color:#38c8b0;">'+tfName+'</div>';}}var remC=0;for(var rr=0;rr<floraRemnants.length;rr++){if(floraRemnants[rr].x===x&&floraRemnants[rr].y===y)remC++;}if(remC)html+='<div class="kv">🌱 regrowing <span>×'+remC+'</span></div>';}
-  for(var aj=0;aj<Math.min(tA2.length,2);aj++){var fa=tA2[aj];var faName=getSpeciesName(fa,fa.type);var faLabel=faName?('<i>'+faName+'</i>'):(fa.type==='herbivore'?'🐇':(fa.type==='scavenger'?'🦅':(fa.type==='apex'?'🦁':'🐺')));html+='<div class="kv">'+faLabel+(fa.vivid?' ✨':'')+' <span>E:'+fa.energy.toFixed(0)+'/'+fa.maxEnergy+' g:'+fa.gen+'</span></div>';}}
+  for(var aj=0;aj<Math.min(tA2.length,2);aj++){var fa=tA2[aj];var faName=getSpeciesName(fa,fa.type);var faLabel=faName?('<i>'+faName+'</i>'):(fa.type==='herbivore'?'🐇':(fa.type==='scavenger'?'🦅':(fa.type==='apex'?'🦁':(fa.type==='omnivore'?'🐗':'🐺'))));html+='<div class="kv">'+faLabel+(fa.vivid?' ✨':'')+' <span>E:'+fa.energy.toFixed(0)+'/'+fa.maxEnergy+' g:'+fa.gen+'</span></div>';}}
   t.innerHTML=html;var pad=14;var left=ev.clientX+pad,top=ev.clientY+pad;var vw=window.innerWidth,vh=window.innerHeight;var bb=t.getBoundingClientRect();if(left+bb.width>vw-8)left=ev.clientX-bb.width-pad;if(top+bb.height>vh-8)top=ev.clientY-bb.height-pad;t.style.left=left+'px';t.style.top=top+'px';t.style.display='block';
 }
 
@@ -1720,8 +1785,8 @@ function updateSpeciesRegistry(census,reg,curTick){
     if(!rec){ // never registered -> a new species has diverged
       b[c.key]={key:c.key,name:c.name,type:c.type,firstTick:curTick,peakPop:c.pop,extinct:false,extinctTick:null};
       reg.everCount++;
-      var word=c.type==='herbivore'?'grazer':(c.type==='scavenger'?'scavenger':(c.type==='apex'?'apex predator':'predator'));
-      var col=c.type==='herbivore'?'#7fd0a0':(c.type==='scavenger'?'#c8b088':(c.type==='apex'?'#d98a9a':'#e0a0a0'));
+      var word=c.type==='herbivore'?'grazer':(c.type==='scavenger'?'scavenger':(c.type==='apex'?'apex predator':(c.type==='omnivore'?'omnivore':'predator')));
+      var col=c.type==='herbivore'?'#7fd0a0':(c.type==='scavenger'?'#c8b088':(c.type==='apex'?'#d98a9a':(c.type==='omnivore'?'#b98ad9':'#e0a0a0')));
       events.push({kind:'species',text:'A new '+word+' species diverged: '+c.name+'.',color:col});
     } else { if(c.pop>rec.peakPop)rec.peakPop=c.pop;
       if(rec.extinct){ rec.extinct=false;rec.extinctTick=null; events.push({kind:'species',text:rec.name+' has re-emerged.',color:'#9fb4c8'}); }
@@ -1748,7 +1813,7 @@ function renderSpecies(){
   var shown=census.filter(function(c){return c.maxGen>=SPECIES_MIN_GEN&&c.pop>=SPECIES_MIN_POP;});
   if(!shown.length){ body.innerHTML='<div class="chron-empty">No distinct species yet. Lineages must diverge and mature.</div>'; }
   else{ var html='';
-    for(var i=0;i<shown.length;i++){var c=shown[i];var icon=c.type==='herbivore'?'🐇':(c.type==='scavenger'?'🦅':(c.type==='apex'?'🦁':'🐺'));
+    for(var i=0;i<shown.length;i++){var c=shown[i];var icon=c.type==='herbivore'?'🐇':(c.type==='scavenger'?'🦅':(c.type==='apex'?'🦁':(c.type==='omnivore'?'🐗':'🐺')));
       html+='<div class="sp-row"><span class="sp-icon">'+icon+'</span><span class="species-name sp-name">'+c.name+'</span>'
         +'<span class="sp-stat">×'+c.pop+'</span><span class="sp-stat">g'+c.maxGen+'</span>'
         +(c.maxSize>=1.3?'<span class="sp-stat">'+c.maxSize.toFixed(1)+'×</span>':'')

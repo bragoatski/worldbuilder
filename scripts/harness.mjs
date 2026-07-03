@@ -36,7 +36,7 @@ function parseArgs() {
   // Defaults aim for a DEVELOPED world: terrain genesis is slow, so ~3k warmup ticks are needed
   // before there is enough land/flora to measure ecology on. Scale --seeds / --warmup down for a smoke check.
   const o = { seeds: 6, warmup: 3000, ticks: 1000, herb: 24, carn: 8, flora: 40, sample: 5,
-    repeat: 1, snapshot: false, traj: false, scav: 0, apex: 0,
+    repeat: 1, snapshot: false, traj: false, scav: 0, apex: 0, omni: 0,
     seasons: false, anomalies: false, volcano: false, seasonlen: 10000, intensity: 1.0 };
   for (const a of process.argv.slice(2)) {
     const m = /^--([a-z]+)(?:=(.+))?$/.exec(a);
@@ -60,6 +60,7 @@ function herbCount() { return sim.fauna.filter((f) => f && f.type === 'herbivore
 function carnCount() { return sim.fauna.filter((f) => f && f.type === 'carnivore').length; }
 function scavCount() { return sim.fauna.filter((f) => f && f.type === 'scavenger').length; }
 function apexCount() { return sim.fauna.filter((f) => f && f.type === 'apex').length; }
+function omniCount() { return sim.fauna.filter((f) => f && f.type === 'omnivore').length; }
 
 // Pearson correlation of two equal-length series (0 if degenerate).
 function pearson(a, b) {
@@ -218,6 +219,7 @@ function measureWindow(seed, o) {
   sim.seedFaunaGroup('carnivore', o.carn);
   if (o.scav > 0) sim.seedFaunaGroup('scavenger', o.scav); // trophic-depth A/B: seed the detritivore tier
   if (o.apex > 0) sim.seedFaunaGroup('apex', o.apex);       // trophic-depth take-3 A/B: seed the apex predator tier
+  if (o.omni > 0) sim.seedFaunaGroup('omnivore', o.omni);   // trophic-depth take-4 A/B: seed the omnivore tier
 
   const cap = sim.CFG.faunaMaxPop;
   const herbS = [], carnS = [], floraS = [];
@@ -251,7 +253,7 @@ function measureWindow(seed, o) {
   return {
     fdist,
     seed, land: sim.landCoverage(), flora: sim.flora.length,
-    herb: herbCount(), carn: carnCount(), scav: scavCount(), apex: apexCount(), carrion: sim.carrion.length, fauna: sim.fauna.length,
+    herb: herbCount(), carn: carnCount(), scav: scavCount(), apex: apexCount(), omni: omniCount(), carrion: sim.carrion.length, fauna: sim.fauna.length,
     minFauna: minFauna === Infinity ? 0 : minFauna, maxFauna, extinctAt,
     minHerb: minHerb === Infinity ? 0 : minHerb, minCarn: minCarn === Infinity ? 0 : minCarn,
     capHits,
@@ -284,8 +286,9 @@ const climateLabel = anyClimate
   : 'climate-off (baseline)';
 const scavLabel = o.scav > 0 ? `  SCAVENGERS-ON [seed ${o.scav}]` : '';
 const apexLabel = o.apex > 0 ? `  APEX-ON [seed ${o.apex}]` : '';
-console.log(`\nWorldbuilder measurement harness  -  ${climateLabel}${scavLabel}${apexLabel}`);
-console.log(`seeds=${o.seeds} warmup=${o.warmup} ticks=${o.ticks} seed-fauna=${o.herb}H/${o.carn}C${o.scav > 0 ? '/' + o.scav + 'S' : ''}${o.apex > 0 ? '/' + o.apex + 'A' : ''} flora=${o.flora} sample=${o.sample}` +
+const omniLabel = o.omni > 0 ? `  OMNIVORE-ON [seed ${o.omni}]` : '';
+console.log(`\nWorldbuilder measurement harness  -  ${climateLabel}${scavLabel}${apexLabel}${omniLabel}`);
+console.log(`seeds=${o.seeds} warmup=${o.warmup} ticks=${o.ticks} seed-fauna=${o.herb}H/${o.carn}C${o.scav > 0 ? '/' + o.scav + 'S' : ''}${o.apex > 0 ? '/' + o.apex + 'A' : ''}${o.omni > 0 ? '/' + o.omni + 'O' : ''} flora=${o.flora} sample=${o.sample}` +
   ` repeat=${o.repeat}${o.snapshot ? ' [snapshot]' : ''}\n`);
 
 const t0 = Date.now();
@@ -303,16 +306,18 @@ for (let s = 0; s < o.seeds; s++) {
     setClimateToggles(true);  // enable climate ONLY for the measured window
     sim.CFG.scavengersEnabled = o.scav > 0; // trophic-depth A/B: scavengers only in the measured window
     sim.CFG.apexEnabled = o.apex > 0;       // trophic take-3 A/B: apex only in the measured window
+    sim.CFG.omnivoreEnabled = o.omni > 0;   // trophic take-4 A/B: omnivore only in the measured window
     const m0 = Date.now();
     r = measureWindow(seed, o);
     tMeasure += Date.now() - m0;
     setClimateToggles(false); // restore the clean warmup baseline for the next seed/rep
     sim.CFG.scavengersEnabled = false;
     sim.CFG.apexEnabled = false;
+    sim.CFG.omnivoreEnabled = false;
   }
   rows.push(r); // metrics are deterministic across repeats; the last one represents the seed
 
-  const status = r.fauna === 0 ? `EXTINCT @${r.extinctAt}` : `alive (${r.herb}H/${r.carn}C${o.scav > 0 ? '/' + r.scav + 'S' : ''}${o.apex > 0 ? '/' + r.apex + 'A' : ''})`;
+  const status = r.fauna === 0 ? `EXTINCT @${r.extinctAt}` : `alive (${r.herb}H/${r.carn}C${o.scav > 0 ? '/' + r.scav + 'S' : ''}${o.apex > 0 ? '/' + r.apex + 'A' : ''}${o.omni > 0 ? '/' + r.omni + 'O' : ''})`;
   console.log(`  seed ${pad(r.seed, 5)} land ${pad((r.land * 100).toFixed(1) + '%', 7)} flora ${pad(r.flora, 5)} fauna ${pad(r.fauna, 4)} [min ${pad(r.minFauna, 4)} max ${pad(r.maxFauna, 4)}]  ${status}`);
   console.log(`        cycle: phase-lag ${pad((r.phaseLagTicks >= 0 ? '+' : '') + r.phaseLagTicks + 't', 6)} (r=${r.phaseCorr.toFixed(2)})  herb[per ${r.herbPeriod || '--'}t amp ${r.herbAmp.toFixed(0)}]  carn[per ${r.carnPeriod || '--'}t amp ${r.carnAmp.toFixed(0)}]  cycles ${r.cycles}`);
   console.log(`        floor: minHerb ${pad(r.minHerb, 4)} minCarn ${pad(r.minCarn, 4)}  amp-trend ${r.ampFirst.toFixed(0)}->${r.ampSecond.toFixed(0)}  disp: clusters ${pad(r.clusters, 3)} meanDist ${r.meanDist.toFixed(1)}  cap-hits ${r.capHits}`);
@@ -347,6 +352,10 @@ if (o.scav > 0) {
 if (o.apex > 0) {
   const apexAlive = rows.filter((r) => r.apex > 0);
   console.log(`  apex-persistence       ${(apexAlive.length / rows.length * 100).toFixed(0)}%  (${apexAlive.length}/${rows.length})   final apex mean ${mean(rows.map((r) => r.apex)).toFixed(1)}`);
+}
+if (o.omni > 0) {
+  const omniAlive = rows.filter((r) => r.omni > 0);
+  console.log(`  omnivore-persistence   ${(omniAlive.length / rows.length * 100).toFixed(0)}%  (${omniAlive.length}/${rows.length})   final omni mean ${mean(rows.map((r) => r.omni)).toFixed(1)}`);
 }
 console.log(`  predator-prey phase lag  mean ${lagsCycling.length ? (mean(lagsCycling) >= 0 ? '+' : '') + mean(lagsCycling).toFixed(0) + 't' : 'n/a'} (carn peaks after prey when +, over ${lagsCycling.length} coupled seeds)`);
 console.log(`  oscillation period     herb mean ${mean(rows.map((r) => r.herbPeriod)).toFixed(0)}t   carn mean ${mean(rows.map((r) => r.carnPeriod)).toFixed(0)}t`);

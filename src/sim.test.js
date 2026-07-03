@@ -240,18 +240,20 @@ describe('evolution visibility (size gene + lineage)', () => {
   }, 30000);
 
   it('lineages are shared by kin and the size gene diversifies through reproduction', () => {
-    // Isolate this chunk-2 inheritance mechanic from the chunk-7/8 trophic tiers: scavengers + apex compete for
-    // the pop cap and reshuffle the eRng stream, which for this specific seed suppresses reproduction inside the
-    // 500t window (aggregate reproduction is healthy - the harness shows tens of fauna over 1000t). The size-gene
-    // / lineage-kin behavior under test is independent of those tiers, so measure it with both off.
+    // Isolate this chunk-2 inheritance mechanic from the chunk-7/8/9 trophic tiers: scavengers + apex + omnivore
+    // compete for the pop cap and reshuffle the eRng stream, which for this specific seed suppresses reproduction
+    // inside the 500t window (aggregate reproduction is healthy - the harness shows tens of fauna over 1000t). The
+    // size-gene / lineage-kin behavior under test is independent of those tiers, so measure it with all off.
     let living;
     try {
       sim.CFG.scavengersEnabled = false;
       sim.CFG.apexEnabled = false;
+      sim.CFG.omnivoreEnabled = false;
       living = warmAndSeed(909090, 30, 8, 500);
     } finally {
       sim.CFG.scavengersEnabled = true; // restore the shipped defaults
       sim.CFG.apexEnabled = true;
+      sim.CFG.omnivoreEnabled = true;
     }
     expect(living.some((f) => f.gen > 0)).toBe(true); // descendants exist
     const counts = {};
@@ -713,5 +715,62 @@ describe('trophic depth: apex predator (chunk 8, shipped default-on)', () => {
     }
     expect(a.ateSeen).toBe(true); // apex fed on mid-tier prey (gained energy above their start)
     expect(b.fp).toEqual(a.fp); // apex behavior is deterministic (no stray Math.random -> snapshot-safe)
+  }, 120000);
+});
+
+// Trophic depth take 4: the OMNIVORE tier (chunk 9, SHIPPED default-ON). A generalist that eats BOTH flora AND
+// herbivore prey, so it competes with herbivores (for plants) AND carnivores (for prey) at once - a DIFFERENT
+// kind of hard (its staple flora is abundant, so its risk is COMPETITION, not starvation). Tuned as a rare,
+// inefficient generalist (weaker per-feed than either specialist, breeds slowly, low rescue cap) so it cannot
+// out-forage the grazers or over-hunt them. The first tuning BOOMED (mean 32, carn 83->67% @12s); take-4a made
+// it rare (mean ~7). A/B at 24 seeds vs the chunk-8 baseline (--scav=12 --apex=8 --omni=8): extinction 0%,
+// carn-persistence 79->75% (neutral, 1-seed swing), scav 100%, apex 88->96% (better), omni-persistence 100%,
+// cap-hits 0 => bar cleared, shipped ON. Gate properties: (1) the shipped default is ON; (2) with the flag OFF
+// no omnivore ever arises (nothing seeds it + the rescue is guarded) so the omnivore code never runs -
+// byte-identical; (3) when on, an omnivore gains energy above its start ONLY by eating (flora or prey), and a
+// run replays identically.
+describe('trophic depth: omnivore (chunk 9, shipped default-on)', () => {
+  it('the shipped default is ON', () => {
+    expect(sim.CFG.omnivoreEnabled).toBe(true);
+  });
+  it('flag OFF is byte-identical: no omnivore ever arises, even with flora + prey present', () => {
+    try {
+      sim.CFG.omnivoreEnabled = false;
+      sim.initWorld(777);
+      for (let i = 0; i < 700; i++) sim.step();
+      sim.seedFloraCluster(40); sim.seedFaunaGroup('herbivore', 30); sim.seedFaunaGroup('carnivore', 10);
+      for (let i = 0; i < 300; i++) sim.step();
+      expect(sim.fauna.some((f) => f && f.type === 'omnivore')).toBe(false);
+    } finally {
+      sim.CFG.omnivoreEnabled = true; // restore the shipped default (CFG is a persistent global)
+    }
+  }, 60000);
+  it('flag ON: omnivores eat (gain energy above start) and the run is deterministic', () => {
+    function run() {
+      sim.CFG.omnivoreEnabled = true;
+      sim.initWorld(2024);
+      for (let i = 0; i < 1200; i++) sim.step();
+      sim.seedFloraCluster(40);
+      sim.seedFaunaGroup('herbivore', 40);
+      sim.seedFaunaGroup('carnivore', 16);
+      sim.seedFaunaGroup('omnivore', 10);
+      let ateSeen = false;
+      for (let i = 0; i < 700; i++) {
+        sim.step();
+        // an omnivore above its start energy can only have gotten there by eating (flora or prey - its only foods)
+        if (sim.fauna.some((f) => f && f.type === 'omnivore' && f.energy > sim.CFG.omnivoreStartEnergy)) ateSeen = true;
+      }
+      const fp = sim.fauna.filter((f) => f).map((f) => `${f.id}:${f.type}:${f.x},${f.y}:${f.energy.toFixed(2)}`);
+      return { ateSeen, fp };
+    }
+    let a, b;
+    try {
+      a = run();
+      b = run();
+    } finally {
+      sim.CFG.omnivoreEnabled = true; // restore the shipped default (CFG is a persistent global)
+    }
+    expect(a.ateSeen).toBe(true); // omnivores fed (gained energy above their start)
+    expect(b.fp).toEqual(a.fp); // omnivore behavior is deterministic (no stray Math.random -> snapshot-safe)
   }, 120000);
 });
