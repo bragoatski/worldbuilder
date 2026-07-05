@@ -104,6 +104,9 @@
   .chip-flora .cdot { background:#3fcf6a; }
   .chip-herb  .cdot { background:#5bb8f0; }
   .chip-carn  .cdot { background:#e85454; }
+  .chip-scav  .cdot { background:#c99a3c; }
+  .chip-apex  .cdot { background:#d0477a; }
+  .chip-omni  .cdot { background:#9a5cc4; }
 
   /* Setup-deck labeled segments */
   .seg {
@@ -595,9 +598,12 @@
       <div class="chip"><span class="dot running" id="statusDot"></span><span class="chip-k">t</span><b id="hTick">0</b></div>
       <div class="chip"><span class="chip-k">Seed</span><b id="hSeed" style="cursor:pointer;" title="Click to copy">—</b></div>
       <div class="chip"><span class="chip-k">Land</span><b id="hLand">0%</b></div>
-      <div class="chip chip-flora"><span class="cdot"></span><b id="hFlora">0</b></div>
-      <div class="chip chip-herb"><span class="cdot"></span><b id="hHerb">0</b></div>
-      <div class="chip chip-carn"><span class="cdot"></span><b id="hCarn">0</b></div>
+      <div class="chip chip-flora" title="Flora"><span class="cdot"></span><b id="hFlora">0</b></div>
+      <div class="chip chip-herb" title="Herbivores"><span class="cdot"></span><b id="hHerb">0</b></div>
+      <div class="chip chip-carn" title="Carnivores"><span class="cdot"></span><b id="hCarn">0</b></div>
+      <div class="chip chip-scav" title="Scavengers"><span class="cdot"></span><b id="hScav">0</b></div>
+      <div class="chip chip-apex" title="Apex predators"><span class="cdot"></span><b id="hApex">0</b></div>
+      <div class="chip chip-omni" title="Omnivores"><span class="cdot"></span><b id="hOmni">0</b></div>
       <div class="chip" id="hSeasonWrap" style="display:none;"><span class="chip-k">Season</span><b id="hSeason">—</b></div>
       <div class="chip" id="hZoomWrap" style="display:none;"><span class="chip-k">Zoom</span><b id="hZoom">100%</b></div>
     </div>
@@ -846,6 +852,9 @@
                 <span><span class="pg-dot" style="background:#3fcf6a"></span>Flora</span>
                 <span><span class="pg-dot" style="background:#5bb8f0"></span>Herbivore</span>
                 <span><span class="pg-dot" style="background:#e85454"></span>Carnivore</span>
+                <span><span class="pg-dot" style="background:#c99a3c"></span>Scavenger</span>
+                <span><span class="pg-dot" style="background:#d0477a"></span>Apex</span>
+                <span><span class="pg-dot" style="background:#9a5cc4"></span>Omnivore</span>
               </div>
             </div>
           </div>
@@ -906,6 +915,9 @@
               <div class="li" data-ltip="Flora poorly matched to tile climate|Low health = dim brown · Dies if health < 0.05"><span class="lsw" style="background:linear-gradient(135deg,#542,#763)"></span>Flora (stress)</div>
               <div class="li" data-ltip="Grazing animal — eats flora, flees carnivores|Speed: 20 ticks · Eat: 12E/flora · Repro: 95E, cost 60"><span class="lsw" style="background:#e8ddd0"></span>Herbivore</div>
               <div class="li" data-ltip="Predator — hunts herbivores within 1 tile, 3-tile scent|Speed: 16 ticks · Eat: 40E/kill · Repro: 80E, cost 40"><span class="lsw" style="background:#3a3f48"></span>Carnivore</div>
+              <div class="li" data-ltip="Detritivore — eats carrion (corpses), scents distant death|Hollow-square marker · rescue-immigrates while carrion is present"><span class="lsw" style="background:#c99a3c"></span>Scavenger</div>
+              <div class="li" data-ltip="Apex predator — hunts carnivores + scavengers|Solid-diamond marker · rare, slow-eating, high per-kill gain; damps the boom-bust"><span class="lsw" style="background:#d0477a"></span>Apex</div>
+              <div class="li" data-ltip="Omnivore — grazes flora, hunts a grazer when none is on-tile|Solid-triangle marker · rare + inefficient at both foods"><span class="lsw" style="background:#9a5cc4"></span>Omnivore</div>
               <div class="li" data-ltip="Rare bright-colored mutation|2% spontaneous · 50% inherited from vivid parent"><span class="lsw" style="background:linear-gradient(135deg,#3b9eff,#e854e8,#e8a838)"></span>Vivid (rare)</div>
               <div class="lsep">Events</div>
               <div class="li" data-ltip="Carnivore successfully hunted a herbivore|Kill flash lasts 8 ticks"><span class="lsw" style="background:#ff3333;color:#fff;font-size:9px;text-align:center;line-height:12px;">✕</span>Kill</div>

@@ -559,6 +559,7 @@ function drawPopGraph(){
   var gc=document.getElementById('popGraph');if(!gc)return;var gctx=gc.getContext('2d');if(!gctx)return;
   var w=gc.width,h=gc.height;gctx.fillStyle='#080b10';gctx.fillRect(0,0,w,h);
   var hist=popHistory;if(!hist.flora.length)return;
+  var scavH=hist.scav||[],apexH=hist.apex||[],omniH=hist.omni||[]; // may be absent on old snapshots
   // Find max across all series for scaling
   var maxVal=10;for(var mi=0;mi<hist.flora.length;mi++){if(hist.flora[mi]>maxVal)maxVal=hist.flora[mi];if(hist.herb[mi]*4>maxVal)maxVal=hist.herb[mi]*4;if(hist.carn[mi]*4>maxVal)maxVal=hist.carn[mi]*4;}
   maxVal=maxVal*1.1; // 10% headroom
@@ -569,11 +570,16 @@ function drawPopGraph(){
   // Scale label
   gctx.fillStyle='#4a5568';gctx.font='9px "JetBrains Mono",monospace';gctx.fillText(Math.round(maxVal),2,10);gctx.fillText('0',2,h-2);
   // Draw series
-  function drawSeries(data,color,scale){
-    gctx.strokeStyle=color;gctx.lineWidth=1.5;gctx.globalAlpha=0.85;gctx.beginPath();
+  function drawSeries(data,color,scale,lw,alpha){
+    gctx.strokeStyle=color;gctx.lineWidth=lw||1.5;gctx.globalAlpha=(alpha===undefined?0.85:alpha);gctx.beginPath();
     for(var si=0;si<data.length;si++){var sx=si*xStep;var sy=h-clamp(data[si]*scale/maxVal,0,1)*h;if(si===0)gctx.moveTo(sx,sy);else gctx.lineTo(sx,sy);}
     gctx.stroke();gctx.globalAlpha=1.0;
   }
+  // The three minor trophic tiers (scav/apex/omni) are rare + rescue-sustained, so draw them thinner and
+  // dimmer beneath the core flora/herb/carn story to keep the predator-prey cycle the readable foreground.
+  drawSeries(scavH,'#c99a3c',4,1.0,0.5);
+  drawSeries(apexH,'#d0477a',4,1.0,0.5);
+  drawSeries(omniH,'#9a5cc4',4,1.0,0.5);
   drawSeries(hist.flora,'#3fcf6a',1);
   drawSeries(hist.herb,'#5bb8f0',4); // scaled 4x so fauna is visible alongside flora
   drawSeries(hist.carn,'#e85454',4);
@@ -584,7 +590,11 @@ function drawPopGraph(){
 function drawHUD(){
   var sumA=0,sumS=0,sumE=0,count=0;
   for(var ii=0;ii<W*H;ii++){if(grid[ii]!==T.OCEAN){sumA+=aridity[ii]||0;sumS+=sunlight[ii]||0;sumE+=elev[ii]||0;count++;}}
-  var herbCount=0,carnCount=0;for(var fi=0;fi<fauna.length;fi++){if(!fauna[fi])continue;if(fauna[fi].type==='herbivore')herbCount++;else carnCount++;}
+  // Count all five fauna tiers separately. (Before the trophic expansion this was a herbivore/else split,
+  // which silently folded scavengers+apex+omnivores into the carnivore readout - the count is now honest.)
+  var herbCount=0,carnCount=0,scavCount=0,apexCount=0,omniCount=0;
+  for(var fi=0;fi<fauna.length;fi++){var ff=fauna[fi];if(!ff)continue;var ft=ff.type;
+    if(ft==='herbivore')herbCount++;else if(ft==='scavenger')scavCount++;else if(ft==='apex')apexCount++;else if(ft==='omnivore')omniCount++;else carnCount++;}
   var el;
   el=document.getElementById('hTick');if(el)el.textContent=tick;
   el=document.getElementById('hLand');if(el)el.textContent=(landCoverage()*100).toFixed(1)+'%';
@@ -594,6 +604,9 @@ function drawHUD(){
   el=document.getElementById('hFlora');if(el)el.textContent=flora.length;
   el=document.getElementById('hHerb');if(el)el.textContent=herbCount;
   el=document.getElementById('hCarn');if(el)el.textContent=carnCount;
+  el=document.getElementById('hScav');if(el)el.textContent=scavCount;
+  el=document.getElementById('hApex');if(el)el.textContent=apexCount;
+  el=document.getElementById('hOmni');if(el)el.textContent=omniCount;
   // Status dot
   var dot=document.getElementById('statusDot');if(dot){dot.className=running?'dot running':'dot paused';}
   // Season
@@ -603,7 +616,12 @@ function drawHUD(){
   var zw=document.getElementById('hZoomWrap'),zEl=document.getElementById('hZoom');
   if(zw&&zEl){if(zoomLevel!==1){zw.style.display='';zEl.textContent=Math.round(zoomLevel*100)+'%';}else{zw.style.display='none';}}
   // Record population history (every 3 ticks to avoid bloat)
-  if(tick%3===0){popHistory.flora.push(flora.length);popHistory.herb.push(herbCount);popHistory.carn.push(carnCount);popHistory.ticks.push(tick);if(popHistory.flora.length>POP_HISTORY_LEN){popHistory.flora.shift();popHistory.herb.shift();popHistory.carn.shift();popHistory.ticks.shift();}}
+  if(tick%3===0){
+    // Old imported snapshots may lack the trophic-tier arrays; init them so a load never crashes the graph.
+    if(!popHistory.scav)popHistory.scav=[];if(!popHistory.apex)popHistory.apex=[];if(!popHistory.omni)popHistory.omni=[];
+    popHistory.flora.push(flora.length);popHistory.herb.push(herbCount);popHistory.carn.push(carnCount);
+    popHistory.scav.push(scavCount);popHistory.apex.push(apexCount);popHistory.omni.push(omniCount);popHistory.ticks.push(tick);
+    if(popHistory.flora.length>POP_HISTORY_LEN){popHistory.flora.shift();popHistory.herb.shift();popHistory.carn.shift();popHistory.scav.shift();popHistory.apex.shift();popHistory.omni.shift();popHistory.ticks.shift();}}
   drawPopGraph();
 }
 
