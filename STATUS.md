@@ -2,6 +2,24 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-07-06 - HUD fix shipped (to branch), 2 chunks investigated + dropped
+Newest handoff: **`docs/04 Handoffs/2026-07-06 HUD fix (5 tiers) + fauna-distribution & crash-defense investigations.md`** - read it first.
+A 4-item program ("go for 1 through 4"): visual-verification, fauna distribution, crash defense, creature AI.
+- **Chunk 1 (HUD fix) - SHIPPED to branch, `447356a`, gate GREEN, NOT deployed.** A live visual audit (Playwright
+  MCP) found the whole Living World UI working (rivers, Chronicle, Species, Inspector, Follow/Lineage, Scenarios,
+  god powers, Share all good). One real bug fixed: the HUD counted fauna as herbivore/else, so the Carnivore chip +
+  graph silently folded scav+apex+omni into it (a true carn of 4 read ~14). Now all 5 tiers count separately + show
+  in the chips, Population graph + legend, and Map Legend.
+- **Chunk 2 (fauna distribution) - DROPPED, lesson `670a03b`.** A fauna-only lever can't cluster fauna near water:
+  where fauna live is set by where FLORA grows + the pop cap. Proven balance-safe but effect ~nil. Flora-inland
+  version left on the shelf.
+- **Chunk 3 (crash defense) - REVERTED, lesson `8e84451`.** A prey refuge fails (crashes are food-driven, and the
+  start-of-step floor blows through as predators swarm scarce prey in one step). Crashes self-recover via
+  immigration (transient dips). Kevin accepts the organic crashes; robust dynamic-floor fix deferred.
+- **Chunk 4 (creature AI) - NOT STARTED** (recommend a fresh focused session).
+- **DEPLOY PENDING (Kevin):** `main` is unchanged/deployed; branch is 3 commits ahead. Recommend deploying the HUD
+  fix (`447356a`) - real correctness win, balance-safe. Held per the no-surprise-Pages rule.
+
 ## Where things are (2026-06-22)
 Codebase professionalization is DONE and DEPLOYED. Branch `professionalize-codebase` was fast-forwarded into **`main`** (`ff515b4`) and pushed; the repo's Pages source is now "GitHub Actions" and the CI workflow built + published the Vite `dist/` bundle. **Live and confirmed:** https://bragoatski.github.io/worldbuilder/ serves the hashed bundle, HTTP 200, CI conclusion success.
 
