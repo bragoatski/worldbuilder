@@ -42,7 +42,7 @@
     background:var(--bg-raised); border-bottom:1px solid var(--border);
     flex-shrink:0;
   }
-  .deck-primary { height:42px; }
+  .deck-primary { height:44px; background:linear-gradient(180deg, #0f1620 0%, var(--bg-raised) 100%); }
   .deck-setup {
     background:var(--bg-panel); flex-wrap:wrap; gap:5px 10px;
     padding:6px 12px; min-height:38px; row-gap:6px;
@@ -107,6 +107,29 @@
   .chip-scav  .cdot { background:#c99a3c; }
   .chip-apex  .cdot { background:#d0477a; }
   .chip-omni  .cdot { background:#9a5cc4; }
+
+  /* World-state chips grouped apart from the life census */
+  .tgroup { display:flex; align-items:center; gap:5px; }
+
+  /* Life census - the six trophic tiers read as ONE instrument, not six loose squares */
+  .census {
+    display:flex; align-items:center; gap:1px;
+    padding:2px; border-radius:7px;
+    background:var(--bg-panel); border:1px solid var(--border);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,0.35);
+  }
+  .census-cell {
+    display:flex; align-items:center; gap:5px;
+    height:22px; padding:0 8px; border-radius:5px;
+    font-family:var(--mono); font-size:11px; color:var(--fg-dim);
+    cursor:default; transition:background .12s;
+  }
+  .census-cell:hover { background:var(--bg-input); }
+  .census-cell b { color:var(--fg); font-weight:600; min-width:8px; text-align:right; }
+  .census-cell .cdot { width:8px; height:8px; border-radius:2px; flex-shrink:0; box-shadow:0 0 5px -1px currentColor; }
+  .chip-flora .cdot { color:#3fcf6a; } .chip-herb .cdot { color:#5bb8f0; }
+  .chip-carn .cdot { color:#e85454; } .chip-scav .cdot { color:#c99a3c; }
+  .chip-apex .cdot { color:#d0477a; } .chip-omni .cdot { color:#9a5cc4; }
 
   /* Setup-deck labeled segments */
   .seg {
@@ -370,6 +393,26 @@
   .tooltip .bar > i { display:block; height:100%; border-radius:2px; background:linear-gradient(90deg, var(--accent), var(--teal)); }
   .tooltip .tsep { border:none; border-top:1px solid var(--border); margin:6px 0 4px; }
 
+  /* Deck tooltip - the dashboard controls speak the same visual language as the map + legend tooltips */
+  .deck-tip {
+    position:fixed; pointer-events:none; z-index:300; display:none;
+    min-width:150px; max-width:260px; color:var(--fg);
+    background:linear-gradient(180deg, rgba(17,24,32,.97), rgba(11,15,20,.97));
+    border:1px solid var(--border-hi); border-radius:8px; padding:9px 11px;
+    box-shadow:0 12px 32px rgba(0,0,0,.45), 0 0 1px rgba(59,158,255,0.12);
+    font-family:var(--mono); font-size:11px; line-height:1.5; backdrop-filter:blur(8px);
+  }
+  .deck-tip .dt-title {
+    font-size:11px; font-weight:600; color:var(--fg);
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .deck-tip .dt-key {
+    font-size:9px; font-weight:500; color:var(--accent);
+    background:var(--accent-dim); border-radius:3px; padding:1px 5px;
+    letter-spacing:0.3px; flex-shrink:0;
+  }
+  .deck-tip .dt-desc { color:var(--fg-dim); font-size:10px; margin:3px 0 0; }
+
   /* Error */
   .err {
     position:fixed; left:0; right:0; bottom:0; z-index:99;
@@ -562,7 +605,7 @@
 
   <!-- ===== PRIMARY DECK (run + watch) ===== -->
   <div class="deck deck-primary">
-    <div class="deck-brand">
+    <div class="deck-brand" data-tip="Worldbuilder|A seeded world that grows terrain, climate, and a living food web">
       <div class="mark"></div>
       <span>Worldbuilder</span>
     </div>
@@ -570,42 +613,48 @@
     <div class="deck-sep"></div>
 
     <div class="transport">
-      <button class="tbtn btn-play" id="btnStart" title="Start [Space]" aria-label="Start">
+      <button class="tbtn btn-play" id="btnStart" data-tip="Start|Run the simulation" data-tipk="Space" aria-label="Start">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>
       </button>
-      <button class="tbtn" id="btnPause" title="Pause [Space]" aria-label="Pause">
+      <button class="tbtn" id="btnPause" data-tip="Pause|Freeze the world in place" data-tipk="Space" aria-label="Pause">
         <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
       </button>
-      <button class="tbtn" id="btnStep" title="Single step [S]" aria-label="Step">
+      <button class="tbtn" id="btnStep" data-tip="Single step|Advance exactly one tick" data-tipk="S" aria-label="Step">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5l10 7-10 7z"/><rect x="17" y="5" width="3" height="14" rx="1"/></svg>
       </button>
-      <button class="tbtn btn-danger" id="btnReset" title="Reset world [R]" aria-label="Reset">
+      <button class="tbtn btn-danger" id="btnReset" data-tip="Reset world|Regenerate from the current seed" data-tipk="R" aria-label="Reset">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
       </button>
-      <button class="tbtn btn-warn" id="btnForceStart" title="Force restart [F]" aria-label="Force restart">
+      <button class="tbtn btn-warn" id="btnForceStart" data-tip="Force restart|Rebuild and run from a fresh genesis" data-tipk="F" aria-label="Force restart">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>
       </button>
     </div>
 
     <div class="deck-sep"></div>
 
-    <div class="deck-field">
+    <div class="deck-field" data-tip="Speed|Ticks per second while running">
       <span class="deck-lbl">Speed</span>
       <input id="speed" type="range" min="1" max="60" value="18" style="width:96px;"/>
     </div>
 
     <div class="telemetry">
-      <div class="chip"><span class="dot running" id="statusDot"></span><span class="chip-k">t</span><b id="hTick">0</b></div>
-      <div class="chip"><span class="chip-k">Seed</span><b id="hSeed" style="cursor:pointer;" title="Click to copy">—</b></div>
-      <div class="chip"><span class="chip-k">Land</span><b id="hLand">0%</b></div>
-      <div class="chip chip-flora" title="Flora"><span class="cdot"></span><b id="hFlora">0</b></div>
-      <div class="chip chip-herb" title="Herbivores"><span class="cdot"></span><b id="hHerb">0</b></div>
-      <div class="chip chip-carn" title="Carnivores"><span class="cdot"></span><b id="hCarn">0</b></div>
-      <div class="chip chip-scav" title="Scavengers"><span class="cdot"></span><b id="hScav">0</b></div>
-      <div class="chip chip-apex" title="Apex predators"><span class="cdot"></span><b id="hApex">0</b></div>
-      <div class="chip chip-omni" title="Omnivores"><span class="cdot"></span><b id="hOmni">0</b></div>
-      <div class="chip" id="hSeasonWrap" style="display:none;"><span class="chip-k">Season</span><b id="hSeason">—</b></div>
-      <div class="chip" id="hZoomWrap" style="display:none;"><span class="chip-k">Zoom</span><b id="hZoom">100%</b></div>
+      <!-- world-state cluster -->
+      <div class="tgroup">
+        <div class="chip" data-tip="Tick|Simulation steps elapsed"><span class="dot running" id="statusDot"></span><span class="chip-k">t</span><b id="hTick">0</b></div>
+        <div class="chip" data-tip="Seed|This world's seed. Click to copy it."><span class="chip-k">Seed</span><b id="hSeed" style="cursor:pointer;">—</b></div>
+        <div class="chip" data-tip="Land|Share of the map above sea level"><span class="chip-k">Land</span><b id="hLand">0%</b></div>
+        <div class="chip" id="hSeasonWrap" style="display:none;" data-tip="Season|Where the world sits in its seasonal cycle"><span class="chip-k">Season</span><b id="hSeason">—</b></div>
+        <div class="chip" id="hZoomWrap" style="display:none;" data-tip="Zoom|Map magnification"><span class="chip-k">Zoom</span><b id="hZoom">100%</b></div>
+      </div>
+      <!-- life census: the living population by trophic tier, as one instrument -->
+      <div class="census" data-tip="Life census|Living population by trophic tier, base to apex">
+        <span class="census-cell chip-flora" data-tip="Flora|Plant life - the base of the food web"><span class="cdot"></span><b id="hFlora">0</b></span>
+        <span class="census-cell chip-herb" data-tip="Herbivores|Grazers that eat flora"><span class="cdot"></span><b id="hHerb">0</b></span>
+        <span class="census-cell chip-carn" data-tip="Carnivores|Predators that hunt herbivores"><span class="cdot"></span><b id="hCarn">0</b></span>
+        <span class="census-cell chip-scav" data-tip="Scavengers|Detritivores that eat carrion"><span class="cdot"></span><b id="hScav">0</b></span>
+        <span class="census-cell chip-apex" data-tip="Apex predators|Hunt carnivores and scavengers"><span class="cdot"></span><b id="hApex">0</b></span>
+        <span class="census-cell chip-omni" data-tip="Omnivores|Eat both flora and grazers"><span class="cdot"></span><b id="hOmni">0</b></span>
+      </div>
     </div>
   </div>
 
@@ -614,20 +663,20 @@
     <div class="seg">
       <span class="seg-lbl">World</span>
       <span class="deck-lbl">Seed</span>
-      <input id="seedInput" class="seed-input" type="text" placeholder="random"/>
-      <button class="ibtn" id="btnRollSeed" title="Random seed" aria-label="Random seed">
+      <input id="seedInput" class="seed-input" type="text" placeholder="random" data-tip="Seed|Type a number to build a specific world, or leave blank for random"/>
+      <button class="ibtn" id="btnRollSeed" data-tip="Random seed|Roll a fresh world from a new seed" aria-label="Random seed">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>
       </button>
       <span class="deck-lbl">Map</span>
-      <select id="mapSize" style="width:66px;">
+      <select id="mapSize" style="width:66px;" data-tip="Map size|Grid resolution of the world">
         <option value="64">64²</option>
         <option value="96" selected>96²</option>
         <option value="128">128²</option>
       </select>
       <span class="deck-lbl">Px</span>
-      <input id="pix" type="number" min="4" max="12" step="1" value="6" style="width:44px;"/>
+      <input id="pix" type="number" min="4" max="12" step="1" value="6" style="width:44px;" data-tip="Pixel size|Screen size of each tile"/>
       <span class="deck-lbl">Preset</span>
-      <select id="presetSelect" style="width:100px;">
+      <select id="presetSelect" style="width:100px;" data-tip="Preset|A starting climate + terrain recipe">
         <option value="balanced" selected>Balanced</option>
         <option value="desert">Desert</option>
         <option value="wetlands">Wetlands</option>
@@ -638,60 +687,60 @@
         <option value="pangaea">Pangaea</option>
       </select>
       <span class="seg-div"></span>
-      <button class="btn btn-seed" id="btnRivers" title="Generate rivers">Rivers</button>
+      <button class="btn btn-seed" id="btnRivers" data-tip="Rivers|Trace rivers and lakes across the current terrain">Rivers</button>
     </div>
 
     <div class="seg">
       <span class="seg-lbl">Scenario</span>
-      <select id="scenarioSelect" style="width:138px;">
+      <select id="scenarioSelect" style="width:138px;" data-tip="Scenario|A preset, seed, and goal to play toward">
         <option value="">Sandbox (free play)</option>
         <option value="genesis">Genesis</option>
         <option value="balance">The Long Balance</option>
         <option value="iceage">Ice Age Refuge</option>
         <option value="volcanic">Trial by Fire</option>
       </select>
-      <button class="btn btn-seed" id="btnStartScenario" title="Start the selected scenario (a preset + seed + a goal to play toward)">Start</button>
+      <button class="btn btn-seed" id="btnStartScenario" data-tip="Start scenario|Begin the selected scenario and its objective">Start</button>
     </div>
 
     <div class="seg">
       <span class="seg-lbl">Populate</span>
-      <button class="btn btn-seed" id="btnSpawnFlora" title="Seed 15 flora">Flora</button>
-      <button class="btn btn-seed" id="btnSpawnHerb" title="Seed 8 herbivores">Herb</button>
-      <button class="btn btn-seed" id="btnSpawnCarn" title="Seed 4 carnivores">Carn</button>
-      <button class="btn btn-seed" id="btnSpawnScav" title="Seed 4 scavengers">Scav</button>
-      <button class="btn btn-seed" id="btnSpawnApex" title="Seed 3 apex predators">Apex</button>
-      <button class="btn btn-seed" id="btnSpawnOmni" title="Seed 3 omnivores">Omni</button>
+      <button class="btn btn-seed" id="btnSpawnFlora" data-tip="Seed flora|Scatter 15 new plants">Flora</button>
+      <button class="btn btn-seed" id="btnSpawnHerb" data-tip="Seed herbivores|Drop 8 grazers into the world">Herb</button>
+      <button class="btn btn-seed" id="btnSpawnCarn" data-tip="Seed carnivores|Drop 4 predators into the world">Carn</button>
+      <button class="btn btn-seed" id="btnSpawnScav" data-tip="Seed scavengers|Drop 4 carrion-eaters into the world">Scav</button>
+      <button class="btn btn-seed" id="btnSpawnApex" data-tip="Seed apex predators|Drop 3 top predators into the world">Apex</button>
+      <button class="btn btn-seed" id="btnSpawnOmni" data-tip="Seed omnivores|Drop 3 generalists into the world">Omni</button>
       <span class="seg-div"></span>
       <span class="deck-lbl">Place</span>
-      <button class="btn" id="btnPlaceHerb" title="Click map to place herbivore">Herb</button>
-      <button class="btn" id="btnPlaceCarn" title="Click map to place carnivore">Carn</button>
+      <button class="btn" id="btnPlaceHerb" data-tip="Place herbivore|Then click the map to drop one grazer">Herb</button>
+      <button class="btn" id="btnPlaceCarn" data-tip="Place carnivore|Then click the map to drop one predator">Carn</button>
       <span class="place-banner" id="placeBanner">Click tile…</span>
     </div>
 
     <div class="seg">
       <span class="seg-lbl">God</span>
       <span class="deck-lbl">Brush</span>
-      <button class="btn" id="btnBrushRaise" title="Click the map to raise terrain and grow land">Raise</button>
-      <button class="btn" id="btnBrushLower" title="Click the map to lower terrain and sink land">Lower</button>
+      <button class="btn" id="btnBrushRaise" data-tip="Raise land|Then click the map to lift terrain and grow land">Raise</button>
+      <button class="btn" id="btnBrushLower" data-tip="Lower land|Then click the map to sink terrain into sea">Lower</button>
       <span class="seg-div"></span>
       <span class="deck-lbl">Events</span>
-      <button class="btn btn-warn" id="btnMeteor" title="Strike a meteor: crater the land and wipe out life in the blast">Meteor</button>
-      <button class="btn" id="btnDrought" title="A withering drought: flora dies back, worst on dry ground">Drought</button>
-      <button class="btn btn-seed" id="btnBloom" title="A great bloom: a burst of new flora carpets the world">Bloom</button>
+      <button class="btn btn-warn" id="btnMeteor" data-tip="Meteor|Crater the land and wipe out life in the blast">Meteor</button>
+      <button class="btn" id="btnDrought" data-tip="Drought|Wither flora, worst on the driest ground">Drought</button>
+      <button class="btn btn-seed" id="btnBloom" data-tip="Bloom|A burst of new flora carpets the world">Bloom</button>
     </div>
 
     <div class="seg">
       <span class="seg-lbl">Data</span>
-      <button class="btn" id="btnExport" title="Export map as PNG">PNG</button>
-      <button class="btn" id="btnExportJSON" title="Export snapshot">Save</button>
-      <button class="btn" id="btnImportJSON" title="Import snapshot">Load</button>
-      <button class="btn" id="btnRunTests" title="Run tests [T]">Test</button>
+      <button class="btn" id="btnExport" data-tip="Export PNG|Save the map as an image">PNG</button>
+      <button class="btn" id="btnExportJSON" data-tip="Save|Download this world as a snapshot file">Save</button>
+      <button class="btn" id="btnImportJSON" data-tip="Load|Restore a world from a snapshot file">Load</button>
+      <button class="btn" id="btnRunTests" data-tip="Test|Run the in-page assertion suite" data-tipk="T">Test</button>
     </div>
 
     <div class="seg">
       <span class="seg-lbl">Share</span>
-      <button class="btn" id="btnCopyLink" title="Copy a link that reproduces this exact world (seed + settings)">Copy Link</button>
-      <button class="btn" id="btnPostcard" title="Copy a postcard: this world's stats, recent history, and link">Postcard</button>
+      <button class="btn" id="btnCopyLink" data-tip="Copy link|A link that reproduces this exact world">Copy Link</button>
+      <button class="btn" id="btnPostcard" data-tip="Postcard|This world's stats, recent history, and link">Postcard</button>
     </div>
   </div>
 
@@ -950,6 +999,7 @@
 <div class="err" id="err"></div>
 <div class="tooltip" id="tip"></div>
 <div class="legend-tip" id="legendTip"></div>
+<div class="deck-tip" id="deckTip"></div>
 
 <script type="module" src="/src/main.js"></script>
 </body>

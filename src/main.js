@@ -325,6 +325,31 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
   });
 })();
 
+// Deck tooltips: styled like the map/legend tooltips (replaces the native title= hints on the dashboard).
+// data-tip="Title|Description", optional data-tipk="Hotkey". Delegated on both decks, positioned BELOW the
+// hovered control (the deck sits at the top of the screen), clamped to the viewport.
+(function(){
+  var tip=document.getElementById('deckTip');if(!tip)return;
+  var decks=document.querySelectorAll('.deck');if(!decks.length)return;
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function show(el){
+    var raw=el.getAttribute('data-tip');if(!raw)return;
+    var parts=raw.split('|'),title=parts[0]||'',desc=parts[1]||'',key=el.getAttribute('data-tipk');
+    var html='<div class="dt-title"><span>'+esc(title)+'</span>'+(key?'<span class="dt-key">'+esc(key)+'</span>':'')+'</div>';
+    if(desc)html+='<p class="dt-desc">'+esc(desc)+'</p>';
+    tip.innerHTML=html;tip.style.display='block';
+    var r=el.getBoundingClientRect(),tw=tip.offsetWidth||180;
+    var left=r.left+r.width/2-tw/2;if(left<8)left=8;if(left+tw>window.innerWidth-8)left=window.innerWidth-tw-8;
+    var top=r.bottom+8;if(top+tip.offsetHeight>window.innerHeight-8)top=r.top-tip.offsetHeight-8;
+    tip.style.left=left+'px';tip.style.top=top+'px';
+  }
+  function hide(){tip.style.display='none';}
+  decks.forEach(function(deck){
+    deck.addEventListener('mouseover',function(e){var el=e.target.closest('[data-tip]');if(el&&deck.contains(el))show(el);});
+    deck.addEventListener('mouseout',function(e){var el=e.target.closest('[data-tip]');if(!el)return;if(!el.contains(e.relatedTarget))hide();});
+  });
+})();
+
 // Hotkeys
 window.addEventListener('keydown',function(e){
   if(/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||''))return;
@@ -609,9 +634,11 @@ function drawHUD(){
   el=document.getElementById('hOmni');if(el)el.textContent=omniCount;
   // Status dot
   var dot=document.getElementById('statusDot');if(dot){dot.className=running?'dot running':'dot paused';}
-  // Season
+  // Season: name the phase of the trapezoid wave (warm plateau .15-.35, cold plateau .65-.85, ramps between)
   var sw=document.getElementById('hSeasonWrap'),sEl=document.getElementById('hSeason');
-  if(sw&&sEl){if(CFG.seasonalTilt){sw.style.display='';sEl.textContent=Math.round(seasonPhase()*100)+'%';}else{sw.style.display='none';}}
+  if(sw&&sEl){if(CFG.seasonalTilt){sw.style.display='';var ph=seasonPhase();
+    sEl.textContent=(ph>=0.15&&ph<0.35)?'Summer':(ph>=0.35&&ph<0.65)?'Autumn':(ph>=0.65&&ph<0.85)?'Winter':'Spring';}
+  else{sw.style.display='none';}}
   // Zoom indicator
   var zw=document.getElementById('hZoomWrap'),zEl=document.getElementById('hZoom');
   if(zw&&zEl){if(zoomLevel!==1){zw.style.display='';zEl.textContent=Math.round(zoomLevel*100)+'%';}else{zw.style.display='none';}}
