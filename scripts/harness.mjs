@@ -35,7 +35,7 @@ function parseArgs() {
   // before there is enough land/flora to measure ecology on. Scale --seeds / --warmup down for a smoke check.
   const o = { seeds: 6, warmup: 3000, ticks: 1000, herb: 24, carn: 8, flora: 40, sample: 5,
     repeat: 1, snapshot: false, traj: false, scav: 0, apex: 0, omni: 0,
-    seasons: false, anomalies: false, volcano: false, seasonlen: 10000, intensity: 1.0 };
+    seasons: false, anomalies: false, volcano: false, seasonlen: 10000, intensity: 1.0, birth: 0 };
   for (const a of process.argv.slice(2)) {
     const m = /^--([a-z]+)(?:=(.+))?$/.exec(a);
     if (!m) continue;
@@ -270,6 +270,10 @@ const o = parseArgs();
 // the moment the window enables a toggle. The toggles themselves are flipped per-window (see below).
 sim.CFG.climateSeasonLength = o.seasonlen;
 sim.CFG.climateIntensity = o.intensity;
+// Rare volcano-birth A/B: this is a GENESIS-time feature (births need highland to form), so it stays on for
+// the WHOLE run - warmup + window - unlike the climate/trophic window-only toggles. --birth=0 (default) is
+// the C2 baseline (byte-identical); --birth=RATE measures the ecology impact of the occasional volcano.
+sim.CFG.volcanoBirthRate = o.birth;
 const anyClimate = o.seasons || o.anomalies || o.volcano;
 function setClimateToggles(on) {
   sim.CFG.seasonalTilt = on && o.seasons;

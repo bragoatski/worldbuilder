@@ -18,6 +18,11 @@ var baseTemp, baseArid; // genesis climate (temperature/aridity from terrain), B
 var biomeStability, biomeDesiredNext;
 var yearlyVariation;
 var anomalyBlobs;
+var seasonAnchorTick = 0;   // tick the season clock counts from. Stays 0 for worlds with Seasonal Tilt on from
+                            // genesis (presets/harness: unchanged behavior); set to the CURRENT tick when the
+                            // toggle flips on mid-run, so the wave starts at its zero-crossing (spring) and eases
+                            // toward the first summer instead of jumping the map to an arbitrary phase.
+var _prevSeasonalTilt = false, _prevAnomalies = false; // toggle edge detectors (see applyClimate)
 
 // ===== Ecology State =====
 var flora = [];
@@ -151,6 +156,18 @@ var CFG={
   hillFringeEvery:10, hillFringeProb:0.15, hillFringeBudgetShare:0.001,
   hillFringeMin:4.8, hillFringeMax:6.6,
   isolatedMountainSoftErode:0.05, maxVolcanoCenters:4, minVolcanoSpacing:6,
+  // RARE in-run VOLCANO BIRTH (Kevin: "once in a while a volcano should emerge at elevation 10"). Mountains
+  // never climb to the 9.95 eruptionPromotionPass gate on their own (measured: peaks top out ~5-7), so this
+  // occasionally promotes the world's highest highland to a full elev-10 volcano peak (ash + dark render +
+  // a Chronicle beat). volcanoBirthRate = per-ATTEMPT probability; attempts happen every volcanoBirthCheckEvery
+  // ticks while under maxVolcanoCenters. Default rate tuned to ~once per few maps of watching. 0 = OFF, and OFF
+  // does ZERO work / draws no RNG => byte-identical to the C2 baseline (the balance proof). The gate uses a
+  // stream-free (_seed,tick) hash so enabling it leaves sRng/eRng byte-identical - only the rare terrain
+  // mutation itself perturbs the ecology. A/B measured NEUTRAL at 0.008 (8 seeds: extinction 0/0%,
+  // carn-persistence 63/63%, cap-hits 0/0); 0.005 is strictly closer to baseline so neutral holds. Rate is a
+  // pure FREQUENCY/taste dial (0.005 => ~40% of long sessions see a volcano, 0.008 => ~58%); balance is safe
+  // for any rate <= 0.008. Bump it up for more drama, down for rarer.
+  volcanoBirthRate:0.005, volcanoBirthCheckEvery:40, volcanoBirthMinElev:4.8,
   rareSurgeProb:0.028, tickMsBase:100,
   seasonalTilt:false, anomalies:false, volcanoAsh:false,
   climateIntensity:1.0, climateSeasonLength:10000,
@@ -162,6 +179,7 @@ var CFG={
   anomalyTempAmp:0.8, anomalyAridAmp:0.5,   // drifting warm/cool blobs (anomalies toggle)
   volcanoTempAmp:1.2, volcanoAridAmp:0.8,   // ash cooling at a volcano peak; ring tiles get half / a quarter
   anomalySpeed:0.0005, anomalyWavelength:40.0, anomalyBlobCount:3, anomalyBlobRadius:25,
+  anomalyLifeTicks:3000, anomalyRampTicks:600, // transient-anomaly LIFECYCLE: a blob fades in over ramp ticks, lives ~life ticks, fades out, and is replaced elsewhere - so anomalies are passing spells, not permanent drifting dipoles, and toggling them on mid-run ramps in from zero (no map jump)
   biomeStabilityThreshold:20,
   ecoActive:true, ecoRender:true,
   floraSpawnChance:0.010, floraMutationChance:0.07, floraMutationMag:0.8,
@@ -308,20 +326,42 @@ function initAnomalyBlobs(){
   anomalyBlobs = [];
   var count = CFG.anomalyBlobCount || 3;
   for(var i=0; i<count; i++){
+    // born/life are derived WITHOUT extra sRng draws (staggered deterministic lives) so the genesis
+    // terrain stream is byte-identical to before the lifecycle existed - old seeds/permalinks keep
+    // their exact terrain. Respawned blobs (updateAnomalyBlobs) get eRng-randomized lives instead.
     anomalyBlobs.push({ x: sRng()*W, y: sRng()*H, vx: (sRng()-0.5)*0.02, vy: (sRng()-0.5)*0.02,
-      amplitude: (sRng()<0.5?-1:1)*(0.7+sRng()*0.6), radius: (CFG.anomalyBlobRadius||25)*(0.8+sRng()*0.4) });
+      amplitude: (sRng()<0.5?-1:1)*(0.7+sRng()*0.6), radius: (CFG.anomalyBlobRadius||25)*(0.8+sRng()*0.4),
+      born: tick, life: Math.round((CFG.anomalyLifeTicks||3000)*(0.75+0.25*i)) });
   }
+}
+// Lifecycle envelope 0..1: fade in over anomalyRampTicks, hold, fade out over the last ramp ticks of the
+// blob's life. This is what makes the anomalies TRANSIENT, and what makes the toggle ease in mid-run
+// (applyClimate re-stamps born=tick on the toggle's rising edge).
+function _blobEnv(blob){
+  if(blob.born===undefined||blob.life===undefined) return 1; // legacy blob (old snapshot): full strength
+  var ramp=Math.max(1,CFG.anomalyRampTicks||600);
+  var age=tick-blob.born; if(age<=0) return 0;
+  return Math.max(0, Math.min(1, age/ramp, (blob.life-age)/ramp));
 }
 function updateAnomalyBlobs(){
   if(!anomalyBlobs) return;
   for(var i=0; i<anomalyBlobs.length; i++){
-    var blob=anomalyBlobs[i]; blob.x+=blob.vx; blob.y+=blob.vy;
+    var blob=anomalyBlobs[i];
+    if(blob.born!==undefined&&blob.life!==undefined&&(tick-blob.born)>=blob.life){
+      // Expired: a new spell forms somewhere else. eRng (dynamics stream) draws only happen while the
+      // anomalies toggle is ON, so the toggle-off ecology run stays byte-identical.
+      anomalyBlobs[i]={ x: eRng()*W, y: eRng()*H, vx: (eRng()-0.5)*0.02, vy: (eRng()-0.5)*0.02,
+        amplitude: (eRng()<0.5?-1:1)*(0.7+eRng()*0.6), radius: (CFG.anomalyBlobRadius||25)*(0.8+eRng()*0.4),
+        born: tick, life: Math.round((CFG.anomalyLifeTicks||3000)*(0.7+eRng()*0.6)) };
+      continue;
+    }
+    blob.x+=blob.vx; blob.y+=blob.vy;
     if(blob.x<0)blob.x+=W; if(blob.x>=W)blob.x-=W; if(blob.y<0)blob.y+=H; if(blob.y>=H)blob.y-=H;
     if(eRng()<0.002){ blob.vx+=(eRng()-0.5)*0.01; blob.vy+=(eRng()-0.5)*0.01;
       var sp=Math.sqrt(blob.vx*blob.vx+blob.vy*blob.vy); if(sp>0.03){blob.vx=(blob.vx/sp)*0.03;blob.vy=(blob.vy/sp)*0.03;} }
   }
 }
-function seasonPhase(){ if(CFG.climateSeasonLength<=0)return 0; return(tick%CFG.climateSeasonLength)/CFG.climateSeasonLength; }
+function seasonPhase(){ if(CFG.climateSeasonLength<=0)return 0; var L=CFG.climateSeasonLength; return((((tick-seasonAnchorTick)%L)+L)%L)/L; }
 // Seasonal waveform: a SYMMETRIC trapezoid in [-1,1] (warm plateau ~phase .25, cold plateau ~.75, linear
 // ramps between). Symmetric => its average over a full year is exactly 0, so applied as an offset it returns
 // to baseline each cycle instead of marching the climate one way (the old plateau wave averaged ~-0.15, which
@@ -352,18 +392,28 @@ function climateStep(){
 // scales the whole offset (presets use it: ice age 1.8, volcanic 1.5).
 function applyClimate(){
   if(!baseTemp||!baseArid) return;
+  // Mid-run toggle EDGES: checking a climate box must ease the world toward the new regime, never snap it.
+  // Seasonal Tilt: anchor the season clock at the enable tick (phase 0 = the wave's zero-crossing, heading
+  // into the first warm season). Anomalies: re-stamp the blobs' born so their envelopes ramp in from zero.
+  // Enabled-from-genesis (presets, harness) never sees an edge at tick 0 -> behavior unchanged there.
+  if(CFG.seasonalTilt&&!_prevSeasonalTilt&&tick>0)seasonAnchorTick=tick;
+  _prevSeasonalTilt=!!CFG.seasonalTilt;
+  if(CFG.anomalies&&!_prevAnomalies&&tick>0&&anomalyBlobs){for(var rb=0;rb<anomalyBlobs.length;rb++)anomalyBlobs[rb].born=tick;}
+  _prevAnomalies=!!CFG.anomalies;
   var ci=CFG.climateIntensity||1;
   var sW = CFG.seasonalTilt ? seasonWave(seasonPhase())*yearlyVariation : 0;
   var seasT = CFG.seasonalTempAmp*sW, seasA = -CFG.seasonalAridAmp*sW; // warm season is moister (sign kept from the old model)
   var anyOff = CFG.seasonalTilt || CFG.anomalies || CFG.volcanoAsh;
+  var blobAmps=null; // per-blob effective amplitude (amplitude x lifecycle envelope), computed once per tick
+  if(CFG.anomalies && anomalyBlobs){ blobAmps=[]; for(var eb=0;eb<anomalyBlobs.length;eb++)blobAmps[eb]=anomalyBlobs[eb].amplitude*_blobEnv(anomalyBlobs[eb]); }
   for(var i=0;i<W*H;i++){
     if(!anyOff){ tempField[i]=baseTemp[i]; aridity[i]=baseArid[i]; continue; } // off => field IS the base (matches the pre-climate baseline exactly)
     var x=i%W,y=(i/W)|0;
     var atten=1-Math.min(1,(elev[i]||0)/10);
     var tOff=seasT*atten, aOff=seasA*atten;
-    if(CFG.anomalies && anomalyBlobs){
+    if(blobAmps){
       var totalAnom=0;
-      for(var b=0;b<anomalyBlobs.length;b++){var blob=anomalyBlobs[b];var dx=x-blob.x,dy=y-blob.y;if(dx>W/2)dx-=W;if(dx<-W/2)dx+=W;if(dy>H/2)dy-=H;if(dy<-H/2)dy+=H;var distSq=dx*dx+dy*dy;var radiusSq=blob.radius*blob.radius;totalAnom+=blob.amplitude*Math.exp(-distSq/(2*radiusSq));}
+      for(var b=0;b<anomalyBlobs.length;b++){var blob=anomalyBlobs[b];var dx=x-blob.x,dy=y-blob.y;if(dx>W/2)dx-=W;if(dx<-W/2)dx+=W;if(dy>H/2)dy-=H;if(dy<-H/2)dy+=H;var distSq=dx*dx+dy*dy;var radiusSq=blob.radius*blob.radius;totalAnom+=blobAmps[b]*Math.exp(-distSq/(2*radiusSq));}
       tOff += CFG.anomalyTempAmp*totalAnom; aOff += -CFG.anomalyAridAmp*totalAnom;
     }
     if(CFG.volcanoAsh){
@@ -460,6 +510,44 @@ function clusterSpikePass(){
     if(sRng()<CFG.clusterPlusChance){for(var q2=0;q2<n4c.length;q2++){var j3=idx(n4c[q2][0],n4c[q2][1]);var ej2=elev[j3]||0;var addN=(0.02+sRng()*0.03)*Math.max(0,(9.9-ej2)/9.9);if(addN>0)elev[j3]=clamp(ej2+addN,0,9.88);}}}
 }
 function eruptionPromotionPass(){function manhattan(i,j){var x1=i%W,y1=(i/W)|0,x2=j%W,y2=(j/W)|0;return Math.abs(x1-x2)+Math.abs(y1-y2);}for(var i=0;i<W*H;i++){if(grid[i]!==T.MOUNTAIN)continue;if(volcanoRing&&volcanoRing[i]!==0)continue;if(peakVolcano&&peakVolcano[i])continue;if((elev[i]||0)<9.95)continue;if(volcanoCenters.length>=(CFG.maxVolcanoCenters|0))continue;var ok=true;for(var v=0;v<volcanoCenters.length;v++){if(manhattan(i,volcanoCenters[v])<CFG.minVolcanoSpacing){ok=false;break;}}if(!ok)continue;promoteVolcanoAt(i);}}
+// Deterministic pseudo-random in [0,1) from (_seed, tick, salt), consuming NONE of the three sim RNG streams
+// (splitmix32-style finalizer for good avalanche across nearby seeds/ticks). Used only by the rare
+// volcano-birth gate: because it draws no stream, enabling that feature leaves the sRng/eRng draw SEQUENCES
+// byte-identical - the only ecology effect is the direct local terrain change of the volcano itself.
+function _eventRand(salt){
+  var h=(( _seed ^ Math.imul(tick,0x9E3779B9) ^ (salt|0) )>>>0);
+  h=Math.imul(h^(h>>>16),0x85EBCA6B)>>>0;
+  h=Math.imul(h^(h>>>13),0xC2B2AE35)>>>0;
+  h=(h^(h>>>16))>>>0;
+  return h/4294967296;
+}
+// RARE volcano birth: occasionally lift the world's HIGHEST highland tile to a full elev-10 volcano peak
+// (reusing promoteVolcanoAt: rings + ash + volcanoCenters tracking), with a Chronicle beat. Runs in step()
+// after the terrain passes. OFF (rate<=0) returns before any work/RNG => byte-identical baseline. The gate is
+// stream-free (_eventRand), so ON never reshuffles sRng/eRng; only the birth's own terrain mutation (and
+// promoteVolcanoAt's few sRng jitter draws, on the rare birth tick) perturbs anything. Balance measured neutral.
+function tryVolcanoBirth(){
+  if(!(CFG.volcanoBirthRate>0)) return false;                                 // OFF: zero work, byte-identical
+  if(tick%(CFG.volcanoBirthCheckEvery||40)!==0) return false;                 // episodic cadence
+  if(volcanoCenters.length>=(CFG.maxVolcanoCenters|0)) return false;          // respect the volcano cap
+  if(_eventRand(0x5643)>=CFG.volcanoBirthRate) return false;                  // the rare gate (0x5643 = 'VC')
+  // Pick the highest eligible land tile: genuine highland, not ocean/volcanic, not already a volcano ring/peak,
+  // and spaced from existing centers. Deterministic argmax (no RNG) so the SITE never shifts a stream either.
+  var best=-1, bestE=CFG.volcanoBirthMinElev||4.8;
+  for(var i=0;i<W*H;i++){
+    var g=grid[i]; if(g===T.OCEAN||g===T.VOLCANIC) continue;
+    if(peakVolcano&&peakVolcano[i]) continue; if(volcanoRing&&volcanoRing[i]!==0) continue;
+    var e=elev[i]||0; if(e<=bestE) continue;
+    var x=i%W,y=(i/W)|0, ok=true;
+    for(var v=0;v<volcanoCenters.length;v++){var cx=volcanoCenters[v]%W,cy=(volcanoCenters[v]/W)|0;if(Math.abs(x-cx)+Math.abs(y-cy)<CFG.minVolcanoSpacing){ok=false;break;}}
+    if(!ok) continue;
+    best=i; bestE=e;
+  }
+  if(best<0) return false;                                                    // no worthy highland yet (young/flat world)
+  promoteVolcanoAt(best);
+  chronicleNote('terrain','A volcano rose from the highlands, its peak breaking the sky.','#e8703a');
+  return true;
+}
 function mountainFringePass(){if(!ringDone)return false;var changed=false;for(var y=0;y<H;y++)for(var x=0;x<W;x++){var i=idx(x,y);if(grid[i]!==T.MOUNTAIN||ringDone[i])continue;ringDone[i]=1;var ns=neighbors4(x,y);for(var k=0;k<ns.length;k++){var j=idx(ns[k][0],ns[k][1]);if(grid[j]===T.OCEAN)continue;var ej=elev[j]||0;if(ej<5.3){elev[j]=Math.min(5.35,ej+0.08+sRng()*0.08);if(adjCooldown)adjCooldown[j]=CFG.adjCooldownTicks;changed=true;}}}return changed;}
 function isolatedHillDecayPass(){if((tick%50)!==0)return;for(var y=0;y<H;y++)for(var x=0;x<W;x++){var i=idx(x,y);if(grid[i]!==T.HILLS){hillDecayCount[i]=0;continue;}var alone=true;var n4=neighbors4(x,y);for(var k=0;k<n4.length;k++){var j=idx(n4[k][0],n4[k][1]);if(grid[j]===T.HILLS||grid[j]===T.MOUNTAIN){alone=false;break;}}if(!alone){hillDecayCount[i]=0;continue;}var c=hillDecayCount[i]|0;if(c>=7)continue;elev[i]=Math.max(0,(elev[i]||0)-0.15);hillDecayCount[i]=c+1;}}
 
@@ -1423,7 +1511,7 @@ function initWorld(seedOverride){
   // shift the eRng phase -> the ecology run is byte-identical with or without the cosmetic genes.
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
-  tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
+  tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],scav:[],apex:[],omni:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];carrion=[];speciesNameCache={};chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();clearRivers();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
@@ -1435,7 +1523,7 @@ function step(){
   for(var n=0;n<tries;n++){var xS=(sRng()*W)|0,yS=(sRng()*H)|0;var i=idx(xS,yS);if(grid[i]===T.OCEAN){if(tryVolcano(xS,yS))genesisChanged=true;else if(tryCoastal(xS,yS))genesisChanged=true;}else{erosionStep(xS,yS);}}
   for(var i2=0;i2<W*H;i2++)if(volcActive[i2]){volcAge[i2]+=1;elev[i2]=currentCoreHeight(volcAge[i2]);if(volcAge[i2]>=volcLife[i2])coolVolcano(i2);}
   for(var ci=0;ci<W*H;ci++){if(grid[ci]===T.COAST&&coastTTL[ci]>0)coastTTL[ci]--;}
-  clusterSpikePass();mountainFringePass();isolatedHillDecayPass();eruptionPromotionPass();
+  clusterSpikePass();mountainFringePass();isolatedHillDecayPass();eruptionPromotionPass();tryVolcanoBirth();
   // Refresh the BASE climate on terrain change / periodically - ALWAYS, regardless of the climate toggles.
   // (The old code suppressed this whenever climate was on, which froze the base and made the seasonal delta
   // accumulate only once genesis stopped - the regime-dependence + drift bug. Base is climate-independent.)
@@ -1466,7 +1554,20 @@ function runAssertions(){
   (function(){var i0=idx(10,10);var gO=grid[i0],eO=elev[i0],pvO=peakVolcano[i0],vrO=volcanoRing[i0],acO=adjCooldown[i0];grid[i0]=T.MOUNTAIN;elev[i0]=10.0;peakVolcano[i0]=0;volcanoRing[i0]=0;adjCooldown[i0]=0;volcanoCenters=[];promoteVolcanoAt(i0);t('Volcano flag',!!peakVolcano[i0]&&elev[i0]===10.0);t('Ring=3',volcanoRing[i0]===3);t('Center tracked',volcanoCenters.length===1);grid[i0]=gO;elev[i0]=eO;peakVolcano[i0]=pvO;volcanoRing[i0]=vrO;adjCooldown[i0]=acO;})();
   (function(){var x=20,y=20,i=idx(x,y);var _ec=CFG.erosionChanceBase;CFG.erosionChanceBase=1.0;grid[i]=T.PLAINS;elev[i]=9.2;var e0=elev[i];for(var k=0;k<200;k++)erosionStep(x,y);t('Erosion lowers tile',elev[i]<e0);CFG.erosionChanceBase=_ec;})(); // force erosion certain so the assertion is deterministic, not RNG-flaky
   var okStep=true;try{step();}catch(e){okStep=false;}t('step() no throw',okStep);
-  (function(){var wS=CFG.seasonalTilt,wA=CFG.anomalies,wV=CFG.volcanoAsh;CFG.seasonalTilt=true;CFG.anomalies=true;CFG.volcanoAsh=true;computeTemperature();computeAridity();climateStep();applyClimate();var tOK=true,aOK=true;for(var ci=0;ci<W*H;ci++){if(tempField[ci]<0||tempField[ci]>10)tOK=false;if(aridity[ci]<0||aridity[ci]>10)aOK=false;}t('Climate temp [0,10]',tOK);t('Climate arid [0,10]',aOK);CFG.seasonalTilt=wS;CFG.anomalies=wA;CFG.volcanoAsh=wV;})();
+  (function(){var wS=CFG.seasonalTilt,wA=CFG.anomalies,wV=CFG.volcanoAsh,wAnchor=seasonAnchorTick,wPS=_prevSeasonalTilt,wPA=_prevAnomalies;CFG.seasonalTilt=true;CFG.anomalies=true;CFG.volcanoAsh=true;computeTemperature();computeAridity();climateStep();applyClimate();
+    // Force FULL-strength offsets for the bounds check (the enable-edge easing would otherwise zero them
+    // for this one-shot call): anchor the phase onto the warm plateau + age the blob envelopes to 1.
+    seasonAnchorTick=tick-Math.floor(CFG.climateSeasonLength*0.25);
+    var savedBlobs=anomalyBlobs?anomalyBlobs.map(function(b){return{born:b.born,life:b.life};}):null;
+    if(anomalyBlobs)for(var bi=0;bi<anomalyBlobs.length;bi++){anomalyBlobs[bi].born=tick-2*(CFG.anomalyRampTicks||600);anomalyBlobs[bi].life=1e9;}
+    applyClimate();var tOK=true,aOK=true;for(var ci=0;ci<W*H;ci++){if(tempField[ci]<0||tempField[ci]>10)tOK=false;if(aridity[ci]<0||aridity[ci]>10)aOK=false;}t('Climate temp [0,10]',tOK);t('Climate arid [0,10]',aOK);
+    t('Season enable eases in (wave 0 at anchor)',seasonWave(0)===0);
+    if(anomalyBlobs&&savedBlobs)for(var br=0;br<anomalyBlobs.length&&br<savedBlobs.length;br++){anomalyBlobs[br].born=savedBlobs[br].born;anomalyBlobs[br].life=savedBlobs[br].life;}
+    // Restore EVERYTHING this self-test touched, including the climate toggle-EDGE detectors. If we leave
+    // _prevSeasonalTilt/_prevAnomalies stuck at true (this block forced the toggles on), a user who clicks
+    // "Run Tests" and THEN checks a climate box mid-run would see NO rising edge fire -> no anchor/ramp -> the
+    // map snaps to an arbitrary phase (the exact bug this whole change fixes). So put them back.
+    seasonAnchorTick=wAnchor;CFG.seasonalTilt=wS;CFG.anomalies=wA;CFG.volcanoAsh=wV;_prevSeasonalTilt=wPS;_prevAnomalies=wPA;})();
   (function(){var sum=0,bounded=true,N=2000;for(var s=0;s<N;s++){var v=seasonWave(s/N);sum+=v;if(v<-1.0001||v>1.0001)bounded=false;}t('Season wave zero-mean (no climate drift)',Math.abs(sum/N)<0.01);t('Season wave bounded [-1,1]',bounded);})();
   t('Biome stab init',biomeStability&&biomeStability.length===W*H);initAnomalyBlobs();t('Anomaly blobs',anomalyBlobs&&anomalyBlobs.length>0);
   out.push('');out.push('— ECOLOGY —');
@@ -1528,7 +1629,7 @@ function snapshotState(){
   return structuredClone({
     seed:_seed, tick:tick, W:W, H:H,
     floraIdCounter:floraIdCounter, faunaIdCounter:faunaIdCounter,
-    yearlyVariation:yearlyVariation, sunPhase:sunPhase, riverGenerated:riverGenerated,
+    yearlyVariation:yearlyVariation, sunPhase:sunPhase, seasonAnchorTick:seasonAnchorTick, riverGenerated:riverGenerated,
     WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache, chronicle:chronicle, speciesRegistry:speciesRegistry,
     // terrain + volcano fields
     grid:grid, elev:elev, aridity:aridity, tempField:tempField, sunlight:sunlight,
@@ -1553,7 +1654,8 @@ function restoreState(snap){
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   floraIdCounter=s.floraIdCounter; faunaIdCounter=s.faunaIdCounter;
-  yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; riverGenerated=s.riverGenerated;
+  yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; seasonAnchorTick=s.seasonAnchorTick||0; riverGenerated=s.riverGenerated;
+  _prevSeasonalTilt=!!CFG.seasonalTilt; _prevAnomalies=!!CFG.anomalies; // a restore is not a toggle edge
   WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle(); speciesRegistry=s.speciesRegistry||newSpeciesRegistry();
   grid=s.grid; elev=s.elev; aridity=s.aridity; tempField=s.tempField; sunlight=s.sunlight;
   coastTTL=s.coastTTL; adjCooldown=s.adjCooldown; ringDone=s.ringDone; hillDecayCount=s.hillDecayCount;
@@ -1594,6 +1696,10 @@ function applySnapshot(data){
   elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;
   flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];
   if(data.rivers&&Array.isArray(data.rivers)){riverData=data.rivers;riverGenerated=true;}else{clearRivers();}
+  // A load is not a toggle edge: anchor the season clock at 0 (the JSON format does not carry climate-toggle
+  // state, so a loaded world starts its season cycle fresh) and sync the edge detectors to the live CFG, so a
+  // leftover seasonAnchorTick from a previous world in the tab cannot give the import an arbitrary season phase.
+  seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;
   reseedSunlight();computeSunlight();climateInit();computeTemperature();computeAridity();applyClimate();reclassTerrain();
 }
 

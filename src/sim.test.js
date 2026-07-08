@@ -772,3 +772,157 @@ describe('trophic depth: omnivore (chunk 9, shipped default-on)', () => {
     expect(b.fp).toEqual(a.fp); // omnivore behavior is deterministic (no stray Math.random -> snapshot-safe)
   }, 120000);
 });
+
+// Climate easing: checking Seasonal Tilt / Transient Anomalies mid-run must EASE the world toward the new
+// regime (anchor the season clock / ramp the blob envelopes), never snap the whole map to an arbitrary
+// phase. Worlds with the toggles on from genesis keep anchor 0 -> unchanged behavior there.
+describe('climate easing (mid-run toggles never jump the map)', () => {
+  it('enabling Seasonal Tilt mid-run starts at zero offset, then ramps toward summer', () => {
+    const wasTilt = sim.CFG.seasonalTilt, wasLen = sim.CFG.climateSeasonLength;
+    try {
+      sim.CFG.seasonalTilt = false;
+      sim.initWorld(9090);
+      for (let i = 0; i < 400; i++) sim.step();
+      sim.CFG.climateSeasonLength = 2000; // shorter year so the ramp is test-fast
+      sim.CFG.seasonalTilt = true; // the checkbox flips mid-run
+      sim.step(); // enable-edge tick: the anchor snaps to now, and the wave at phase 0 is exactly 0
+      let maxD = 0;
+      for (let i = 0; i < sim.W * sim.H; i++) maxD = Math.max(maxD, Math.abs(sim.tempField[i] - sim.baseTemp[i]));
+      expect(maxD).toBe(0); // no jump: the live field still IS the baseline on the enable tick
+      for (let i = 0; i < 320; i++) sim.step(); // ~16% of a season -> onto the warm plateau
+      maxD = 0;
+      for (let i = 0; i < sim.W * sim.H; i++) maxD = Math.max(maxD, Math.abs(sim.tempField[i] - sim.baseTemp[i]));
+      expect(maxD).toBeGreaterThan(0.5); // the seasonal swing has genuinely arrived
+      // The anchor survives snapshot/restore (a restored world keeps its season clock).
+      const ph = sim.seasonPhase();
+      const snap = sim.snapshotState();
+      sim.restoreState(snap);
+      expect(sim.seasonPhase()).toBe(ph);
+    } finally {
+      sim.CFG.seasonalTilt = wasTilt; sim.CFG.climateSeasonLength = wasLen;
+    }
+  }, 30000);
+
+  it('enabling Transient Anomalies mid-run fades blobs in, and expired blobs respawn elsewhere', () => {
+    const wasAnom = sim.CFG.anomalies, wasLife = sim.CFG.anomalyLifeTicks, wasRamp = sim.CFG.anomalyRampTicks;
+    try {
+      sim.CFG.anomalies = false;
+      sim.initWorld(4141);
+      for (let i = 0; i < 200; i++) sim.step();
+      sim.CFG.anomalyRampTicks = 60;
+      sim.CFG.anomalies = true; // the checkbox flips mid-run
+      sim.step(); // enable-edge tick: blobs re-stamped born=now -> envelope 0
+      const enableTick = sim.tick;
+      let maxD = 0;
+      for (let i = 0; i < sim.W * sim.H; i++) maxD = Math.max(maxD, Math.abs(sim.tempField[i] - sim.baseTemp[i]));
+      expect(maxD).toBe(0); // no jump on the enable tick
+      for (let i = 0; i < 100; i++) sim.step(); // past the 60-tick ramp -> full envelope
+      maxD = 0;
+      for (let i = 0; i < sim.W * sim.H; i++) maxD = Math.max(maxD, Math.abs(sim.tempField[i] - sim.baseTemp[i]));
+      expect(maxD).toBeGreaterThan(0.05); // the anomaly field is genuinely acting now
+      // Transience: force the current blobs to expire and confirm fresh spells replace them.
+      sim.CFG.anomalyLifeTicks = 300;
+      for (const b of sim.anomalyBlobs) b.life = 100; // already older than this -> expire on the next update
+      for (let i = 0; i < 20; i++) sim.step();
+      expect(sim.anomalyBlobs.length).toBe(sim.CFG.anomalyBlobCount || 3);
+      for (const b of sim.anomalyBlobs) expect(b.born).toBeGreaterThan(enableTick); // all respawned
+    } finally {
+      sim.CFG.anomalies = wasAnom; sim.CFG.anomalyLifeTicks = wasLife; sim.CFG.anomalyRampTicks = wasRamp;
+    }
+  }, 30000);
+
+  it('running the in-page self-test does not corrupt the toggle-edge detectors (Run Tests then check the box)', () => {
+    // Regression: runAssertions() forces the climate toggles on internally; if it fails to restore the
+    // _prev* edge detectors, a later mid-run enable sees no rising edge and the map snaps to an arbitrary
+    // phase - the exact bug the easing fix targets, reachable via the live "Run Tests" button.
+    const wasTilt = sim.CFG.seasonalTilt, wasLen = sim.CFG.climateSeasonLength;
+    try {
+      sim.CFG.seasonalTilt = false;
+      sim.initWorld(8181);
+      for (let i = 0; i < 500; i++) sim.step();
+      sim.CFG.climateSeasonLength = 2000;
+      sim.runAssertions();            // the "Run Tests" button, mid-run, seasons still off
+      sim.CFG.seasonalTilt = true;    // user checks the box - NO intervening reset/new world
+      sim.step();                     // the enable-edge tick
+      let maxD = 0;
+      for (let i = 0; i < sim.W * sim.H; i++) maxD = Math.max(maxD, Math.abs(sim.tempField[i] - sim.baseTemp[i]));
+      expect(maxD).toBe(0);           // eased in from zero, not snapped to a stale phase
+    } finally {
+      sim.CFG.seasonalTilt = wasTilt; sim.CFG.climateSeasonLength = wasLen;
+    }
+  }, 30000);
+
+  it('seasons enabled from genesis keep anchor 0 (phase matches the absolute-tick clock)', () => {
+    const wasTilt = sim.CFG.seasonalTilt;
+    try {
+      sim.CFG.seasonalTilt = true;
+      sim.initWorld(555);
+      for (let i = 0; i < 50; i++) sim.step();
+      const L = sim.CFG.climateSeasonLength;
+      expect(sim.seasonPhase()).toBe((sim.tick % L) / L); // no anchor shift for genesis-enabled worlds
+    } finally {
+      sim.CFG.seasonalTilt = wasTilt;
+    }
+  }, 30000);
+});
+
+// Rare volcano birth (Kevin: an elev-10 volcano should emerge once in a while). Shipped behind
+// CFG.volcanoBirthRate. The core guarantees: OFF is dormant; the rare GATE consumes no sim RNG stream (so
+// enabling the feature is byte-identical to baseline UNTIL a birth's own terrain change acts); ON produces a
+// real elev-10 peak deterministically.
+describe('rare volcano birth (in-run elev-10 emergence)', () => {
+  // Fingerprint of the eRng-sensitive ecology state (fauna) + the terrain, to detect any divergence.
+  function faunaFp() {
+    return sim.fauna.filter((f) => f).map((f) => `${f.id}:${f.type}:${f.x},${f.y}:${f.energy.toFixed(2)}`).join('|');
+  }
+  it('OFF (rate 0) never births a volcano even on a highland-rich world', () => {
+    const wasRate = sim.CFG.volcanoBirthRate;
+    try {
+      sim.CFG.volcanoBirthRate = 0;
+      sim.initWorld(2200);
+      for (let i = 0; i < 1500; i++) sim.step();
+      expect(sim.volcanoCenters.length).toBe(0); // feature dormant
+    } finally { sim.CFG.volcanoBirthRate = wasRate; }
+  }, 30000);
+
+  it('the birth GATE draws no sim RNG stream: rate 1 with an unreachable site is byte-identical to rate 0', () => {
+    const wasRate = sim.CFG.volcanoBirthRate, wasMin = sim.CFG.volcanoBirthMinElev;
+    try {
+      // rate 0 baseline
+      sim.CFG.volcanoBirthRate = 0;
+      sim.initWorld(2201);
+      for (let i = 0; i < 1200; i++) sim.step();
+      const baseFp = faunaFp(), baseFlora = sim.flora.length;
+      // rate 1 but no tile can ever qualify (min elev above the 0..10 range) -> gate fires every cadence tick
+      // (drawing _eventRand) but NEVER births. If _eventRand consumed sRng/eRng, the ecology would diverge.
+      sim.CFG.volcanoBirthRate = 1.0; sim.CFG.volcanoBirthMinElev = 99;
+      sim.initWorld(2201);
+      for (let i = 0; i < 1200; i++) sim.step();
+      expect(sim.volcanoCenters.length).toBe(0);         // never births (unreachable site)
+      expect(sim.flora.length).toBe(baseFlora);          // ecology identical...
+      expect(faunaFp()).toBe(baseFp);                    // ...bit for bit -> the gate is stream-free
+    } finally { sim.CFG.volcanoBirthRate = wasRate; sim.CFG.volcanoBirthMinElev = wasMin; }
+  }, 30000);
+
+  it('ON births a real elev-10 volcano peak, deterministically', () => {
+    const wasRate = sim.CFG.volcanoBirthRate, wasEvery = sim.CFG.volcanoBirthCheckEvery;
+    try {
+      sim.CFG.volcanoBirthRate = 1.0;        // force it (every eligible cadence tick births until the cap)
+      sim.CFG.volcanoBirthCheckEvery = 40;
+      function run() {
+        sim.initWorld(2202);
+        for (let i = 0; i < 2500; i++) sim.step(); // warm to real highland, then births fire
+        const centers = sim.volcanoCenters.slice().sort((a, b) => a - b);
+        let maxE = 0; for (let i = 0; i < sim.elev.length; i++) if (sim.elev[i] > maxE) maxE = sim.elev[i];
+        return { n: sim.volcanoCenters.length, centers, maxE, peakAt: centers.map((c) => sim.peakVolcano[c]) };
+      }
+      const a = run();
+      expect(a.n).toBeGreaterThanOrEqual(1);                 // at least one volcano emerged
+      expect(a.n).toBeLessThanOrEqual(sim.CFG.maxVolcanoCenters); // never exceeds the cap
+      expect(a.maxE).toBe(10);                               // a peak reached the max elevation
+      expect(a.peakAt.every((p) => p === 1)).toBe(true);     // each center is a marked peak
+      const b = run();
+      expect(b.centers).toEqual(a.centers);                  // same seed -> same volcanoes (deterministic)
+    } finally { sim.CFG.volcanoBirthRate = wasRate; sim.CFG.volcanoBirthCheckEvery = wasEvery; }
+  }, 30000);
+});
