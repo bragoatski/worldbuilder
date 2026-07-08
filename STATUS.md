@@ -16,7 +16,11 @@ A 4-item program ("go for 1 through 4"): visual-verification, fauna distribution
 - **Chunk 3 (crash defense) - REVERTED, lesson `8e84451`.** A prey refuge fails (crashes are food-driven, and the
   start-of-step floor blows through as predators swarm scarce prey in one step). Crashes self-recover via
   immigration (transient dips). Kevin accepts the organic crashes; robust dynamic-floor fix deferred.
-- **Chunk 4 (creature AI) - NOT STARTED** (recommend a fresh focused session).
+- **Chunk 4 (creature AI) - experiment 1 run + DEFERRED.** Movement MOMENTUM (creatures travel in purposeful
+  lines vs jitter) measured roughly balance-neutral (12 seeds, C2 protocol) but reverted: default-on perturbs the
+  brittle single-seed size-gene test (`sim.test.js:256`, not a bug), and the motion payoff needs a live eyeball.
+  Re-apply is a clean ~30-min follow-up (see handoff). Finding: the fauna AI is already finely tuned for C2, so
+  most "smarter AI" ideas fight the balance - momentum is the safest lever found.
 - **DEPLOY PENDING (Kevin):** `main` is unchanged/deployed; branch is 3 commits ahead. Recommend deploying the HUD
   fix (`447356a`) - real correctness win, balance-safe. Held per the no-surprise-Pages rule.
 

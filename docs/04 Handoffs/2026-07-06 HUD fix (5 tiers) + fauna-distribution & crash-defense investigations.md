@@ -51,9 +51,25 @@ the high-land balance, artificial. **Crucially the crashes SELF-RECOVER via immi
 after a full crash) - transient dips, not permanent death.** Kevin's stance already tolerates occasional crashes,
 so reverted as disproportionate. Lesson recorded next to the paradox-of-enrichment note.
 
-## Chunk 4 - Creature AI - NOT STARTED
-Large, open-ended, measured effort (better foraging / herd / pursuit / evasion, measured against C2). Recommended
-as its own focused session rather than starting it at the tail of this long one.
+## Chunk 4 - Creature AI - experiment 1 (movement momentum) run + measured + DEFERRED (reverted)
+Kevin said start it now. Given chunks 2-3 proved fauna behavior is C2-fragile, picked the lowest-risk AI/feel
+win first: **movement momentum** - a small movement-score bonus (`CFG.faunaMomentum`) for continuing the last
+heading (`mdx`/`mdy` on each creature), so creatures TRAVEL in purposeful lines instead of jittering on flat
+terrain; small enough to only break near-ties (a real food gradient still wins). Default-off is byte-identical
+(gate green at 0). **Measured roughly balance-NEUTRAL at strength 0.4** on the C2 protocol (12 seeds, corrected
+after a first run had a degenerate baseline - my ab script forgot to `seedFloraCluster` a food base, so grazers
+starved and carn read 0%): extinction 0%, cap-hits 0, tier persistence swings within 1-seed noise (carn 58->50,
+apex 100->92, omni 75->100 - opposite directions = noise). NOT shipped: default-ON perturbs one brittle
+single-seed test (`sim.test.js:256` "size gene diversifies through reproduction" - momentum is deterministic, but
+changing WHO moves where changes WHO reproduces, so the fixed-seed lineage outcome shifts; same brittleness the
+trophic chunks worked around, NOT a determinism bug), and momentum's whole payoff is MOTION, which can't be
+verified from a screenshot. Reverted to keep the tree clean. **To ship later (clean ~30-min follow-up):** re-add
+the ~5 lines (makeFauna `mdx:0,mdy:0`; the movement-loop bonus + dir update guarded on `CFG.faunaMomentum>0`;
+the CFG knob), make the size-gene test momentum-agnostic, 24-seed balance confirm, flip default to ~0.3-0.4,
+then eyeball the motion live + dial to taste. Lesson recorded in Engineering Lessons.
+- **Bigger-picture finding:** the fauna AI is already developed (scent-pursuit, avoidance, knob-C dispersion) and
+  finely balanced for C2, so most "smarter AI" changes perturb it. Further AI work should be careful measured
+  follow-ups (momentum is the safest lever found; pursuit/evasion/herding all fight knob-C dispersion).
 
 ## State + NEXT
 - Branch `ecology-balance`: three commits ahead of the deployed `main` - `447356a` (HUD fix, code),
