@@ -2,6 +2,30 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-07-08 - Climate ease-in + rare volcano birth + dashboard census & tooltips (on branch, NOT deployed)
+Newest handoff: **`docs/04 Handoffs/2026-07-08 Climate ease-in + rare volcano birth + dashboard census & tooltips.md`** - read it first.
+Four Kevin asks, all landed on `ecology-balance`, gate GREEN (typecheck + lint 0 errors + **47 tests** + build), NOT deployed.
+- **Dashboard + tooltips (UI, gate-blind, verified live).** The six trophic counts were six cryptic loose squares;
+  regrouped into ONE bordered inset `.census` instrument (world-state chips split into their own group), color-coded
+  cells in trophic order. All `id=` preserved. Every deck control's native `title=` became a styled `.deck-tip`
+  tooltip matching the map/legend tooltips (title + description + hotkey badge), verified live (0 console errors).
+  Season chip now names the phase (Spring/Summer/Autumn/Winter).
+- **Climate ease-in (sim, balance-safe).** Checking Seasonal Tilt / Transient Anomalies mid-run no longer JUMPS the
+  map: `seasonPhase()` counts from a `seasonAnchorTick` set on the toggle's rising edge (starts at phase 0, eases to
+  summer); anomaly blobs got a fade-in/out lifecycle (now transient spells). Default `measure` byte-identical to C2.
+  A critic pass caught a real blocker (the "Run Tests" button left the edge detectors stuck -> the jump came back
+  through that door) - FIXED + regression-tested; `applySnapshot`/`restoreState` also reset the season clock.
+- **Rare volcano birth (sim, balance-NEUTRAL A/B, shipped ON).** Mountains never reach the 9.95 elev-10 promotion
+  gate on their own (probe: max elev ~5-7), so `tryVolcanoBirth()` occasionally promotes the highest highland to a
+  full elev-10 volcano (rings + ash + Chronicle beat). Balance-safe BY CONSTRUCTION: the gate uses a stream-free
+  (_seed,tick) hash, so sRng/eRng stay byte-identical and only the rare local terrain change touches ecology. A/B
+  `--birth=0` vs `--birth=0.008` (8 seeds) NEUTRAL (extinction 0/0%, carn-persistence 63/63%, cap-hits 0/0);
+  no-birth seeds bit-identical to baseline. Default rate 0.005 (~40% of long sessions; a pure taste dial, balance
+  holds for any rate <= 0.008).
+- **DEPLOY PENDING (Kevin):** branch is ahead of the deployed `main`; recommend deploying with the still-pending HUD
+  fix (`447356a`). Held per the no-surprise-Pages rule. Gate-blind items to eyeball live: the census/tooltip look,
+  the seasonal ease-in motion, the volcano-birth peak + Chronicle beat (all reuse proven render paths).
+
 ## Session 2026-07-06 - HUD fix shipped (to branch), 2 chunks investigated + dropped
 Newest handoff: **`docs/04 Handoffs/2026-07-06 HUD fix (5 tiers) + fauna-distribution & crash-defense investigations.md`** - read it first.
 A 4-item program ("go for 1 through 4"): visual-verification, fauna distribution, crash defense, creature AI.
