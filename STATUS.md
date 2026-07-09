@@ -31,11 +31,14 @@ Four Kevin asks, all landed on `ecology-balance`, gate GREEN (typecheck + lint 0
   distinct palette (cream/olive/slate/crimson/plum) + recoloured EVERY HUD legend to match the map (they didn't
   before); cosmetic + draw-count-unchanged so `measure` is BYTE-IDENTICAL to C2. Per-type SHAPES already existed
   (square/cross/hollow-square/diamond/triangle).
-- **DEPLOY PENDING (Kevin):** branch is ahead of the deployed `main`; recommend deploying with the still-pending HUD
-  fix (`447356a`). Held per the no-surprise-Pages rule. Gate-blind items to eyeball live: the census/tooltip look,
-  the seasonal ease-in motion, the volcano-birth peak + cone + Chronicle beat, the several-volcano Volcanic map,
-  and the new fauna palette (all reuse proven render paths; the darker fauna tiers are subtle at full-map zoom by
-  design - clearer zoomed in).
+- **DEPLOYED 2026-07-08 (Kevin: "doc, wrap, commit, deploy").** `main` fast-forwarded f5d2e93 -> **76ba9bb** and
+  pushed; Pages CI building the Vite bundle **index-Dbbl4raR.js** (expected from a local build of this code; live
+  verification polling). This ships the WHOLE session at once: the prior HUD fix (5-tier count) + this session's
+  climate ease-in, rare volcano birth, uniform volcano cone, several-volcano Volcanic preset, dashboard census +
+  styled tooltips, and the earthy fauna palette. The branch keeps its usual 1-commit docs lead (this deploy record).
+  Gate-blind items to eyeball live: the census/tooltip look, the seasonal ease-in motion, the volcano-birth peak +
+  cone + Chronicle beat, the several-volcano Volcanic map, and the new fauna palette (all reuse proven render paths;
+  the darker fauna tiers are subtle at full-map zoom by design - clearer zoomed in).
 
 ## Session 2026-07-06 - HUD fix shipped (to branch), 2 chunks investigated + dropped
 Newest handoff: **`docs/04 Handoffs/2026-07-06 HUD fix (5 tiers) + fauna-distribution & crash-defense investigations.md`** - read it first.
