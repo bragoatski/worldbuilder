@@ -962,14 +962,17 @@ function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tem
   var hue,sat,val;
   if(prefs&&prefs.hue!==undefined){hue=prefs.hue;sat=prefs.sat;val=prefs.val;}
   else if(vivid){hue=VIVID_HUES[(eRng()*VIVID_HUES.length)|0]+randn()*8;sat=0.75+eRng()*0.2;val=0.8+eRng()*0.15;}
-  else if(isH){hue=35+eRng()*15;sat=0.05+eRng()*0.1;val=0.78+eRng()*0.17;} // warm cream/white
-  else if(isS){hue=25+eRng()*20;sat=0.22+eRng()*0.12;val=0.42+eRng()*0.16;} // dull olive-brown (detritivore)
-  else if(isA){hue=342+eRng()*16;sat=0.32+eRng()*0.16;val=0.3+eRng()*0.16;} // dark crimson (apex predator; non-wrapping 342-358 band)
-  else if(isO){hue=288+eRng()*18;sat=0.28+eRng()*0.16;val=0.38+eRng()*0.16;} // dusky plum/violet (omnivore generalist; distinct from cream/olive/crimson/charcoal)
-  else{hue=210+eRng()*30;sat=0.05+eRng()*0.1;val=0.2+eRng()*0.18;} // charcoal/slate
-  // Per-type sat/val clamp ranges (scavenger = olive between cream herbivore + charcoal carnivore; apex = crimson; omnivore = plum).
-  var loSat=vivid?0.65:(isS?0.16:(isA?0.28:(isO?0.24:0.03))), hiSat=vivid?0.95:(isS?0.4:(isA?0.6:(isO?0.5:0.2)));
-  var loVal=vivid?0.7:(isH?0.75:(isS?0.38:(isA?0.26:(isO?0.34:0.18)))), hiVal=vivid?0.95:(isH?0.95:(isS?0.62:(isA?0.5:(isO?0.6:0.4))));
+  // Earthy-but-distinct type palette (Kevin's call: keep natural tones, push them apart so each tier reads on
+  // the map, and the HUD legend is recoloured to match these). Spread across the hue wheel + a lifted value on
+  // the dark ones so they are actually visible: cream / olive / steel-slate / crimson / plum.
+  else if(isH){hue=40+eRng()*12;sat=0.12+eRng()*0.10;val=0.80+eRng()*0.15;} // warm cream/wheat - the palest tier
+  else if(isS){hue=58+eRng()*18;sat=0.32+eRng()*0.14;val=0.46+eRng()*0.14;} // olive drab (detritivore) - yellow-green, reads apart from the cream herbivore
+  else if(isA){hue=348+eRng()*11;sat=0.50+eRng()*0.14;val=0.44+eRng()*0.14;} // crimson blood-red (apex; non-wrapping 348-359 band)
+  else if(isO){hue=280+eRng()*16;sat=0.38+eRng()*0.12;val=0.46+eRng()*0.14;} // dusky plum/violet (omnivore) - pushed toward blue, reads apart from the crimson apex
+  else{hue=208+eRng()*18;sat=0.14+eRng()*0.12;val=0.46+eRng()*0.14;} // cool steel-slate (carnivore) - lifted from near-black so it is actually visible on the map
+  // Per-type sat/val clamp ranges matching the bands above (herbivore + carnivore share the low-sat default).
+  var loSat=vivid?0.65:(isS?0.28:(isA?0.44:(isO?0.34:0.10))), hiSat=vivid?0.95:(isS?0.50:(isA?0.68:(isO?0.54:0.28)));
+  var loVal=vivid?0.7:(isH?0.78:(isS?0.42:(isA?0.40:(isO?0.42:0.42)))), hiVal=vivid?0.95:(isH?0.96:(isS?0.62:(isA?0.60:(isO?0.62:0.62))));
   var startE=isH?CFG.herbivoreStartEnergy:(isS?CFG.scavengerStartEnergy:(isA?CFG.apexStartEnergy:(isO?CFG.omnivoreStartEnergy:CFG.carnivoreStartEnergy)));
   var maxE=isH?CFG.herbivoreMaxEnergy:(isS?CFG.scavengerMaxEnergy:(isA?CFG.apexMaxEnergy:(isO?CFG.omnivoreMaxEnergy:CFG.carnivoreMaxEnergy)));
   return{id:newId,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,loSat,hiSat),val:clamp(val,loVal,hiVal),vivid:vivid,size:size,lineageId:lineageId,energy:startE,maxEnergy:maxE,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:isH?(x*7+y*13)%CFG.herbivoreSpeed:0,eatCD:isH?(x*11+y*5)%CFG.herbivoreEatSpeed:0};}
@@ -1064,7 +1067,7 @@ function mutateFaunaChild(parent,cx,cy){var mag=CFG.faunaMutationMag;
   } else {
     // Normal: cream herbivores, olive-brown scavengers, crimson apex, plum omnivores, charcoal carnivores
     var isH=(parent.type==='herbivore'), isS=(parent.type==='scavenger'), isA=(parent.type==='apex'), isO=(parent.type==='omnivore');
-    childHue=clamp(parent.hue+randn()*8,isH?30:(isS?18:(isA?340:(isO?285:200))),isH?55:(isS?52:(isA?360:(isO?310:245))));childSat=clamp(parent.sat+(eRng()-0.5)*0.04,isS?0.16:(isA?0.28:(isO?0.24:0.03)),isS?0.4:(isA?0.6:(isO?0.5:0.2)));childVal=clamp(parent.val+(eRng()-0.5)*0.06,isH?0.75:(isS?0.38:(isA?0.26:(isO?0.34:0.18))),isH?0.95:(isS?0.62:(isA?0.5:(isO?0.6:0.4))));
+    childHue=clamp(parent.hue+randn()*8,isH?38:(isS?55:(isA?346:(isO?276:204))),isH?54:(isS?80:(isA?360:(isO?300:230))));childSat=clamp(parent.sat+(eRng()-0.5)*0.04,isS?0.28:(isA?0.44:(isO?0.34:0.10)),isS?0.50:(isA?0.68:(isO?0.54:0.28)));childVal=clamp(parent.val+(eRng()-0.5)*0.06,isH?0.78:(isS?0.42:(isA?0.40:(isO?0.42:0.42))),isH?0.96:(isS?0.62:(isA?0.60:(isO?0.62:0.62))));
   }
   // Cosmetic size drifts on the cRng stream (balance-neutral); lineage id is inherited unchanged.
   var childSize=clamp((parent.size||1)+cRandn()*CFG.faunaSizeMutationMag,0.5,2.2);

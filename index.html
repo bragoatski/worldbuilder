@@ -102,11 +102,11 @@
   .chip .dot.paused { background:var(--amber); }
   .chip .cdot { width:8px; height:8px; border-radius:2px; flex-shrink:0; }
   .chip-flora .cdot { background:#3fcf6a; }
-  .chip-herb  .cdot { background:#5bb8f0; }
-  .chip-carn  .cdot { background:#e85454; }
-  .chip-scav  .cdot { background:#c99a3c; }
-  .chip-apex  .cdot { background:#d0477a; }
-  .chip-omni  .cdot { background:#9a5cc4; }
+  .chip-herb  .cdot { background:#e6dcbc; }
+  .chip-carn  .cdot { background:#6c7687; }
+  .chip-scav  .cdot { background:#818753; }
+  .chip-apex  .cdot { background:#823841; }
+  .chip-omni  .cdot { background:#7b4c87; }
 
   /* World-state chips grouped apart from the life census */
   .tgroup { display:flex; align-items:center; gap:5px; }
@@ -127,9 +127,9 @@
   .census-cell:hover { background:var(--bg-input); }
   .census-cell b { color:var(--fg); font-weight:600; min-width:8px; text-align:right; }
   .census-cell .cdot { width:8px; height:8px; border-radius:2px; flex-shrink:0; box-shadow:0 0 5px -1px currentColor; }
-  .chip-flora .cdot { color:#3fcf6a; } .chip-herb .cdot { color:#5bb8f0; }
-  .chip-carn .cdot { color:#e85454; } .chip-scav .cdot { color:#c99a3c; }
-  .chip-apex .cdot { color:#d0477a; } .chip-omni .cdot { color:#9a5cc4; }
+  .chip-flora .cdot { color:#3fcf6a; } .chip-herb .cdot { color:#e6dcbc; }
+  .chip-carn .cdot { color:#6c7687; } .chip-scav .cdot { color:#818753; }
+  .chip-apex .cdot { color:#823841; } .chip-omni .cdot { color:#7b4c87; }
 
   /* Setup-deck labeled segments */
   .seg {
@@ -899,11 +899,11 @@
               <canvas class="pop-graph-canvas" id="popGraph" width="356" height="120"></canvas>
               <div class="pop-graph-legend">
                 <span><span class="pg-dot" style="background:#3fcf6a"></span>Flora</span>
-                <span><span class="pg-dot" style="background:#5bb8f0"></span>Herbivore</span>
-                <span><span class="pg-dot" style="background:#e85454"></span>Carnivore</span>
-                <span><span class="pg-dot" style="background:#c99a3c"></span>Scavenger</span>
-                <span><span class="pg-dot" style="background:#d0477a"></span>Apex</span>
-                <span><span class="pg-dot" style="background:#9a5cc4"></span>Omnivore</span>
+                <span><span class="pg-dot" style="background:#e6dcbc"></span>Herbivore</span>
+                <span><span class="pg-dot" style="background:#6c7687"></span>Carnivore</span>
+                <span><span class="pg-dot" style="background:#818753"></span>Scavenger</span>
+                <span><span class="pg-dot" style="background:#823841"></span>Apex</span>
+                <span><span class="pg-dot" style="background:#7b4c87"></span>Omnivore</span>
               </div>
             </div>
           </div>
@@ -962,11 +962,11 @@
               <div class="lsep">Ecology</div>
               <div class="li" data-ltip="Flora well-adapted to local conditions|High health = bright green · Gaussian fitness curve"><span class="lsw" style="background:linear-gradient(135deg,#4a2,#6d4)"></span>Flora (fit)</div>
               <div class="li" data-ltip="Flora poorly matched to tile climate|Low health = dim brown · Dies if health < 0.05"><span class="lsw" style="background:linear-gradient(135deg,#542,#763)"></span>Flora (stress)</div>
-              <div class="li" data-ltip="Grazing animal — eats flora, flees carnivores|Speed: 20 ticks · Eat: 12E/flora · Repro: 95E, cost 60"><span class="lsw" style="background:#e8ddd0"></span>Herbivore</div>
-              <div class="li" data-ltip="Predator — hunts herbivores within 1 tile, 3-tile scent|Speed: 16 ticks · Eat: 40E/kill · Repro: 80E, cost 40"><span class="lsw" style="background:#3a3f48"></span>Carnivore</div>
-              <div class="li" data-ltip="Detritivore — eats carrion (corpses), scents distant death|Hollow-square marker · rescue-immigrates while carrion is present"><span class="lsw" style="background:#c99a3c"></span>Scavenger</div>
-              <div class="li" data-ltip="Apex predator — hunts carnivores + scavengers|Solid-diamond marker · rare, slow-eating, high per-kill gain; damps the boom-bust"><span class="lsw" style="background:#d0477a"></span>Apex</div>
-              <div class="li" data-ltip="Omnivore — grazes flora, hunts a grazer when none is on-tile|Solid-triangle marker · rare + inefficient at both foods"><span class="lsw" style="background:#9a5cc4"></span>Omnivore</div>
+              <div class="li" data-ltip="Grazing animal — eats flora, flees carnivores|Solid-square marker, cream · Speed: 20 ticks · Eat: 12E/flora"><span class="lsw" style="background:#e6dcbc"></span>Herbivore</div>
+              <div class="li" data-ltip="Predator — hunts herbivores within 1 tile, 3-tile scent|Cross marker, steel-slate · Speed: 16 ticks · Eat: 40E/kill"><span class="lsw" style="background:#6c7687"></span>Carnivore</div>
+              <div class="li" data-ltip="Detritivore — eats carrion (corpses), scents distant death|Hollow-square marker, olive · rescue-immigrates while carrion is present"><span class="lsw" style="background:#818753"></span>Scavenger</div>
+              <div class="li" data-ltip="Apex predator — hunts carnivores + scavengers|Solid-diamond marker, crimson · rare, slow-eating, high per-kill gain"><span class="lsw" style="background:#823841"></span>Apex</div>
+              <div class="li" data-ltip="Omnivore — grazes flora, hunts a grazer when none is on-tile|Solid-triangle marker, plum · rare + inefficient at both foods"><span class="lsw" style="background:#7b4c87"></span>Omnivore</div>
               <div class="li" data-ltip="Rare bright-colored mutation|2% spontaneous · 50% inherited from vivid parent"><span class="lsw" style="background:linear-gradient(135deg,#3b9eff,#e854e8,#e8a838)"></span>Vivid (rare)</div>
               <div class="lsep">Events</div>
               <div class="li" data-ltip="Carnivore successfully hunted a herbivore|Kill flash lasts 8 ticks"><span class="lsw" style="background:#ff3333;color:#fff;font-size:9px;text-align:center;line-height:12px;">✕</span>Kill</div>

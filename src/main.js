@@ -602,12 +602,12 @@ function drawPopGraph(){
   }
   // The three minor trophic tiers (scav/apex/omni) are rare + rescue-sustained, so draw them thinner and
   // dimmer beneath the core flora/herb/carn story to keep the predator-prey cycle the readable foreground.
-  drawSeries(scavH,'#c99a3c',4,1.0,0.5);
-  drawSeries(apexH,'#d0477a',4,1.0,0.5);
-  drawSeries(omniH,'#9a5cc4',4,1.0,0.5);
+  drawSeries(scavH,'#818753',4,1.0,0.5);
+  drawSeries(apexH,'#823841',4,1.0,0.5);
+  drawSeries(omniH,'#7b4c87',4,1.0,0.5);
   drawSeries(hist.flora,'#3fcf6a',1);
-  drawSeries(hist.herb,'#5bb8f0',4); // scaled 4x so fauna is visible alongside flora
-  drawSeries(hist.carn,'#e85454',4);
+  drawSeries(hist.herb,'#e6dcbc',4); // scaled 4x so fauna is visible alongside flora; colors match the map markers + legend
+  drawSeries(hist.carn,'#6c7687',4);
   // Scale indicators for fauna
   if(hist.herb.length>0||hist.carn.length>0){gctx.fillStyle='#4a5568';gctx.fillText('fauna ×4',w-52,10);}
 }
