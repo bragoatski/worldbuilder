@@ -76,9 +76,39 @@ STATUS.md holds current truth. Four asks from Kevin, all landed on the branch (N
   (ff main + push, Pages CI) together with the pending HUD fix. Frequency + the "instant vs gradual" volcano and
   the census/tooltip look are taste dials to confirm live.
 
+## Follow-up asks (same session, second batch): volcano cone + rivers + fauna colors
+Four more Kevin asks, all landed on `ecology-balance`:
+- **Uniform volcano cone (Fuji/Hood).** `promoteVolcanoAt` rewritten: the peak is the ONLY elev-10 square, the
+  full 3x3 of touching squares (all 8, incl. diagonals) are ALWAYS mountains, and the 5x5 ring beyond is ALWAYS
+  hills - a symmetric stepped cone on any terrain (reclassTerrain forces the biome from volcanoRing). Was: only
+  the 4 orthogonal neighbours were mountains + a diamond hill ring. Gate test encodes the exact spec (1 peak,
+  3x3 mountains, 5x5 hills). Balance re-A/B'd with the bigger footprint: still neutral (extinction 0/0%,
+  carn-persistence 63/63%, cap-hits 0/0).
+- **Volcanic preset = a several-volcano map.** Added `volcanoBirthRate 0.05` + `minVolcanoSpacing 8` +
+  `maxVolcanoCenters 6`, so several uniform cones emerge + spread as the world matures (probe: fills to the cap).
+- **Rivers are NOT gone.** Verified live: developed a balanced world to 89.9% land, clicked Rivers -> full
+  dendritic river network rendered. They are MANUAL (the Rivers button / River Density slider) and only form at
+  HIGH land (~85-90%); a typical session (a few thousand ticks -> ~40% land) never reaches that, so Kevin rarely
+  sees them. Nothing regressed. (Open Tier-B option for Kevin: lower the land requirement or auto-generate at high
+  land - the latter cost carn-persistence before, so it was reverted; his call.)
+- **Fauna map colors (Kevin chose "earthy, keep natural").** The 5 tiers already had distinct SHAPES (herb=solid
+  square, carn=cross, scav=hollow square, apex=diamond, omni=triangle) + muted color bands, but the bands were
+  muddy/overlapping AND the HUD legend used different colors than the map (census said herb=blue, map rendered
+  cream). Fix: pushed the map bands apart into a distinct earthy palette (cream / olive / steel-slate / crimson /
+  plum - spread across the hue wheel, dark ones lifted for visibility) and recoloured EVERY HUD legend to match
+  (census chips, Population graph + legend, Map Legend). PROVABLY balance-safe: color is cosmetic + the eRng draw
+  count per creature is unchanged, so `npm run measure` is BYTE-IDENTICAL to C2 (extinction 0%, carn 50% 3/6,
+  fauna 49.3, flora 2119.2, per-seed values all match). Census colors verified applied (computed style); herbivores
+  visibly render cream on the map. Markers are still small at full-map zoom (the darker rare tiers are subtle -
+  inherent to "keep natural"); they read on zoom-in + the legend now teaches them.
+
 ## NEXT
 - Optional: gradual volcano RISE (grow a highland to 10 over ~hundreds of ticks so it visibly builds, letting the
   existing 9.95 promotion fire naturally) instead of the instant promote - a clean follow-up if the pop-in reads
   abrupt.
+- Optional (Kevin's taste): if the darker fauna tiers still read too subtly at normal zoom, either nudge their
+  value/saturation up a touch more, or make the per-type SHAPES larger (the "shape-forward" option not taken).
+- Optional (Kevin's call): make rivers easier to see (lower the land threshold, or auto-generate at high land with
+  a fresh balance A/B since auto-rivers regressed carn-persistence before).
 - The pre-existing Living World Roadmap backlog (fauna distribution as a measured task; optional trophic
   follow-ups) is unchanged - see the prior handoff + STATUS.

@@ -22,9 +22,20 @@ Four Kevin asks, all landed on `ecology-balance`, gate GREEN (typecheck + lint 0
   `--birth=0` vs `--birth=0.008` (8 seeds) NEUTRAL (extinction 0/0%, carn-persistence 63/63%, cap-hits 0/0);
   no-birth seeds bit-identical to baseline. Default rate 0.005 (~40% of long sessions; a pure taste dial, balance
   holds for any rate <= 0.008).
+- **Second batch (same session):** (1) **Uniform volcano cone** - promoteVolcanoAt now makes a symmetric Fuji/Hood
+  cone (1 elev-10 peak + a full 3x3 mountain ring + a 5x5 hill ring); gate-tested; balance re-A/B'd neutral.
+  (2) **Volcanic preset = a several-volcano map** (volcanoBirthRate 0.05, spacing 8, cap 6 -> several cones emerge).
+  (3) **Rivers verified NOT gone** - they render fine (proof: 89.9%-land world + Rivers button = full dendritic
+  network); they are MANUAL + need high land (~85-90%), which normal sessions never reach, so Kevin rarely sees
+  them. (4) **Fauna map colors** (Kevin chose earthy-keep-natural) - pushed the 5 muted type bands apart into a
+  distinct palette (cream/olive/slate/crimson/plum) + recoloured EVERY HUD legend to match the map (they didn't
+  before); cosmetic + draw-count-unchanged so `measure` is BYTE-IDENTICAL to C2. Per-type SHAPES already existed
+  (square/cross/hollow-square/diamond/triangle).
 - **DEPLOY PENDING (Kevin):** branch is ahead of the deployed `main`; recommend deploying with the still-pending HUD
   fix (`447356a`). Held per the no-surprise-Pages rule. Gate-blind items to eyeball live: the census/tooltip look,
-  the seasonal ease-in motion, the volcano-birth peak + Chronicle beat (all reuse proven render paths).
+  the seasonal ease-in motion, the volcano-birth peak + cone + Chronicle beat, the several-volcano Volcanic map,
+  and the new fauna palette (all reuse proven render paths; the darker fauna tiers are subtle at full-map zoom by
+  design - clearer zoomed in).
 
 ## Session 2026-07-06 - HUD fix shipped (to branch), 2 chunks investigated + dropped
 Newest handoff: **`docs/04 Handoffs/2026-07-06 HUD fix (5 tiers) + fauna-distribution & crash-defense investigations.md`** - read it first.
