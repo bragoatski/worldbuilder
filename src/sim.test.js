@@ -904,6 +904,29 @@ describe('rare volcano birth (in-run elev-10 emergence)', () => {
     } finally { sim.CFG.volcanoBirthRate = wasRate; sim.CFG.volcanoBirthMinElev = wasMin; }
   }, 30000);
 
+  it('a promoted volcano is a UNIFORM cone: 1 peak, a full 3x3 mountain ring, a 5x5 hill ring', () => {
+    // Kevin's spec (Mt Fuji / Mt Hood): only ONE square gets the elev-10 volcano height; every touching
+    // square (all 8, incl. diagonals) is a mountain; the ring beyond that is hills. Paint a flat highland
+    // plateau so the rings have land, then promote the center and reclassify.
+    sim.initWorld(12345);
+    for (let i = 0; i < sim.grid.length; i++) { sim.grid[i] = sim.T.PLAINS; sim.elev[i] = 5.0; }
+    const W = sim.W, cx = 24, cy = 24, ci = cy * W + cx;
+    sim.promoteVolcanoAt(ci);
+    sim.reclassTerrain();
+    expect(sim.elev[ci]).toBe(10);                       // exactly one elev-10 square (the peak)
+    let peaks10 = 0;
+    for (let i = 0; i < sim.elev.length; i++) if (sim.elev[i] === 10) peaks10++;
+    expect(peaks10).toBe(1);                             // no second elev-10 square adjacent
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      expect(sim.grid[(cy + dy) * W + (cx + dx)]).toBe(sim.T.MOUNTAIN); // all 8 touching squares are mountains
+    }
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
+      expect(sim.grid[(cy + dy) * W + (cx + dx)]).toBe(sim.T.HILLS);    // the ring beyond is all hills
+    }
+  }, 30000);
+
   it('ON births a real elev-10 volcano peak, deterministically', () => {
     const wasRate = sim.CFG.volcanoBirthRate, wasEvery = sim.CFG.volcanoBirthCheckEvery;
     try {

@@ -118,8 +118,9 @@ var PRESETS = {
     floraSpawnChance:0.005, floraPerTileMax:2, elevationIntensity:1.1
   }, world:{}, toggles:{ seasonalTilt:true } },
   volcanic: { label:'Volcanic', cfg:{
-    volcanoChancePerTile:0.00020, maxVolcanoCenters:8, elevationIntensity:1.4,
-    climateIntensity:1.5, maxLandCap:0.65
+    volcanoChancePerTile:0.00020, elevationIntensity:1.4,
+    climateIntensity:1.5, maxLandCap:0.65,
+    volcanoBirthRate:0.05, minVolcanoSpacing:8, maxVolcanoCenters:6   // a VOLCANO MAP: several uniform peaks emerge as it matures
   }, world:{}, toggles:{ volcanoAsh:true } },
   jungle: { label:'Jungle', cfg:{
     sunlightIntensity:1.3, aridityDistK:0.03, ariditySunCoef:0.05, aridityHotBoost:0.10,
@@ -498,7 +499,32 @@ function tryVolcano(x,y){var i=idx(x,y);if(grid[i]!==T.OCEAN)return false;var co
 function coolVolcano(i){volcActive[i]=0;grid[i]=T.PLAINS;var x=i%W,y=(i/W)|0;var adjOcean=false;neighbors4(x,y).forEach(function(p){if(grid[idx(p[0],p[1])]==T.OCEAN)adjOcean=true;});if(adjOcean){grid[i]=T.COAST;coastTTL[i]=12+(sRng()*12)|0;}}
 function tryCoastal(x,y){var i=idx(x,y);if(grid[i]!==T.OCEAN)return false;var adj=[];neighbors4(x,y).forEach(function(p){var j=idx(p[0],p[1]);if(grid[j]!==T.OCEAN&&grid[j]!==T.VOLCANIC)adj.push(j);});if(!adj.length)return false;var cov=landCoverage();var mod=(cov>CFG.maxLandCap?0:(cov>CFG.maxLandCap*0.85?(1-(cov-CFG.maxLandCap*0.85)/(CFG.maxLandCap*0.15)):1));var chance=CFG.coastalSpreadBase*adj.length*mod;if(sRng()>=chance)return false;var nj=adj[(sRng()*adj.length)|0];elev[i]=clamp(0.85*(elev[nj]||0)+0.15*WORLD.coastBias+(sRng()*0.4-0.2),0,10);grid[i]=T.COAST;coastTTL[i]=(16+(sRng()*16)|0);return true;}
 function erosionStep(x,y){var i=idx(x,y);if(grid[i]===T.OCEAN)return;var nearOcean=false;neighbors4(x,y).forEach(function(p){if(grid[idx(p[0],p[1])]==T.OCEAN)nearOcean=true;});var sLoc=0;neighbors4(x,y).forEach(function(p){var d=Math.abs((elev[i]||0)-(elev[idx(p[0],p[1])]||0));if(d>sLoc)sLoc=d;});var eNow=elev[i]||0;var highE=Math.max(0,(eNow-8.5)/1.5);var p=CFG.erosionChanceBase*(nearOcean?1.4:1.0)*(1+0.6*sLoc)*(1+0.85*highE);if(sRng()<p){elev[i]=Math.max(0,eNow-(0.12+sRng()*0.18)*(1+0.30*highE));}}
-function promoteVolcanoAt(i){if(peakVolcano&&peakVolcano[i])return;if(volcanoRing&&volcanoRing[i]!==0)return;peakVolcano[i]=1;volcanoCenters.push(i);var x=i%W,y=(i/W)|0;elev[i]=10.0;volcanoRing[i]=3;adjCooldown[i]=9999;var r1=neighbors4(x,y);for(var k=0;k<r1.length;k++){var j=idx(r1[k][0],r1[k][1]);if(grid[j]===T.OCEAN)continue;volcanoRing[j]=1;adjCooldown[j]=Math.max(adjCooldown[j]||0,9999);elev[j]=Math.max(elev[j]||0,7.2+sRng()*1.4);}var seen=new Uint8Array(W*H);seen[i]=1;for(var k1=0;k1<r1.length;k1++)seen[idx(r1[k1][0],r1[k1][1])]=1;for(var k2=0;k2<r1.length;k2++){var p=r1[k2];var n2=neighbors4(p[0],p[1]);for(var m=0;m<n2.length;m++){var j2=idx(n2[m][0],n2[m][1]);if(seen[j2])continue;seen[j2]=1;if(grid[j2]===T.OCEAN)continue;if(volcanoRing[j2]===0){volcanoRing[j2]=2;adjCooldown[j2]=Math.max(adjCooldown[j2]||0,9999);elev[j2]=Math.max(elev[j2]||0,5.4+sRng()*0.4);}}}}
+// Promote a tile to a UNIFORM conical volcano (Mt Fuji / Mt Hood). The peak is the ONLY elev-10 square; the
+// full 3x3 of touching squares (Chebyshev distance 1) are ALWAYS mountains, and the 5x5 ring around that
+// (distance 2) are ALWAYS hills - so the cone steps down 10 -> mountain -> hill on every side, symmetric.
+// reclassTerrain forces the biome from volcanoRing (ring3/1 -> MOUNTAIN, ring2 -> HILLS), so the cone reads
+// uniform on ANY underlying terrain; the elevations set here (~10/~8/~6) also make the Elevation overlay a cone.
+// minVolcanoSpacing (6) keeps peaks well apart so two elev-10 squares are never adjacent. Ocean tiles in a ring
+// are left as sea (a coastal volcano - rare, since in-run births pick the highest inland highland).
+function promoteVolcanoAt(i){
+  if(peakVolcano&&peakVolcano[i])return;if(volcanoRing&&volcanoRing[i]!==0)return;
+  peakVolcano[i]=1;volcanoCenters.push(i);var cx=i%W,cy=(i/W)|0;elev[i]=10.0;volcanoRing[i]=3;adjCooldown[i]=9999;
+  for(var dy=-2;dy<=2;dy++)for(var dx=-2;dx<=2;dx++){
+    if(dx===0&&dy===0)continue;
+    var nx=cx+dx,ny=cy+dy;if(!inb(nx,ny))continue;
+    var j=idx(nx,ny);if(grid[j]===T.OCEAN||(peakVolcano&&peakVolcano[j]))continue; // keep sea + any neighbouring peak
+    var cheb=Math.max(dx<0?-dx:dx,dy<0?-dy:dy);
+    if(cheb===1){                                   // touching ring -> always MOUNTAIN
+      if(volcanoRing[j]!==3)volcanoRing[j]=1;
+      elev[j]=Math.max(elev[j]||0,7.9+sRng()*0.5);
+      adjCooldown[j]=Math.max(adjCooldown[j]||0,9999);
+    }else if(volcanoRing[j]===0){                   // outer ring -> HILLS (only on virgin tiles)
+      volcanoRing[j]=2;
+      elev[j]=Math.max(elev[j]||0,5.7+sRng()*0.5);
+      adjCooldown[j]=Math.max(adjCooldown[j]||0,9999);
+    }
+  }
+}
 function clusterSpikePass(){
   var doAdj=(tick%CFG.adjUpliftEvery)===0;var hillBudget=Math.max(1,(W*H*0.0005)|0);var mountBudget=Math.max(1,(W*H*0.0005)|0);
   function spikeIncrement(e){var base=(e<7.5)?(0.085+sRng()*0.07):(0.075+sRng()*0.035);var taper=Math.max(0,(10.0-e)/10.0);var inc=base*taper;if(e>7.2&&sRng()<(CFG.rareSurgeProb||0))inc+=(0.05+sRng()*0.06)*taper;return inc;}
@@ -1725,7 +1751,7 @@ export {
   climateInit, seasonPhase, seasonWave, climateStep, applyClimate,
   computeSunlight, reseedSunlight, computeTemperature, computeAridity, computeWaterDist,
   // biomes + terrain
-  classifyTile, reclassTerrain, landCoverage, pickWorldMeta,
+  classifyTile, reclassTerrain, landCoverage, pickWorldMeta, promoteVolcanoAt,
   // rivers
   generateRivers, clearRivers,
   // species naming
