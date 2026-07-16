@@ -2,9 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
-## Session 2026-07-15 - Code-review fixes (7) + Living Food Web (chunk 11) - DONE + DEPLOYING
+## Session 2026-07-15 - Code-review fixes (6) + Living Food Web (chunk 11) - DONE + DEPLOYED + VERIFIED LIVE
+DEPLOYED 2026-07-15 (Kevin: "doc wrap commit and deploy"): `main` ff'd 76ba9bb -> **2015a4a** + pushed; live
+bundle **index-gTvn8UhR.js** confirmed HTTP 200 at https://bragoatski.github.io/worldbuilder/ , and the live page
+carries the `#panelFoodWeb` panel + the flux code (herbFlora/scavCarrion present in the bundle). The branch keeps
+its usual docs lead (this confirmation commit).
 Newest handoff: **`docs/04 Handoffs/2026-07-15 Code review fixes + Living Food Web (chunk 11).md`** - read it first.
-A fresh-eyes review (3 parallel reviewers + 2 adversarial critic passes) fixed 7 real bugs, then built the Food
+A fresh-eyes review (3 parallel reviewers + 2 adversarial critic passes) fixed 6 real bugs, then built the Food
 Web panel (Kevin approved v1+v2). All balance-safe (`npm run measure` BYTE-IDENTICAL to the chunk-10 C2 baseline).
 - **7 bug fixes (observer / load / UI-shell paths - zero eRng):** (1) `init()` now cancels the async scenario
   warmup timer (a Reset during "Preparing world" crashed the app); (2) follow-camera `followId` cleared on every
