@@ -2,6 +2,33 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-07-15 - Code-review fixes (7) + Living Food Web (chunk 11) - DONE + DEPLOYING
+Newest handoff: **`docs/04 Handoffs/2026-07-15 Code review fixes + Living Food Web (chunk 11).md`** - read it first.
+A fresh-eyes review (3 parallel reviewers + 2 adversarial critic passes) fixed 7 real bugs, then built the Food
+Web panel (Kevin approved v1+v2). All balance-safe (`npm run measure` BYTE-IDENTICAL to the chunk-10 C2 baseline).
+- **7 bug fixes (observer / load / UI-shell paths - zero eRng):** (1) `init()` now cancels the async scenario
+  warmup timer (a Reset during "Preparing world" crashed the app); (2) follow-camera `followId` cleared on every
+  rebuild - `init()`/`importJSON()`/`startScenario()` - so it can't re-attach to an unrelated new creature;
+  (3) `applySnapshot` (JSON load) resets chronicle/species/popHistory/carrion + reconciles id counters, so a
+  loaded world no longer inherits the previous world's narrative; (4) `chronicleStats` counts carnivores HONESTLY
+  (scav/apex/omni no longer inflate `carn` - restores the chunk-5 scenario intent, since those thresholds predate
+  the extra tiers); (5) pop-graph auto-scale now includes scav/apex/omni; (6) `applyWorldCode` rejects a
+  non-finite CFG value from an untrusted `?w=` link.
+- **Living Food Web (chunk 11):** a "Food Web" sidebar panel - a canvas node-link diagram of the 5 tiers +
+  flora/carrion, node size = population, arrow thickness = RECENT feeding flux. Makes the documented cascades
+  (apex damps the carnivore boom-bust; omnivore re-crowds the base) watchable. PURE OBSERVER: `foodWebCensus()`
+  (per-tier pop + mean energy + 7-edge topology) + `renderFoodWeb()`; v2 adds 7 plain-integer flux counters at
+  the `faunaStep` eat sites (bare `++`, NO eRng) + `foodWebSample()` (end of `step()`) for the recent window.
+  `foodWeb` resets in initWorld, round-trips snapshot/restore, resets in applySnapshot, exported.
+- **Gate GREEN:** typecheck 0 + lint 0 (32 legacy warnings) + **50 tests** (was 48; +2 food-web: census
+  bucketing/flux-reads-recent, flux determinism) + build. **`npm run measure` BYTE-IDENTICAL** (extinction 0%,
+  carn-persistence 50% 3/6, final fauna 49.3, flora 2119.2, cap-hits 0) - the v2 flux counters provably do not
+  shift the eRng stream.
+- **Gate-blind (eyeball live):** the Food Web panel render (critic-verified structurally: no undefined lookups,
+  no NaN, canvas-absent no-op, ids exist). Open the panel, press play, watch nodes resize + arrows breathe.
+- **Open follow-ups (Tier B):** live eyeball of the Food Web panel; a scenario-threshold winnability check now
+  that `carn` is honest (Genesis 20 / Balance 12 / Volcanic 10).
+
 ## Session 2026-07-08 - Climate ease-in + rare volcano birth + dashboard census & tooltips (on branch, NOT deployed)
 Newest handoff: **`docs/04 Handoffs/2026-07-08 Climate ease-in + rare volcano birth + dashboard census & tooltips.md`** - read it first.
 Four Kevin asks, all landed on `ecology-balance`, gate GREEN (typecheck + lint 0 errors + **47 tests** + build), NOT deployed.

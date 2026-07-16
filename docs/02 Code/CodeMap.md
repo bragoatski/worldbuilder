@@ -144,7 +144,20 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
   `--scav=12 --apex=8 --omni=8` @ 24 seeds vs the chunk-8 baseline was neutral-to-better (carn 79->75% NEUTRAL,
   apex 88->96%, scav 100%, omni-persistence 100% rare mean ~7.2, cap-hits 0); it re-crowds the world the apex
   thinned (fauna 51->71). The first tuning BOOMED (mean 32, carn->67%); take-4a made it rare. See Engineering Lessons + STATUS.
-- **Loop:** `init`, `step` (the per-tick pipeline; ends `chronicleSample();scenarioSample();speciesSample()`), `loop`.
+- **Living Food Web (chunk 11, legibility):** a PURE OBSERVER of the trophic structure, made visible as a
+  canvas node-link diagram. Pure cores in `sim.js`: `foodWebCensus(list=fauna)` (per-tier pop + mean energy +
+  the flora/carrion resource pools + the recent per-edge flux; gate-tested on synthetic fauna), `foodWebSample()`
+  (END of `step()`, after `speciesSample`, Chronicle cadence: derives `recent = cum - prev` for the 7 flux
+  counters - read-only, no eRng -> harness byte-identical), constants `FOOD_WEB_EDGES` (the fixed who-eats-whom
+  topology) / `FOOD_WEB_FLUX_KEYS`, state `foodWeb={cum,prev,recent}` (`newFoodWeb()`, reset in `initWorld`,
+  round-trips snapshot/restore, reset in `applySnapshot`). The 7 flux counters (`herbFlora/carnHerb/omniFlora/
+  omniHerb/scavCarrion/apexCarn/apexScav`) are incremented at the eat sites in `faunaStep` with a bare `++` (NO
+  eRng -> balance-safe by construction, proven byte-identical). DOM (gate-blind, `main.js`): `renderFoodWeb()`
+  (a canvas diagram - node size = population, arrow thickness/opacity = recent flux, arrow points eater->prey)
+  + `FOOD_WEB_NODES` (the fixed layout/colors) + `_fwText` (contrast-aware label color); `#panelFoodWeb` in
+  index.html (canvas `#foodWebCanvas`, `#foodWebBadge`). Exports: `foodWeb, newFoodWeb, foodWebCensus,
+  foodWebSample, FOOD_WEB_EDGES`. See Engineering Lessons (Living Food Web + step()-path counters).
+- **Loop:** `init`, `step` (the per-tick pipeline; ends `chronicleSample();scenarioSample();speciesSample();foodWebSample()`), `loop`.
 - **Tests:** `runTests` (the gate; about 60 assertions).
 - **Boot:** `boot`, `dismissIntro`, intro start listener.
 
