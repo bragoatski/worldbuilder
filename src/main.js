@@ -12,7 +12,7 @@ import {
   _capType, _seed, _seedScenarioLife, activePreset, activeScenario, applyClimate, applyElevationIntensity,
   applySnapshot, applyWorldCode, aridity, baseArid, baseTemp, biomeBoundary, bloomEvent, brushTerrain,
   buildSnapshot, carrion, chronicle, chronicleNote, chronicleStats, clamp, clearScenario, computeAridity,
-  deathParticles, decodeWorldCode, droughtEvent, elev, fauna, flora, floraRemnants, generateRivers,
+  deathParticles, decodeWorldCode, droughtEvent, elev, fauna, flora, floraRemnants, foodWebCensus, generateRivers,
   getSpeciesName, grid, hsv2hex, idx, inb, initWorld, initialScenarioStatus, lakeShapes, landCoverage,
   makeFauna, meteorStrike, peakVolcano, popHistory, reclassTerrain, riverData, riverGenerated, runAssertions,
   seasonPhase, seedFaunaGroup, seedFloraCluster, setActiveScenario, setDeathParticles, setWorldSize, speciesCensus,
@@ -481,7 +481,7 @@ function draw(){
   }ctx.globalAlpha=1.0;setDeathParticles(aliveParticles);
   // Carrion (scavenger food): a small dark speck where a corpse lies (only present when scavengers are on).
   if(CFG.ecoRender&&carrion.length){ctx.fillStyle='#5a5048';for(var cq=0;cq<carrion.length;cq++){var cc2=carrion[cq];if(!cc2)continue;var cwv=riverData&&riverData[idx(cc2.x,cc2.y)];if(cwv&&cwv.lake)continue;ctx.fillRect(cc2.x*PIX+((PIX/2)|0),cc2.y*PIX+((PIX/2)|0),1,1);}}
-  drawHUD();renderChronicle();renderObjective();renderSpecies();updateFollow();
+  drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
 }
 
 // ===== Inspector =====
@@ -538,6 +538,7 @@ function exportPNG(){try{var url=canvas.toDataURL('image/png');var a=document.cr
 function exportJSON(){try{var snapshot=buildSnapshot();var json=JSON.stringify(snapshot,null,2);var blob=new Blob([json],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='worldbuilder_'+W+'x'+H+'_tick'+tick+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Export error: '+e.message;}}}
 function importJSON(data){try{
   applySnapshot(data);                    // pure state load (validates + reassigns sim state, DOM-free)
+  followId=null;                          // the loaded world has its own ids; drop any follow from the prior world
   resize();
   var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;
   var seedInp=document.getElementById('seedInput');if(seedInp)seedInp.value=_seed;
@@ -586,7 +587,7 @@ function drawPopGraph(){
   var hist=popHistory;if(!hist.flora.length)return;
   var scavH=hist.scav||[],apexH=hist.apex||[],omniH=hist.omni||[]; // may be absent on old snapshots
   // Find max across all series for scaling
-  var maxVal=10;for(var mi=0;mi<hist.flora.length;mi++){if(hist.flora[mi]>maxVal)maxVal=hist.flora[mi];if(hist.herb[mi]*4>maxVal)maxVal=hist.herb[mi]*4;if(hist.carn[mi]*4>maxVal)maxVal=hist.carn[mi]*4;}
+  var maxVal=10;for(var mi=0;mi<hist.flora.length;mi++){if(hist.flora[mi]>maxVal)maxVal=hist.flora[mi];if(hist.herb[mi]*4>maxVal)maxVal=hist.herb[mi]*4;if(hist.carn[mi]*4>maxVal)maxVal=hist.carn[mi]*4;if((scavH[mi]||0)*4>maxVal)maxVal=(scavH[mi]||0)*4;if((apexH[mi]||0)*4>maxVal)maxVal=(apexH[mi]||0)*4;if((omniH[mi]||0)*4>maxVal)maxVal=(omniH[mi]||0)*4;}
   maxVal=maxVal*1.1; // 10% headroom
   var n=hist.flora.length;var xStep=w/Math.max(1,n-1);
   // Grid lines
@@ -704,6 +705,55 @@ function renderSpecies(){
   var badge=document.getElementById('speciesBadge'); if(badge) badge.textContent=String(shown.length);
 }
 
+// ===== Living Food Web: a canvas node-link diagram of the 5-tier trophic structure =====
+// Pure OBSERVER render (like drawPopGraph / renderSpecies): reads foodWebCensus() and draws each tier as a
+// node sized by population, each feeding relationship as an arrow whose thickness/opacity tracks the RECENT
+// feeding flux (deltas the sim samples every 10 ticks). So the food web the docs describe becomes something
+// you watch: a carnivore boom swells its node, the apex crops it, the omnivore re-crowds the base. Gate-blind
+// DOM; the foodWebCensus core it reads is gate-tested.
+var FOOD_WEB_NODES = {
+  flora:    {x:0.30,y:0.86,color:'#3fcf6a',label:'Flora'},
+  carrion:  {x:0.76,y:0.86,color:'#6b5545',label:'Carrion'},
+  herbivore:{x:0.35,y:0.60,color:'#e6dcbc',label:'Herbivore'},
+  carnivore:{x:0.17,y:0.33,color:'#6c7687',label:'Carnivore'},
+  omnivore: {x:0.55,y:0.45,color:'#7b4c87',label:'Omnivore'},
+  scavenger:{x:0.84,y:0.57,color:'#818753',label:'Scavenger'},
+  apex:     {x:0.36,y:0.11,color:'#823841',label:'Apex'}
+};
+// Contrast-aware label color: dark text on a light node, light text on a dark node (perceived luminance).
+function _fwText(hex){var n=parseInt(hex.slice(1),16),r=(n>>16)&255,g=(n>>8)&255,b=n&255;return (0.299*r+0.587*g+0.114*b)>140?'#10141c':'#eef2f7';}
+function renderFoodWeb(){
+  var gc=document.getElementById('foodWebCanvas'); if(!gc) return; var ctx=gc.getContext('2d'); if(!ctx) return;
+  var w=gc.width,h=gc.height; ctx.clearRect(0,0,w,h); ctx.fillStyle='#080b10'; ctx.fillRect(0,0,w,h);
+  var cen=foodWebCensus(), tiers=cen.tiers, flux=cen.flux;
+  function px(id){var nd=FOOD_WEB_NODES[id];return {x:nd.x*w,y:nd.y*h};}
+  function rad(id){var pop=tiers[id]?tiers[id].pop:0;return clamp(6+Math.sqrt(pop)*1.3,6,Math.min(26,h*0.14));}
+  // Edges first (behind the nodes). Thickness + opacity from the recent flux; a faint dashed line when idle so
+  // the topology stays legible even with no feeding this window. Arrow points eater -> prey ("X eats Y").
+  for(var e=0;e<cen.edges.length;e++){var ed=cen.edges[e];var a=px(ed.from),b=px(ed.to);var fv=flux[ed.key]||0;
+    var lw=clamp(0.6+Math.sqrt(fv)*0.9,0.6,7), op=fv>0?clamp(0.35+fv*0.04,0.35,0.92):0.14;
+    var ra=rad(ed.from),rb=rad(ed.to),dx=b.x-a.x,dy=b.y-a.y,len=Math.max(1,Math.sqrt(dx*dx+dy*dy)),ux=dx/len,uy=dy/len;
+    var ax=a.x+ux*ra,ay=a.y+uy*ra,bx=b.x-ux*(rb+5),by=b.y-uy*(rb+5);
+    ctx.strokeStyle=FOOD_WEB_NODES[ed.from].color; ctx.globalAlpha=op; ctx.lineWidth=lw;
+    ctx.setLineDash(fv>0?[]:[3,3]); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke(); ctx.setLineDash([]);
+    var ah=5+lw; ctx.globalAlpha=Math.max(op,0.4); ctx.fillStyle=FOOD_WEB_NODES[ed.from].color;
+    ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx-ux*ah-uy*ah*0.5,by-uy*ah+ux*ah*0.5); ctx.lineTo(bx-ux*ah+uy*ah*0.5,by-uy*ah-ux*ah*0.5); ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  var order=['flora','carrion','herbivore','carnivore','omnivore','scavenger','apex'];
+  for(var n=0;n<order.length;n++){var id=order[n],p=px(id),r=rad(id),nd=FOOD_WEB_NODES[id],pop=tiers[id]?tiers[id].pop:0;
+    ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fillStyle=nd.color; ctx.fill();
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.stroke();
+    ctx.fillStyle=_fwText(nd.color); ctx.font='bold '+(r>=12?11:9)+'px "JetBrains Mono",monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(String(pop),p.x,p.y);
+    ctx.fillStyle='#7c8798'; ctx.font='9px "JetBrains Mono",monospace'; ctx.textBaseline='top';
+    ctx.fillText(nd.label,p.x,p.y+r+2);
+  }
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  var badge=document.getElementById('foodWebBadge');
+  if(badge){ var live=tiers.herbivore.pop+tiers.carnivore.pop+tiers.scavenger.pop+tiers.apex.pop+tiers.omnivore.pop; badge.textContent=String(live); }
+}
+
 // ===== God powers (chunk 3, pillar D): deliberate interventions with Chronicle-logged consequence =====
 // PURE sim-core mutations (no DOM); the button/click hooks below call these then draw(). NONE run inside
 // step(), so they sit OUTSIDE the measured ecology loop -> the harness balance is byte-identical (they are
@@ -749,6 +799,7 @@ var _scenWarmTimer=null;
 function startScenario(id){
   var def=SCENARIOS[id]; if(!def) return;
   if(_scenWarmTimer){ clearTimeout(_scenWarmTimer); _scenWarmTimer=null; }
+  followId=null; // this launch path bypasses init(); initWorld below re-issues ids from 1, so drop any stale follow
   running=false;
   _applyPresetCfg(def.preset);
   initWorld(def.seed);placeMode='none';resetZoomPan();
@@ -776,6 +827,13 @@ function startScenario(id){
 // ===== Init & loop =====
 var _pendingWorldCode = getWorldCodeParam();
 function init(){
+  // Cancel any in-flight scenario warmup: init() is the shared rebuild path (reset / roll-seed / map-size /
+  // preset / sandbox / 'r'), and an orphaned _scenWarmTimer would keep step()-ing + seeding scenario life into
+  // the fresh world, then throw on the now-null activeScenario. startScenario clears it on re-entry; init must too.
+  if(_scenWarmTimer){ clearTimeout(_scenWarmTimer); _scenWarmTimer=null; }
+  // A rebuilt world re-issues fauna ids from 1, so a stale followId would re-attach the camera to an unrelated
+  // creature (or spuriously report "the creature you were following has died"). Drop the follow on any rebuild.
+  followId=null;
   if(_pendingWorldCode){
     var wc=_pendingWorldCode; _pendingWorldCode=null;
     try{

@@ -1087,15 +1087,15 @@ function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIn
       for(var bi=0;bi<biteCount&&floraHere.length>0;bi++){var eatIdx=floraHere[0];if(flora[eatIdx]){var eatenFlora=flora[eatIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.herbivoreEatGain*(0.7+eatenFlora.health*0.5));
       // Regrowth remnant: roots survive grazing
       if(eRng()<CFG.floraRegrowthChance){floraRemnants.push({x:eatenFlora.x,y:eatenFlora.y,prefs:{prefArid:eatenFlora.prefArid,prefTemp:eatenFlora.prefTemp,prefSL:eatenFlora.prefSL,tolerance:eatenFlora.tolerance,hue:eatenFlora.hue,sat:eatenFlora.sat,val:eatenFlora.val,gen:eatenFlora.gen},tickDue:tick+CFG.floraRegrowthDelay});}
-      flora[eatIdx]=null;floraHere.shift();}}f.eatCD=CFG.herbivoreEatSpeed;}}else if(f.type==='scavenger'){
+      flora[eatIdx]=null;floraHere.shift();foodWeb.cum.herbFlora++;}}f.eatCD=CFG.herbivoreEatSpeed;}}else if(f.type==='scavenger'){
       // Scavenger: consume a corpse on the current or an adjacent tile (the death flux the 3-tier web wastes).
       var feedTiles=[tileIdx];var adjF=neighbors4(f.x,f.y);for(var fti2=0;fti2<adjF.length;fti2++){var fti3=idx(adjF[fti2][0],adjF[fti2][1]);if(grid[fti3]!==T.OCEAN)feedTiles.push(fti3);}
-      var fed=false;for(var ftk=0;ftk<feedTiles.length&&!fed;ftk++){var crHere=_carrionAtTile[feedTiles[ftk]];if(crHere&&crHere.length>0){var carIdx=crHere[0];if(carrion[carIdx]){f.energy=Math.min(f.maxEnergy,f.energy+CFG.scavengerEatGain);carrion[carIdx]=null;crHere.shift();f.eatCD=CFG.scavengerSpeed;fed=true;}}}
+      var fed=false;for(var ftk=0;ftk<feedTiles.length&&!fed;ftk++){var crHere=_carrionAtTile[feedTiles[ftk]];if(crHere&&crHere.length>0){var carIdx=crHere[0];if(carrion[carIdx]){f.energy=Math.min(f.maxEnergy,f.energy+CFG.scavengerEatGain);carrion[carIdx]=null;foodWeb.cum.scavCarrion++;crHere.shift();f.eatCD=CFG.scavengerSpeed;fed=true;}}}
     }else if(f.type==='apex'){
       // Apex predator: hunt a MID-tier consumer (carnivore preferred, else scavenger) on the current or an
       // adjacent tile. A kill drops carrion (feeds the scavengers) and flashes a 'kill' particle.
       var apxTiles=[tileIdx];var adjP=neighbors4(f.x,f.y);for(var pti=0;pti<adjP.length;pti++){var pti2=idx(adjP[pti][0],adjP[pti][1]);if(grid[pti2]!==T.OCEAN)apxTiles.push(pti2);}
-      var killed=false;for(var kt=0;kt<apxTiles.length&&!killed;kt++){var preyList=_carnAtTile[apxTiles[kt]]||_scavAtTile[apxTiles[kt]];if(preyList&&preyList.length>0){var aPreyIdx=preyList[0];if(fauna[aPreyIdx]){var aPrey=fauna[aPreyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.apexEatGain);deathParticles.push({x:aPrey.x,y:aPrey.y,type:'kill',tick:tick});_dropCarrion(aPrey.x,aPrey.y);fauna[aPreyIdx]=null;preyList.shift();f.eatCD=CFG.apexEatSpeed;killed=true;}}}
+      var killed=false;for(var kt=0;kt<apxTiles.length&&!killed;kt++){var preyList=_carnAtTile[apxTiles[kt]]||_scavAtTile[apxTiles[kt]];if(preyList&&preyList.length>0){var aPreyIdx=preyList[0];if(fauna[aPreyIdx]){var aPrey=fauna[aPreyIdx];if(aPrey.type==='scavenger')foodWeb.cum.apexScav++;else foodWeb.cum.apexCarn++;f.energy=Math.min(f.maxEnergy,f.energy+CFG.apexEatGain);deathParticles.push({x:aPrey.x,y:aPrey.y,type:'kill',tick:tick});_dropCarrion(aPrey.x,aPrey.y);fauna[aPreyIdx]=null;preyList.shift();f.eatCD=CFG.apexEatSpeed;killed=true;}}}
     }else if(f.type==='omnivore'){
       // Omnivore: opportunistic generalist making ONE feeding action per cooldown (shared eatCD, no double-dipping).
       // Graze a plant on the current tile if one is there (its abundant staple, less efficiently than a herbivore),
@@ -1104,13 +1104,13 @@ function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIn
       var oFlora=_floraAtTile[tileIdx];
       if(oFlora&&oFlora.length>0){var oEat=oFlora[0];if(flora[oEat]){var oPlant=flora[oEat];f.energy=Math.min(f.maxEnergy,f.energy+CFG.omnivoreFloraEatGain*(0.7+oPlant.health*0.5));
         if(eRng()<CFG.floraRegrowthChance){floraRemnants.push({x:oPlant.x,y:oPlant.y,prefs:{prefArid:oPlant.prefArid,prefTemp:oPlant.prefTemp,prefSL:oPlant.prefSL,tolerance:oPlant.tolerance,hue:oPlant.hue,sat:oPlant.sat,val:oPlant.val,gen:oPlant.gen},tickDue:tick+CFG.floraRegrowthDelay});}
-        flora[oEat]=null;oFlora.shift();f.eatCD=CFG.omnivoreEatSpeed;}}
+        flora[oEat]=null;oFlora.shift();foodWeb.cum.omniFlora++;f.eatCD=CFG.omnivoreEatSpeed;}}
       else{var oHuntTiles=[tileIdx];var adjO2=neighbors4(f.x,f.y);for(var ohi=0;ohi<adjO2.length;ohi++){var ohti=idx(adjO2[ohi][0],adjO2[ohi][1]);if(grid[ohti]!==T.OCEAN)oHuntTiles.push(ohti);}
-        var oHunted=false;for(var oht=0;oht<oHuntTiles.length&&!oHunted;oht++){var oHerb=_herbAtTile[oHuntTiles[oht]];if(oHerb&&oHerb.length>0){var oPreyIdx=oHerb[0];if(fauna[oPreyIdx]){var oPrey=fauna[oPreyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.omnivorePreyEatGain);deathParticles.push({x:oPrey.x,y:oPrey.y,type:'kill',tick:tick});_dropCarrion(oPrey.x,oPrey.y);fauna[oPreyIdx]=null;oHerb.shift();f.eatCD=CFG.omnivoreEatSpeed;oHunted=true;}}}}
+        var oHunted=false;for(var oht=0;oht<oHuntTiles.length&&!oHunted;oht++){var oHerb=_herbAtTile[oHuntTiles[oht]];if(oHerb&&oHerb.length>0){var oPreyIdx=oHerb[0];if(fauna[oPreyIdx]){var oPrey=fauna[oPreyIdx];foodWeb.cum.omniHerb++;f.energy=Math.min(f.maxEnergy,f.energy+CFG.omnivorePreyEatGain);deathParticles.push({x:oPrey.x,y:oPrey.y,type:'kill',tick:tick});_dropCarrion(oPrey.x,oPrey.y);fauna[oPreyIdx]=null;oHerb.shift();f.eatCD=CFG.omnivoreEatSpeed;oHunted=true;}}}}
     }else{
       // Carnivore hunting: check current tile AND adjacent tiles
       var huntTiles=[tileIdx];var adjH=neighbors4(f.x,f.y);for(var hi=0;hi<adjH.length;hi++){var hti=idx(adjH[hi][0],adjH[hi][1]);if(grid[hti]!==T.OCEAN)huntTiles.push(hti);}
-      var hunted=false;for(var ht=0;ht<huntTiles.length&&!hunted;ht++){var herbHere=_herbAtTile[huntTiles[ht]];if(herbHere&&herbHere.length>0){var preyIdx=herbHere[0];if(fauna[preyIdx]){var prey=fauna[preyIdx];f.energy=Math.min(f.maxEnergy,f.energy+CFG.carnivoreEatGain);deathParticles.push({x:prey.x,y:prey.y,type:'kill',tick:tick});_dropCarrion(prey.x,prey.y);fauna[preyIdx]=null;herbHere.shift();f.eatCD=CFG.carnivoreEatSpeed;hunted=true;}}}}}    var reproThresh=isHerb?CFG.faunaReproThreshold:(f.type==='scavenger'?CFG.scavengerReproThreshold:(f.type==='apex'?CFG.apexReproThreshold:(f.type==='omnivore'?CFG.omnivoreReproThreshold:CFG.carnivoreReproThreshold)));var reproCost=isHerb?CFG.faunaReproCost:(f.type==='scavenger'?CFG.scavengerReproCost:(f.type==='apex'?CFG.apexReproCost:(f.type==='omnivore'?CFG.omnivoreReproCost:CFG.carnivoreReproCost)));
+      var hunted=false;for(var ht=0;ht<huntTiles.length&&!hunted;ht++){var herbHere=_herbAtTile[huntTiles[ht]];if(herbHere&&herbHere.length>0){var preyIdx=herbHere[0];if(fauna[preyIdx]){var prey=fauna[preyIdx];foodWeb.cum.carnHerb++;f.energy=Math.min(f.maxEnergy,f.energy+CFG.carnivoreEatGain);deathParticles.push({x:prey.x,y:prey.y,type:'kill',tick:tick});_dropCarrion(prey.x,prey.y);fauna[preyIdx]=null;herbHere.shift();f.eatCD=CFG.carnivoreEatSpeed;hunted=true;}}}}}    var reproThresh=isHerb?CFG.faunaReproThreshold:(f.type==='scavenger'?CFG.scavengerReproThreshold:(f.type==='apex'?CFG.apexReproThreshold:(f.type==='omnivore'?CFG.omnivoreReproThreshold:CFG.carnivoreReproThreshold)));var reproCost=isHerb?CFG.faunaReproCost:(f.type==='scavenger'?CFG.scavengerReproCost:(f.type==='apex'?CFG.apexReproCost:(f.type==='omnivore'?CFG.omnivoreReproCost:CFG.carnivoreReproCost)));
     if(f.energy>=reproThresh&&fauna.length+newFauna.length<CFG.faunaMaxPop){var reproCands=neighbors4(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(reproCands.length>0){f.energy-=reproCost;var dest=reproCands[(eRng()*reproCands.length)|0];newFauna.push(eRng()<CFG.faunaMutationChance?mutateFaunaChild(f,dest[0],dest[1]):cloneFaunaChild(f,dest[0],dest[1]));}}}
   flora=flora.filter(function(f){return f!==null;});fauna=fauna.filter(function(f){return f!==null;});for(var j=0;j<newFauna.length;j++)fauna.push(newFauna[j]);
   // Carrion lifecycle: drop eaten (nulled) + rotted corpses. Empty when scavengers are off (never created).
@@ -1147,7 +1147,7 @@ function applyWorldCode(data){
   if(data.scen&&SCENARIOS[data.scen]){ applyScenarioDef(SCENARIOS[data.scen]); return data; }
   for(var k in DEFAULT_CFG){ if(DEFAULT_CFG.hasOwnProperty(k)) CFG[k]=DEFAULT_CFG[k]; }
   if(data.cfg&&typeof data.cfg==='object'){
-    for(var ck in data.cfg){ if(Object.prototype.hasOwnProperty.call(data.cfg,ck)&&DEFAULT_CFG.hasOwnProperty(ck)&&typeof data.cfg[ck]===typeof DEFAULT_CFG[ck]) CFG[ck]=data.cfg[ck]; }
+    for(var ck in data.cfg){ if(Object.prototype.hasOwnProperty.call(data.cfg,ck)&&DEFAULT_CFG.hasOwnProperty(ck)&&typeof data.cfg[ck]===typeof DEFAULT_CFG[ck]&&(typeof data.cfg[ck]!=='number'||isFinite(data.cfg[ck]))) CFG[ck]=data.cfg[ck]; }
   }
   if(data.preset&&PRESETS[data.preset]) activePreset=data.preset;
   clearScenario(); // a plain world code is a sandbox world, not a scenario
@@ -1211,7 +1211,11 @@ function chronicleStats(){
   var herb=0,carn=0,hv=0,cv=0,mhg=0,mcg=0,oldestAge=0,oldestRef=null,topHerb=null,topCarn=null,maxSize=0,bigRef=null;
   for(var i=0;i<fauna.length;i++){var f=fauna[i];if(!f)continue;
     if(f.type==='herbivore'){herb++;if(f.vivid)hv++;if(f.gen>mhg){mhg=f.gen;topHerb=f;}}
-    else{carn++;if(f.vivid)cv++;if(f.gen>mcg){mcg=f.gen;topCarn=f;}}
+    else if(f.type==='carnivore'){carn++;if(f.vivid)cv++;if(f.gen>mcg){mcg=f.gen;topCarn=f;}}
+    // scavenger/apex/omnivore are NOT carnivores - they have their own tiers everywhere else (popHistory,
+    // naturalFaunaSpawn, the Species panel), so they must not inflate the 'carn' stat that drives the
+    // Chronicle predator beats, the postcard, and the scenario objectives. (They still count toward the
+    // oldest/biggest records below, which are per-creature-of-any-type.)
     if(f.age>oldestAge){oldestAge=f.age;oldestRef=f;}
     if((f.size||1)>maxSize){maxSize=f.size||1;bigRef=f;}}
   return { flora:flora.length, herb:herb, carn:carn, herbVivid:hv, carnVivid:cv, maxHerbGen:mhg, maxCarnGen:mcg,
@@ -1313,6 +1317,52 @@ function speciesSample(){
   if(!speciesRegistry||!speciesRegistry.byKey) speciesRegistry=newSpeciesRegistry();
   var events=updateSpeciesRegistry(speciesCensus(),speciesRegistry,tick);
   for(var i=0;i<events.length;i++) chronicleAdd(events[i].kind,events[i].text,events[i].color);
+}
+
+// ======================================================================
+//  LIVING FOOD WEB (legibility): a PURE OBSERVER of the trophic structure
+// ======================================================================
+// Makes the completed 5-tier web visible: who eats whom, how many of each, and how much FEEDING flows along
+// each edge right now. Same balance-safe shape as the Chronicle / Species observers - it READS fauna + a set
+// of plain integer counters and mutates no fauna/flora/RNG, so the measured ecology loop is byte-identical.
+// The flux counters below are incremented at the eat sites in faunaStep with a bare ++ (NO eRng draw), so
+// turning them on does NOT shift the stream (proven byte-identical by `npm run measure` before/after).
+// foodWebSample() derives a RECENT-window flux (delta since the last sample) so the panel shows the world's
+// CURRENT feeding activity, not an ever-growing lifetime total.
+// The fixed trophic TOPOLOGY (who can eat whom); the render lays the edges out from this. Each edge names the
+// flux counter it reads. 'flora' and 'carrion' are resource nodes (not fauna tiers).
+var FOOD_WEB_EDGES = [
+  {from:'herbivore',to:'flora',key:'herbFlora'},
+  {from:'carnivore',to:'herbivore',key:'carnHerb'},
+  {from:'omnivore',to:'flora',key:'omniFlora'},
+  {from:'omnivore',to:'herbivore',key:'omniHerb'},
+  {from:'scavenger',to:'carrion',key:'scavCarrion'},
+  {from:'apex',to:'carnivore',key:'apexCarn'},
+  {from:'apex',to:'scavenger',key:'apexScav'}
+];
+var FOOD_WEB_FLUX_KEYS = ['herbFlora','carnHerb','omniFlora','omniHerb','scavCarrion','apexCarn','apexScav'];
+function _zeroFlux(){ return {herbFlora:0,carnHerb:0,omniFlora:0,omniHerb:0,scavCarrion:0,apexCarn:0,apexScav:0}; }
+function newFoodWeb(){ return { cum:_zeroFlux(), prev:_zeroFlux(), recent:_zeroFlux() }; }
+var foodWeb = newFoodWeb();
+// Read-only observer at the END of step() (Chronicle cadence): recent flux = cumulative eats since the last
+// sample. No eRng, no fauna mutation -> harness byte-identical (like chronicleSample / speciesSample).
+function foodWebSample(){
+  if(tick%CHRONICLE_SAMPLE_EVERY!==0) return;
+  if(!foodWeb||!foodWeb.cum) foodWeb=newFoodWeb();
+  for(var i=0;i<FOOD_WEB_FLUX_KEYS.length;i++){var k=FOOD_WEB_FLUX_KEYS[i];foodWeb.recent[k]=foodWeb.cum[k]-foodWeb.prev[k];foodWeb.prev[k]=foodWeb.cum[k];}
+}
+// Pure census the panel renders: per-tier population + mean energy (a rough health read), the flora/carrion
+// resource pools, and the recent per-edge flux. Takes an explicit list so the gate can bucket synthetic
+// fauna; reads only live state + draws no RNG, so it is gate-testable without a warm world.
+function foodWebCensus(list){
+  var fl=list||fauna;
+  var tiers={ flora:{pop:flora.length,meanEnergy:0}, carrion:{pop:carrion.length,meanEnergy:0},
+    herbivore:{pop:0,energy:0,meanEnergy:0}, carnivore:{pop:0,energy:0,meanEnergy:0},
+    scavenger:{pop:0,energy:0,meanEnergy:0}, apex:{pop:0,energy:0,meanEnergy:0}, omnivore:{pop:0,energy:0,meanEnergy:0} };
+  for(var i=0;i<fl.length;i++){var f=fl[i];if(!f)continue;var t=tiers[f.type];if(t&&t.energy!==undefined){t.pop++;t.energy+=(f.energy||0);}}
+  var keys=['herbivore','carnivore','scavenger','apex','omnivore'];
+  for(var j=0;j<keys.length;j++){var tt=tiers[keys[j]];tt.meanEnergy=tt.pop?tt.energy/tt.pop:0;}
+  return { tiers:tiers, edges:FOOD_WEB_EDGES, flux:(foodWeb&&foodWeb.recent)?foodWeb.recent:_zeroFlux() };
 }
 // DOM (gate-blind): the Species sidebar panel - the living census of established species + a records line.
 // The pure census/registry it renders are gate-covered; the panel itself is verified in the live app.
@@ -1541,7 +1591,7 @@ function initWorld(seedOverride){
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
   tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
-  popHistory={flora:[],herb:[],carn:[],scav:[],apex:[],omni:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];carrion=[];speciesNameCache={};chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();clearRivers();
+  popHistory={flora:[],herb:[],carn:[],scav:[],apex:[],omni:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];carrion=[];speciesNameCache={};chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();foodWeb=newFoodWeb();clearRivers();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
 }
@@ -1557,7 +1607,7 @@ function step(){
   // (The old code suppressed this whenever climate was on, which froze the base and made the seasonal delta
   // accumulate only once genesis stopped - the regime-dependence + drift bug. Base is climate-independent.)
   if(genesisChanged||tick%20===1){computeTemperature();computeAridity();}
-  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();chronicleSample();scenarioSample();speciesSample();
+  climateStep();applyClimate();reclassTerrain();floraStep();faunaStep();chronicleSample();scenarioSample();speciesSample();foodWebSample();
 }
 function runAssertions(){
   var out=[];var pass=0,fail=0;
@@ -1659,7 +1709,7 @@ function snapshotState(){
     seed:_seed, tick:tick, W:W, H:H,
     floraIdCounter:floraIdCounter, faunaIdCounter:faunaIdCounter,
     yearlyVariation:yearlyVariation, sunPhase:sunPhase, seasonAnchorTick:seasonAnchorTick, riverGenerated:riverGenerated,
-    WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache, chronicle:chronicle, speciesRegistry:speciesRegistry,
+    WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache, chronicle:chronicle, speciesRegistry:speciesRegistry, foodWeb:foodWeb,
     // terrain + volcano fields
     grid:grid, elev:elev, aridity:aridity, tempField:tempField, sunlight:sunlight,
     coastTTL:coastTTL, adjCooldown:adjCooldown, ringDone:ringDone, hillDecayCount:hillDecayCount,
@@ -1685,7 +1735,7 @@ function restoreState(snap){
   floraIdCounter=s.floraIdCounter; faunaIdCounter=s.faunaIdCounter;
   yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; seasonAnchorTick=s.seasonAnchorTick||0; riverGenerated=s.riverGenerated;
   _prevSeasonalTilt=!!CFG.seasonalTilt; _prevAnomalies=!!CFG.anomalies; // a restore is not a toggle edge
-  WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle(); speciesRegistry=s.speciesRegistry||newSpeciesRegistry();
+  WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle(); speciesRegistry=s.speciesRegistry||newSpeciesRegistry(); foodWeb=s.foodWeb||newFoodWeb();
   grid=s.grid; elev=s.elev; aridity=s.aridity; tempField=s.tempField; sunlight=s.sunlight;
   coastTTL=s.coastTTL; adjCooldown=s.adjCooldown; ringDone=s.ringDone; hillDecayCount=s.hillDecayCount;
   peakVolcano=s.peakVolcano; volcActive=s.volcActive; volcAge=s.volcAge; volcLife=s.volcLife;
@@ -1724,6 +1774,16 @@ function applySnapshot(data){
   grid=new Uint8Array(W*H);if(data.grid&&data.grid.length===W*H){grid=new Uint8Array(data.grid);}
   elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;
   flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];
+  // A JSON load starts a FRESH narrative: the wb-eco-1 format does not carry the Chronicle / species
+  // registry / population graph / carrion, so RESET them - otherwise the previous world in the tab bleeds
+  // in (phantom "the last predator vanished" beats, stale species extinctions, a graph tail from the old
+  // world, old corpses feeding the loaded scavengers). Mirrors the initWorld reset of the same state.
+  chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();speciesNameCache={};foodWeb=newFoodWeb();
+  popHistory={flora:[],herb:[],carn:[],scav:[],apex:[],omni:[],ticks:[]};carrion=[];deathParticles=[];
+  // Reconcile the id counters PAST the loaded life so a newly-born plant/creature cannot reuse a loaded id
+  // (which would make the follow-camera / lineage lookups lock onto an unrelated entity).
+  floraIdCounter=0;for(var _lf=0;_lf<flora.length;_lf++){if(flora[_lf]&&flora[_lf].id>floraIdCounter)floraIdCounter=flora[_lf].id;}
+  faunaIdCounter=0;for(var _af=0;_af<fauna.length;_af++){if(fauna[_af]&&fauna[_af].id>faunaIdCounter)faunaIdCounter=fauna[_af].id;}
   if(data.rivers&&Array.isArray(data.rivers)){riverData=data.rivers;riverGenerated=true;}else{clearRivers();}
   // A load is not a toggle edge: anchor the season clock at 0 (the JSON format does not carry climate-toggle
   // state, so a loaded world starts its season cycle fresh) and sync the edge detectors to the live CFG, so a
@@ -1770,6 +1830,8 @@ export {
   CHRONICLE_MAX_EVENTS,
   // speciation
   speciesKey, speciesCensus, updateSpeciesRegistry, newSpeciesRegistry, speciesRegistry, speciesSample,
+  // living food web
+  foodWeb, newFoodWeb, foodWebCensus, foodWebSample, FOOD_WEB_EDGES,
   // god powers
   brushTerrain, meteorStrike, droughtEvent, bloomEvent,
   // shareable worlds

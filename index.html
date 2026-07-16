@@ -534,6 +534,9 @@
   .pop-graph-canvas { width:100%; height:120px; display:block; border-radius:4px; background:var(--bg); border:1px solid var(--border); }
   .pop-graph-legend { display:flex; gap:12px; margin-top:4px; font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
   .pop-graph-legend .pg-dot { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; vertical-align:middle; }
+  .food-web-wrap { position:relative; }
+  .food-web-canvas { width:100%; height:200px; display:block; border-radius:4px; background:var(--bg); border:1px solid var(--border); }
+  .food-web-cap { margin-top:4px; font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
 
   /* Chronicle (the world's memory) */
   .chron-records { display:flex; flex-wrap:wrap; gap:3px 12px; font-family:var(--mono); font-size:10px; color:var(--fg-dim); margin-bottom:7px; }
@@ -932,6 +935,21 @@
           <div class="panel-body">
             <div class="chron-records" id="speciesRecords"></div>
             <div class="sp-list" id="speciesBody"><div class="chron-empty">No distinct species yet. Lineages must diverge and mature.</div></div>
+          </div>
+        </div>
+
+        <!-- Living Food Web: the trophic structure made visible (nodes = tiers, arrows = feeding) -->
+        <div class="panel" id="panelFoodWeb">
+          <div class="panel-head" onclick="togglePanel('panelFoodWeb')">
+            <span class="chev">▼</span>
+            <h3>Food Web</h3>
+            <span class="badge" id="foodWebBadge">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="food-web-wrap">
+              <canvas class="food-web-canvas" id="foodWebCanvas" width="356" height="200"></canvas>
+            </div>
+            <div class="food-web-cap">Node size = population · arrow thickness = recent feeding</div>
           </div>
         </div>
 

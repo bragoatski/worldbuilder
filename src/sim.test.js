@@ -603,6 +603,60 @@ describe('speciation (chunk 6, pillar C)', () => {
   });
 });
 
+// Living Food Web (legibility): a PURE OBSERVER of the trophic structure - per-tier populations + the recent
+// feeding FLUX along each edge, sampled every 10 ticks. Balance-safe like the Chronicle/Species observers: the
+// flux counters are incremented at the faunaStep eat sites with a bare ++ (no eRng), so the measured ecology
+// stream is byte-identical (proven separately with npm run measure). Gate properties: (1) the census buckets
+// fauna by tier correctly and exposes the fixed topology; (2) the flux is recorded during a run and REPLAYS
+// identically (deterministic, no stray randomness), which is the unit-level half of the balance-safe proof.
+describe('living food web (trophic structure observer)', () => {
+  it('the pure census buckets fauna by tier, reports mean energy, and exposes the 7-edge topology', () => {
+    sim.initWorld(1234); // fresh world -> flora/carrion resource pools are 0 (deterministic)
+    const list = [
+      { type: 'herbivore', energy: 10 }, { type: 'herbivore', energy: 20 },
+      { type: 'carnivore', energy: 30 },
+      { type: 'scavenger', energy: 40 },
+      { type: 'apex', energy: 50 },
+      { type: 'omnivore', energy: 60 }, { type: 'omnivore', energy: 20 },
+      null, // array holes are tolerated (null-then-compact convention)
+    ];
+    const cen = sim.foodWebCensus(list);
+    expect(cen.tiers.herbivore.pop).toBe(2);
+    expect(cen.tiers.herbivore.meanEnergy).toBeCloseTo(15, 5);
+    expect(cen.tiers.carnivore.pop).toBe(1);
+    expect(cen.tiers.scavenger.pop).toBe(1);
+    expect(cen.tiers.apex.pop).toBe(1);
+    expect(cen.tiers.omnivore.pop).toBe(2);
+    expect(cen.tiers.omnivore.meanEnergy).toBeCloseTo(40, 5);
+    expect(cen.tiers.flora.pop).toBe(0);   // resource nodes read live sim state
+    expect(cen.tiers.carrion.pop).toBe(0);
+    expect(cen.edges.length).toBe(7);
+    expect(cen.edges.map((e) => e.key).sort()).toEqual(
+      ['apexCarn', 'apexScav', 'carnHerb', 'herbFlora', 'omniFlora', 'omniHerb', 'scavCarrion'].sort()
+    );
+    // the census exposes the RECENT-window flux, not the lifetime cumulative totals (guards a cum/recent mixup)
+    expect(cen.flux).toBe(sim.foodWeb.recent);
+    expect(cen.flux).not.toBe(sim.foodWeb.cum);
+  });
+
+  it('feeding flux is recorded during a run and replays identically (deterministic, no eRng)', () => {
+    function run() {
+      sim.initWorld(2024);
+      for (let i = 0; i < 1200; i++) sim.step();
+      sim.seedFloraCluster(40);
+      sim.seedFaunaGroup('herbivore', 40);
+      sim.seedFaunaGroup('carnivore', 12);
+      for (let i = 0; i < 400; i++) sim.step();
+      return { herbFlora: sim.foodWeb.cum.herbFlora, carnHerb: sim.foodWeb.cum.carnHerb, recent: JSON.stringify(sim.foodWeb.recent) };
+    }
+    const a = run(), b = run();
+    expect(a.herbFlora).toBeGreaterThan(0); // grazing happened and was counted
+    expect(b.herbFlora).toBe(a.herbFlora);  // the flux counters are deterministic (pure ++, no RNG)
+    expect(b.carnHerb).toBe(a.carnHerb);
+    expect(b.recent).toBe(a.recent);        // the sampled recent-window replays identically
+  }, 120000);
+});
+
 // Trophic depth: the SCAVENGER tier (chunk 7, SHIPPED default-ON). A detritivore that eats CARRION (dead-fauna
 // corpses) - the trophic addition least likely to break the C2 balance because it adds no predation pressure
 // on the living tiers, only harvests the death flux. Chunk 6 shipped it default-OFF (untuned it starved at 0%
