@@ -17,9 +17,15 @@ TBD - see `docs/01 Design/North Star and Roadmap.md`. Until Kevin pins it, the w
 - **Never paste the whole file into context.** Navigate via `docs/02 Code/CodeMap.md`. Re-grep by function name if a line number is stale.
 - The big systems and where they live: terrain generation (genesis / erosion / volcano passes), climate (`climateStep`), biome classification (`classifyTile` / `reclassTerrain`), rivers (`generateRivers` / `drawRivers`), beaches (`beachStep`), the ecosystem (`floraStep`, `faunaStep`, `scoreTileForFauna`), rendering (`draw`), tests (`runTests`).
 
-## The gate
-The authoritative "does it RUN" gate is the in-page test suite: open `index.html`, click **Test** (or press `T`), confirm 0 failed (the badge shows pass / fail). About 60 assertions covering biome classification, climate bounds, terrain, ecology, competition, grazing, and adaptive mutation.
-- KNOWN GAP: there is no headless / CLI runner yet, so the gate is currently MANUAL. Building a headless multi-seed harness is an early priority (it is also the unlock for tuning the ecosystem - see STATUS). Until then, after any logic change, run the in-page tests and confirm green before considering it done.
+## Checkpoint contract
+Read by the global `/wrap`, `/gate`, `/handoff`, `/lesson`, and `/codemap` commands, which hold the ritual. This block holds only the Worldbuilder nouns.
+
+- **Gate:** `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. These four are exactly what CI enforces on every push (`.github/workflows/ci.yml`), so a green local run predicts a green deploy. The vitest suite is `src/sim.test.js` (50 test cases, ~196 assertions).
+- **The gate is headless and complete.** `npm test` is a strict SUPERSET of the in-page suite, not a substitute for it: `src/sim.test.js` calls the same `sim.runAssertions()` (`src/sim.js:1612`) that the in-page **T** key runs (`src/main.js:868`), then adds 13 further describe blocks. There is no manual step required for coverage.
+- **Seeing the sim** (visual and tuning work only, never for coverage): `npm run dev`, open `http://localhost:5173/worldbuilder/`, press **T**. The `/worldbuilder/` path is required - `vite.config.js` sets `base: '/worldbuilder/'`. Opening `index.html` from disk renders a BLANK page: it loads `/src/main.js` as a root-absolute ES module, which fails over `file://`.
+- **Durable record:** `STATUS.md` (overwritten current truth) + `docs/04 Handoffs/` (append-only, dated) + `docs/02 Code/CodeMap.md` (navigation) + `docs/02 Code/Engineering Lessons.md` (rule / why / Verified date).
+- **Deploy:** push to `main`. CI runs the gate and, if green, publishes `dist/` to GitHub Pages (https://bragoatski.github.io/worldbuilder/). There is no manual approval step, so **pushing main IS deploying** - treat it as a deliberate, separately-requested act, never a side effect of a checkpoint. Verify live by confirming the new bundle hash returns HTTP 200.
+- **Doc conventions:** no emojis, no em dashes, terse.
 
 ## Working rules
 - Inherit everything in `~/.claude/CLAUDE.md` (operating model, ceremony-to-risk, YAGNI ladder, two gates, docs-are-memory, agent workflow, taste). This file only adds Worldbuilder specifics.
