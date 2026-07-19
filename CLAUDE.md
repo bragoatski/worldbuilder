@@ -6,7 +6,8 @@ You are working on **Worldbuilder**, a procedural terrain + ecology simulator. T
 Read `STATUS.md` (current truth + the next step), then the newest file in `docs/04 Handoffs/` (a self-contained brief for the last unit of work). STATUS.md is overwritten to current truth; handoffs are the append-only log.
 
 ## What this is
-- A single self-contained file: `index.html` (~1150 lines, vanilla JS + a 2D canvas, no build, no deps). Open it in a browser to run it.
+- Vanilla JS + a 2D canvas with **no runtime dependencies and no framework** - but it is a Vite project, not a loose file. Source is `index.html` (1,024 lines: markup + the control UI), `src/sim.js` (1,845 lines: the entire simulation), `src/main.js` (909 lines: render, input, DOM wiring), and `src/sim.test.js` (1,005 lines). Dev deps only: vite, vitest, eslint, typescript.
+- **Run it with `npm run dev`, then open `http://localhost:5173/worldbuilder/`.** Opening `index.html` from disk renders a BLANK page - it loads `/src/main.js` as a root-absolute ES module, which `file://` cannot serve, and `vite.config.js` sets `base: '/worldbuilder/'` to match the GitHub Pages path. `npm run build` emits `dist/`, which CI publishes to Pages.
 - A seeded generation pipeline: volcanic terrain genesis, erosion, climate (sunlight / temperature / aridity), 16 biomes.
 - A living ecosystem on top (NOT seeded - see the reproducibility lesson): flora with climate fitness + evolution, herbivores and carnivores with energy / aging / mutation, plus rivers and beaches.
 
@@ -20,7 +21,7 @@ TBD - see `docs/01 Design/North Star and Roadmap.md`. Until Kevin pins it, the w
 ## Checkpoint contract
 Read by the global `/wrap`, `/gate`, `/handoff`, `/lesson`, and `/codemap` commands, which hold the ritual. This block holds only the Worldbuilder nouns.
 
-- **Gate:** `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. These four are exactly what CI enforces on every push (`.github/workflows/ci.yml`), so a green local run predicts a green deploy. The vitest suite is `src/sim.test.js` (50 test cases, ~196 assertions).
+- **Gate:** `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. These four are exactly what CI enforces on every push (`.github/workflows/ci.yml`), so a green local run predicts a green deploy. The vitest suite is `src/sim.test.js` (50 test cases, ~196 assertions). **`npm test` takes ~12 minutes** (720s measured 2026-07-18 - the tests run real multi-step simulations). It is NOT hung; do not kill it, and give it a generous timeout when running it from an agent.
 - **The gate is headless and complete.** `npm test` is a strict SUPERSET of the in-page suite, not a substitute for it: `src/sim.test.js` calls the same `sim.runAssertions()` (`src/sim.js:1612`) that the in-page **T** key runs (`src/main.js:868`), then adds 13 further describe blocks. There is no manual step required for coverage.
 - **Seeing the sim** (visual and tuning work only, never for coverage): `npm run dev`, open `http://localhost:5173/worldbuilder/`, press **T**. The `/worldbuilder/` path is required - `vite.config.js` sets `base: '/worldbuilder/'`. Opening `index.html` from disk renders a BLANK page: it loads `/src/main.js` as a root-absolute ES module, which fails over `file://`.
 - **Durable record:** `STATUS.md` (overwritten current truth) + `docs/04 Handoffs/` (append-only, dated) + `docs/02 Code/CodeMap.md` (navigation) + `docs/02 Code/Engineering Lessons.md` (rule / why / Verified date).
