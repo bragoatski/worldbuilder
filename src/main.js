@@ -826,7 +826,46 @@ function startScenario(id){
 
 // ===== Init & loop =====
 var _pendingWorldCode = getWorldCodeParam();
+
+// ===== Hero rotation: bundled pre-warmed worlds shipped as the instant default =====
+// A cold world is all-ocean and only grows land by running, so a fresh visitor used to land on empty
+// water. Instead, on the very FIRST boot (no ?w= link, no typed seed) we load one of a curated set of
+// already-developed, already-living continents at random - instant, gorgeous, opened at full speed.
+// Reused through importJSON (the Load path), so no new load semantics. Rolling the dice / Reset / a
+// typed seed all still generate a fresh world exactly as before.
+var HERO_SEEDS = [3,7,9,12,23,42,55,64,88,111,144,256,314,512,808];
+var _heroData = null, _heroFetch = null, _heroBootPending = true, _heroSwapPending = false;
+function _heroUrl(){ var s = HERO_SEEDS[(Math.random()*HERO_SEEDS.length)|0]; return (import.meta.env.BASE_URL||'/') + 'hero/hero-' + s + '.json'; }
+function _preloadHero(){
+  // Fetch a random hero eagerly while the intro is up, so it is usually ready by the time boot() runs.
+  // Skip entirely if a ?w= link or a typed seed will win instead - those never load a hero.
+  if(_pendingWorldCode) return;
+  var se=document.getElementById('seedInput'); if(se && se.value.trim()) return;
+  _heroFetch = fetch(_heroUrl())
+    .then(function(r){ return r && r.ok ? r.json() : null; })
+    .then(function(d){ _heroData = d; })
+    .catch(function(){ _heroData = null; });
+}
+_preloadHero();
+function _applyHero(d){
+  if(!d) return false;
+  try{
+    importJSON(d);                 // full Load path: applySnapshot + resize + sliders + draw + UI sync
+    var se=document.getElementById('seedInput'); if(se) se.value='';  // empty box => Reset/roll give a fresh world
+    running=true; speed=60;        // open at full speed
+    var sp=document.getElementById('speed'); if(sp) sp.value=60;
+    draw();
+    return true;
+  }catch{ return false; }
+}
+
 function init(){
+  // Hero rotation may fire only on the genuine first boot; capture and disarm before anything else so
+  // that a later Reset / roll / preset change always builds a fresh cold world instead.
+  var _heroBoot = _heroBootPending; _heroBootPending = false;
+  // Any init() (Reset / roll / preset / map-size) disarms a still-pending hero swap, so a late-resolving
+  // boot fetch can never clobber a world the user has since rebuilt.
+  _heroSwapPending = false;
   // Cancel any in-flight scenario warmup: init() is the shared rebuild path (reset / roll-seed / map-size /
   // preset / sandbox / 'r'), and an orphaned _scenWarmTimer would keep step()-ing + seeding scenario life into
   // the fresh world, then throw on the now-null activeScenario. startScenario clears it on re-entry; init must too.
@@ -851,10 +890,28 @@ function init(){
       return;
     }catch(e){
       var errBox=document.getElementById('err');if(errBox){errBox.style.display='block';errBox.textContent='World link error: '+e.message+' - starting a fresh world.';}
+      _heroBoot=false; // a broken ?w= link falls back to a fresh cold world (as the banner says), never a hero
     }
   }
   var seedEl=document.getElementById('seedInput');
   var seedVal=seedEl?seedEl.value.trim():'';
+  if(_heroBoot && !seedVal){
+    clearScenario();
+    if(_heroData && _applyHero(_heroData)) return;   // hero ready AND applied cleanly -> done
+    // Hero not ready yet, or it failed to apply (corrupt/unknown-schema snapshot): show a fresh cold
+    // world now so the app is never left blank.
+    initWorld(seedVal);placeMode='none';resetZoomPan();
+    chronicleNote('terrain','A new world begins.','#8a9a7b');
+    var hSeedElH=document.getElementById('hSeed');if(hSeedElH)hSeedElH.textContent=_seed;
+    resize();buildSliders();draw();
+    // If the boot fetch is still in flight, swap the hero in when it lands - but ONLY if no later
+    // init() has since disarmed the swap (guards against clobbering a world the user rebuilt meanwhile).
+    if(_heroData===null && _heroFetch){
+      _heroSwapPending=true;
+      _heroFetch.then(function(){ if(_heroSwapPending){ _heroSwapPending=false; _applyHero(_heroData); } });
+    }
+    return;
+  }
   clearScenario(); // a plain new world (reset / roll seed / map-size / preset change) leaves any scenario
   initWorld(seedVal);placeMode='none';resetZoomPan();
   chronicleNote('terrain','A new world begins.','#8a9a7b');
