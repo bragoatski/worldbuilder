@@ -203,6 +203,44 @@ hook('btnRollSeed',function(){if(seedInputEl)seedInputEl.value='';init();draw();
 // Click-to-copy seed
 (function(){var hSeed=document.getElementById('hSeed');if(hSeed)hSeed.addEventListener('click',function(){if(navigator.clipboard)navigator.clipboard.writeText(String(_seed));hSeed.textContent='copied!';setTimeout(function(){hSeed.textContent=_seed;},800);});})();
 
+// ===== View mode (Viewer / Developer) =====
+// Viewer is the clean, world-forward default; Developer reveals the full cockpit (dev-only deck
+// segments + panels), toggled by a body class so no DOM is restructured or removed.
+function setViewMode(mode){
+  document.body.classList.toggle('mode-viewer',mode==='viewer');
+  document.body.classList.toggle('mode-dev',mode==='dev');
+  var toggleEl=document.getElementById('modeToggle');
+  if(toggleEl) toggleEl.textContent=mode==='viewer'?'⚙ Developer':'◉ Viewer';
+  try{ localStorage.setItem('wb-mode',mode); }catch{}
+  fitCanvas();
+}
+// Size the world to the space it has: fill the near-full-screen Viewer, restore the Px control in Developer.
+function fitCanvas(){
+  if(W>0 && H>0){
+    if(document.body.classList.contains('mode-viewer')){
+      // Robust sizing off the window (not a wrapper measured mid-reflow): biggest tile that fits.
+      var deck=document.querySelector('.deck-primary');
+      var deckH=deck?deck.offsetHeight:52;
+      var availH=window.innerHeight-deckH-16;
+      var availW=window.innerWidth-16;
+      var p=Math.floor(Math.min(availW,availH)/Math.max(W,H));
+      PIX=Math.max(6,Math.min(18,p>0?p:6));
+    }else{
+      var pe=document.getElementById('pix');
+      PIX=pe?(parseInt(pe.value)||6):6;
+    }
+  }
+  resize();
+  if(started) draw();
+}
+window.addEventListener('resize',function(){ if(document.body.classList.contains('mode-viewer')) fitCanvas(); });
+(function(){
+  var saved='viewer';
+  try{ if(localStorage.getItem('wb-mode')==='dev') saved='dev'; }catch{}
+  setViewMode(saved);
+})();
+hook('modeToggle',function(){setViewMode(document.body.classList.contains('mode-viewer')?'dev':'viewer');});
+
 // Overlay selector (segmented buttons)
 (function(){
   var bar=document.getElementById('overlayBar'); if(!bar) return;
@@ -563,7 +601,7 @@ function _flashBtn(btn,msg,restore){ if(!btn)return; if(btn._flashT)clearTimeout
 // too. Mirrors the seed-copy affordance already on the HUD.
 function copyWorldLink(){
   var url=worldPermalink(), btn=document.getElementById('btnCopyLink');
-  try{ if(typeof history!=='undefined'&&history.replaceState) history.replaceState(null,'',url); }catch(e){}
+  try{ if(typeof history!=='undefined'&&history.replaceState) history.replaceState(null,'',url); }catch{}
   try{
     if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(function(){_flashBtn(btn,'link copied','Copy Link');},function(){_flashBtn(btn,'copy failed','Copy Link');});
     else window.prompt('Copy this world link:',url);
@@ -827,45 +865,25 @@ function startScenario(id){
 // ===== Init & loop =====
 var _pendingWorldCode = getWorldCodeParam();
 
-// ===== Hero rotation: bundled pre-warmed worlds shipped as the instant default =====
-// A cold world is all-ocean and only grows land by running, so a fresh visitor used to land on empty
-// water. Instead, on the very FIRST boot (no ?w= link, no typed seed) we load one of a curated set of
-// already-developed, already-living continents at random - instant, gorgeous, opened at full speed.
-// Reused through importJSON (the Load path), so no new load semantics. Rolling the dice / Reset / a
-// typed seed all still generate a fresh world exactly as before.
+// ===== Default world: a random good seed grown from genesis into a continent =====
+// The default opens from tick-0 OCEAN and grows into a full continent as it runs, at full speed, so a
+// visitor WATCHES the world form. A random seed from the vetted set + cranked land growth (matching
+// scripts/hero-scan.mjs) reliably builds a big, lush landmass instead of the slow stock default.
 var HERO_SEEDS = [3,7,9,12,23,42,55,64,88,111,144,256,314,512,808];
-var _heroData = null, _heroFetch = null, _heroBootPending = true, _heroSwapPending = false;
-function _heroUrl(){ var s = HERO_SEEDS[(Math.random()*HERO_SEEDS.length)|0]; return (import.meta.env.BASE_URL||'/') + 'hero/hero-' + s + '.json'; }
-function _preloadHero(){
-  // Fetch a random hero eagerly while the intro is up, so it is usually ready by the time boot() runs.
-  // Skip entirely if a ?w= link or a typed seed will win instead - those never load a hero.
-  if(_pendingWorldCode) return;
-  var se=document.getElementById('seedInput'); if(se && se.value.trim()) return;
-  _heroFetch = fetch(_heroUrl())
-    .then(function(r){ return r && r.ok ? r.json() : null; })
-    .then(function(d){ _heroData = d; })
-    .catch(function(){ _heroData = null; });
-}
-_preloadHero();
-function _applyHero(d){
-  if(!d) return false;
-  try{
-    importJSON(d);                 // full Load path: applySnapshot + resize + sliders + draw + UI sync
-    var se=document.getElementById('seedInput'); if(se) se.value='';  // empty box => Reset/roll give a fresh world
-    running=true; speed=60;        // open at full speed
-    var sp=document.getElementById('speed'); if(sp) sp.value=60;
-    draw();
-    return true;
-  }catch{ return false; }
+var _heroBootPending = true;
+function _applyContinentCfg(){
+  // Pangaea base + full coastal fill toward a big landmass. Terrain dials ONLY - the tuned ecology
+  // rates are untouched, so ecosystem balance is unaffected.
+  _applyPresetCfg('pangaea');
+  CFG.maxLandCap = 0.87;
+  CFG.coastalSpreadBase = 0.02;
+  CFG.volcanoChancePerTile = 0.0002;
 }
 
 function init(){
   // Hero rotation may fire only on the genuine first boot; capture and disarm before anything else so
   // that a later Reset / roll / preset change always builds a fresh cold world instead.
   var _heroBoot = _heroBootPending; _heroBootPending = false;
-  // Any init() (Reset / roll / preset / map-size) disarms a still-pending hero swap, so a late-resolving
-  // boot fetch can never clobber a world the user has since rebuilt.
-  _heroSwapPending = false;
   // Cancel any in-flight scenario warmup: init() is the shared rebuild path (reset / roll-seed / map-size /
   // preset / sandbox / 'r'), and an orphaned _scenWarmTimer would keep step()-ing + seeding scenario life into
   // the fresh world, then throw on the now-null activeScenario. startScenario clears it on re-entry; init must too.
@@ -896,20 +914,20 @@ function init(){
   var seedEl=document.getElementById('seedInput');
   var seedVal=seedEl?seedEl.value.trim():'';
   if(_heroBoot && !seedVal){
+    // The default world: a random vetted seed grown from tick-0 OCEAN into a continent, at full speed,
+    // so the visitor watches it form (rather than opening on a finished, mid-simulation world).
     clearScenario();
-    if(_heroData && _applyHero(_heroData)) return;   // hero ready AND applied cleanly -> done
-    // Hero not ready yet, or it failed to apply (corrupt/unknown-schema snapshot): show a fresh cold
-    // world now so the app is never left blank.
-    initWorld(seedVal);placeMode='none';resetZoomPan();
+    _applyContinentCfg();
+    initWorld(HERO_SEEDS[(Math.random()*HERO_SEEDS.length)|0]);
+    placeMode='none';resetZoomPan();
     chronicleNote('terrain','A new world begins.','#8a9a7b');
     var hSeedElH=document.getElementById('hSeed');if(hSeedElH)hSeedElH.textContent=_seed;
+    var seedInpH=document.getElementById('seedInput');if(seedInpH)seedInpH.value='';
+    var psH=document.getElementById('presetSelect');if(psH)psH.value=activePreset;
+    running=true; speed=60;                 // watch it form at full speed
+    var spH=document.getElementById('speed');if(spH)spH.value=60;
     resize();buildSliders();draw();
-    // If the boot fetch is still in flight, swap the hero in when it lands - but ONLY if no later
-    // init() has since disarmed the swap (guards against clobbering a world the user rebuilt meanwhile).
-    if(_heroData===null && _heroFetch){
-      _heroSwapPending=true;
-      _heroFetch.then(function(){ if(_heroSwapPending){ _heroSwapPending=false; _applyHero(_heroData); } });
-    }
+    fitCanvas();                            // size the world to fill the near-full-screen viewer
     return;
   }
   clearScenario(); // a plain new world (reset / roll seed / map-size / preset change) leaves any scenario
