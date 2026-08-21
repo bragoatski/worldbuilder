@@ -2,7 +2,11 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
-## Session 2026-08-21 - The Hand: on-map god powers - DONE + DEPLOYED
+## Session 2026-08-21 - The Hand: on-map god powers - DONE + DEPLOYED + VERIFIED LIVE
+DEPLOYED 2026-08-21 (owner: "commit and deploy"): `main` ff'd 9c14136 -> **e0facaa** + pushed; CI green in
+18m1s. Live bundle **index-80a-EQWe.js** confirmed HTTP 200 at https://bragoatski.github.io/worldbuilder/ and
+byte-for-byte identical to the locally gated build. Driven on the live site: it lands in Viewer with the rail
+showing all ten buttons, a drag took land 2.3% -> 7.4%, and undo restored it to exactly 2.3%.
 Newest handoff: **`docs/04 Handoffs/2026-08-21 The Hand - on-map god powers.md`** - read it first.
 
 Owner asked for "a large update for player playability to the map", additive only ("I dont want to take option
