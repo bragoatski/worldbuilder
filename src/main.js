@@ -155,7 +155,15 @@ hook('btnStart',function(){running=true;if(!started)boot();});
 hook('btnForceStart',function(){running=true;started=false;boot();});
 hook('btnPause',function(){running=false;});
 hook('btnStep',function(){running=false;step();draw();});
-hook('btnReset',function(){running=false;init();buildSliders();applyElevationIntensity();draw();});
+hook('btnReset',function(){
+  var viewer=document.body.classList.contains('mode-viewer');
+  running=false;init();buildSliders();applyElevationIntensity();draw();
+  // In Viewer, Reset must keep RUNNING. The rebuild starts as empty ocean and GROWS, so pausing here
+  // hands a visitor a frozen blank map; the boot path auto-runs for exactly this reason. Developer
+  // mode keeps its deliberate pause-on-reset. loop() clears its own pending timer, so this cannot
+  // start a second chain.
+  if(viewer){running=true;loop();}
+});
 hook('btnSpawnFlora',function(){seedFloraCluster(15);draw();});
 hook('btnSpawnHerb',function(){seedFaunaGroup('herbivore',8);draw();});
 hook('btnSpawnCarn',function(){seedFaunaGroup('carnivore',4);draw();});
@@ -229,12 +237,17 @@ function fitCanvas(){
       var deck=document.querySelector('.deck-primary');
       var deckH=deck?deck.offsetHeight:52;
       var availH=window.innerHeight-deckH-16;
+      // Under 700px the rail becomes a horizontal bar UNDER the map (narrow-screen media query),
+      // so the map has to give back that height or overflow:hidden clips the rail off-screen.
+      if(window.innerWidth<=700) availH-=56;
       // The Laws drawer gives the sidebar its 380px column back (see .layout in index.html); sizing the
       // map for the full window would push its right edge under the panel, where overflow:hidden eats it.
       var sideW=document.body.classList.contains('laws-open')?380:0;
       var availW=window.innerWidth-16-sideW;
       var p=Math.floor(Math.min(availW,availH)/Math.max(W,H));
-      PIX=Math.max(6,Math.min(18,p>0?p:6));
+      // Floor of 2, not 6: a 6px floor is larger than a phone can fit (96 tiles x 6px = 576px on a
+      // 390px screen), so the old floor pushed the map off the side of small screens entirely.
+      PIX=Math.max(2,Math.min(18,p>0?p:2));
     }else{
       var pe=document.getElementById('pix');
       PIX=pe?(parseInt(pe.value)||6):6;
@@ -570,7 +583,10 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 // hovered control (the deck sits at the top of the screen), clamped to the viewport.
 (function(){
   var tip=document.getElementById('deckTip');if(!tip)return;
-  var decks=document.querySelectorAll('.deck');if(!decks.length)return;
+  // The tool rail carries data-tip too, but it lives in .canvas-wrap and is NOT a .deck - bind it
+  // explicitly or its ten tooltips never fire, which is what happened from the rail shipping until
+  // 2026-08-21. Verified: hovering a rail button left #deckTip display:none while a deck button showed it.
+  var decks=document.querySelectorAll('.deck, .hand-rail');if(!decks.length)return;
   function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function show(el){
     var raw=el.getAttribute('data-tip');if(!raw)return;
@@ -578,9 +594,17 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
     var html='<div class="dt-title"><span>'+esc(title)+'</span>'+(key?'<span class="dt-key">'+esc(key)+'</span>':'')+'</div>';
     if(desc)html+='<p class="dt-desc">'+esc(desc)+'</p>';
     tip.innerHTML=html;tip.style.display='block';
-    var r=el.getBoundingClientRect(),tw=tip.offsetWidth||180;
-    var left=r.left+r.width/2-tw/2;if(left<8)left=8;if(left+tw>window.innerWidth-8)left=window.innerWidth-tw-8;
-    var top=r.bottom+8;if(top+tip.offsetHeight>window.innerHeight-8)top=r.top-tip.offsetHeight-8;
+    var r=el.getBoundingClientRect(),tw=tip.offsetWidth||180,th=tip.offsetHeight,left,top;
+    if(el.closest('.hand-rail')){
+      // The rail is a vertical strip on the left edge; a tip BELOW it would cover the next button.
+      left=r.right+10; top=r.top+r.height/2-th/2;
+      if(left+tw>window.innerWidth-8)left=r.left-tw-10;   // mirror to the left if it would overflow
+    }else{
+      left=r.left+r.width/2-tw/2;                          // the decks sit at the top: tip goes below
+      top=r.bottom+8; if(top+th>window.innerHeight-8)top=r.top-th-8;
+    }
+    if(left<8)left=8; if(left+tw>window.innerWidth-8)left=window.innerWidth-tw-8;
+    if(top<8)top=8;   if(top+th>window.innerHeight-8)top=window.innerHeight-th-8;
     tip.style.left=left+'px';tip.style.top=top+'px';
   }
   function hide(){tip.style.display='none';}

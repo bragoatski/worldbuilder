@@ -2,6 +2,46 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-08-21 (b) - Viewer reachability + rail tooltips + narrow screens - DONE, GATE GREEN
+Newest handoff: **`docs/04 Handoffs/2026-08-21 Viewer reachability, rail tooltips, narrow screens.md`** - read it first.
+
+Owner asked for launch thumbnails plus a read on gameplay/interaction cleanup. Six problems reported, five
+approved (owner ruling 2026-08-21), one declined. Browser-shell only: NO file under the simulation was touched.
+
+**Declined deliberately, do not "fix" later:** the opening 10-15 seconds show a nearly empty ocean because
+the default world grows from tick-0 ocean at speed 60. That is the intended experience (commit 9c14136).
+
+**Two of the six reported findings were WRONG and the correction is the useful part.** Viewer was reported as
+hiding the Legend/Chronicle/Species/Food Web outright, and a tile click as teaching nothing. Both overstated:
+`#handLaws` already reveals all ten panels (probed under both toggle states), and hover reporting already works
+in Viewer. The real defect was one line of copy on that button. A second drawer and a floating click-card were
+designed and DROPPED as duplicate machinery. Generalised lesson: a reachability audit must test every mode
+STATE, not just the default.
+
+**Shipped:**
+- **Rail tooltips fire at last.** All ten were authored and none had ever displayed: the tooltip IIFE bound to
+  `.deck` only, and the rail lives in `.canvas-wrap`. Now bound to `.deck, .hand-rail`, positioned beside.
+- **Intro copy:** "Simulate, Mold & Discover" (without the comma it reads as simulating fungus).
+- **Laws tooltip** now names the chronicle, legend and inspector, not only the dials.
+- **Reset reachable in Viewer**, and it KEEPS RUNNING there - the rebuild starts as empty ocean and grows, so
+  pausing handed back a frozen blank map. Developer keeps its deliberate pause-on-reset.
+- **Narrow screens work.** Two independent causes: a `PIX` floor of 6 that no phone can fit (96 tiles x 6px =
+  576px on a 390px screen), and `.deck-primary` being a non-wrapping flex row that widened the DOCUMENT to
+  537px while the map itself was correctly sized and centred. One `@media (max-width:700px)` block, the only
+  responsive CSS in the project.
+
+Gate: typecheck clean, lint 0 errors + 31 warnings (unchanged baseline), 50/50 tests (596.87s), build green.
+`npm run measure` matches the recorded baseline on every number (extinction 0%, carn-persistence 50% 3/6,
+final fauna 49.3, flora 2119.2, cap-hits 0); holds by construction too, since `harness.mjs` imports only
+`src/sim.js`. 12 browser checks on 1440x900 and 390x844, zero console errors - the headless gate is blind to
+every change in this unit of work.
+
+**Launch assets, outside this repo:** `Desktop/worldbuilder-launch-assets/` - 24 itch.io cover candidates at
+630x500, six source worlds at 1728x1728, the tooling and a README. Real simulation output, not artwork.
+
+**Open follow-ups (not taken):** splitting the sidebar into a "story" drawer and a "laws" drawer; making
+`btnCopyLink` reachable from Viewer so a visitor can share a world they made.
+
 ## Session 2026-08-21 - The Hand: on-map god powers - DONE + DEPLOYED + VERIFIED LIVE
 DEPLOYED 2026-08-21 (owner: "commit and deploy"): `main` ff'd 9c14136 -> **e0facaa** + pushed; CI green in
 18m1s. Live bundle **index-80a-EQWe.js** confirmed HTTP 200 at https://bragoatski.github.io/worldbuilder/ and

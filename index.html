@@ -672,12 +672,40 @@
   body.mode-viewer .deck-setup{ display:none !important; }
   body.mode-viewer:not(.laws-open) .side{ display:none !important; }
   body.mode-viewer:not(.laws-open) .layout{ grid-template-columns:1fr !important; }
+  /* Reset stays REACHABLE in Viewer: with no seed set it rolls a fresh random world, which is the
+     core verb of a procedural generator and had no button in the default view before 2026-08-21. */
   body.mode-viewer #btnStep,
-  body.mode-viewer #btnReset,
   body.mode-viewer #btnForceStart,
   body.mode-viewer .telemetry{ display:none !important; }
   body.mode-viewer .deck-primary{ padding-top:6px; padding-bottom:6px; }
   body.mode-viewer .canvas-wrap{ padding:6px; }
+
+  /* === NARROW SCREENS === */
+  /* On a phone the map is the whole width, so a rail floating over its left edge sits ON the world.
+     Lay the rail out as a horizontal bar UNDER the map and flip the flyout above it. fitCanvas()
+     gives back the rail's height at this width, or .canvas-wrap's overflow:hidden clips it. */
+  @media (max-width: 700px) {
+    .canvas-wrap { flex-direction:column; justify-content:flex-start; gap:8px; }
+    /* relative, NOT static: the flyout is absolutely positioned against the rail, and a static rail
+       would hand that job to .canvas-wrap and fling the flyout above the whole map. */
+    .hand-rail {
+      position:relative; left:auto; top:auto; transform:none;
+      flex-direction:row; flex-wrap:wrap; justify-content:center; align-self:center; max-width:100%;
+    }
+    .hand-sep { display:none; }
+    .hand-flyout { left:auto; right:0; top:auto; bottom:100%; margin:0 0 9px 0; }
+    .hand-hint { white-space:normal; }
+
+    /* The deck is a non-wrapping flex row, so its intrinsic width (537px measured) was widening the
+       whole DOCUMENT past a 390px screen - the map was correctly sized and centred inside an
+       over-wide page. Shed the optional chrome here, and allow a wrap as the backstop; fitCanvas
+       reads the deck's live offsetHeight, so a wrapped deck sizes the map correctly on its own. */
+    .deck-primary { height:auto; min-height:44px; flex-wrap:wrap; gap:6px; padding:0 8px; }
+    .deck-brand span { display:none; }
+    .deck-primary .deck-sep { display:none; }
+    .deck-field .deck-lbl { display:none; }
+    #speed { width:56px !important; }
+  }
 </style>
 </head>
 <body>
@@ -688,7 +716,7 @@
   <div class="intro-grid"></div>
   <div class="intro-content">
     <h1 class="intro-title">Worldbuilder</h1>
-    <p class="intro-sub">Simulate Mold &amp; Discover</p>
+    <p class="intro-sub">Simulate, Mold &amp; Discover</p>
     <button class="intro-start" id="introStart">Start Simulation</button>
   </div>
 </div>
@@ -714,7 +742,7 @@
       <button class="tbtn" id="btnStep" data-tip="Single step|Advance exactly one tick" data-tipk="S" aria-label="Step">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5l10 7-10 7z"/><rect x="17" y="5" width="3" height="14" rx="1"/></svg>
       </button>
-      <button class="tbtn btn-danger" id="btnReset" data-tip="Reset world|Regenerate from the current seed" data-tipk="R" aria-label="Reset">
+      <button class="tbtn btn-danger" id="btnReset" data-tip="Reset world|Regenerate the world. With no seed set, this rolls a new random one." data-tipk="R" aria-label="Reset">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
       </button>
       <button class="tbtn btn-warn" id="btnForceStart" data-tip="Force restart|Rebuild and run from a fresh genesis" data-tipk="F" aria-label="Force restart">
@@ -871,7 +899,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V4"/><path d="M8 9l4 4 4-4"/><path d="M3 18c2 0 2 1.8 4 1.8S11 18 13 18s2 1.8 4 1.8 2-1.8 4-1.8"/></svg>
         </button>
         <div class="hand-sep"></div>
-        <button class="hand-btn" id="handLaws" type="button" data-tip="The laws of this world|Open the dials the world runs on: terrain, climate, ecology.">
+        <button class="hand-btn" id="handLaws" type="button" data-tip="This world|The chronicle, the legend, what lives on a tile, and the dials the world runs on.">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 12h3M11 12h9M4 17h7M15 17h5"/><circle cx="16" cy="7" r="2" fill="currentColor"/><circle cx="9" cy="12" r="2" fill="currentColor"/><circle cx="13" cy="17" r="2" fill="currentColor"/></svg>
         </button>
         <div class="hand-sep"></div>
