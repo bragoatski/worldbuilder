@@ -23,6 +23,21 @@ Navigation index for `src/main.js`. The section ORDER and the key symbols below 
 2. **Body / HTML** - intro overlay; toolbar (start/pause/step/reset/force, speed/map/px/preset, seed, flora/herb/carn/place/rivers, png/save/load/test); status bar; layout = canvas + sidebar (overlay selector + collapsible panels: Inspector, Terrain, Climate, Ecology, Population, Legend, Tests).
 3. **Script (IIFE, 'use strict')** - everything below.
 
+## The Hand: on-map god powers (2026-08-21)
+Player-facing tools. Rail markup + CSS in `index.html` (inside `.canvas-wrap`, NOT `.deck-setup`, so Viewer keeps it).
+
+- **Sim core (`src/sim.js`), all outside `step()`:**
+  - Terrain: `brushTerrainRaw(cx,cy,dir,radius,strength)` (elevation edit alone, returns `{crossed,rose,sank}`) + `settleTerrain()` (the four full-world passes) + `brushTerrain(...)` (the original single-dab power, unchanged behaviour, now raw+settle+narrate).
+  - Climate: `brushClimateRaw(cx,cy,dir,radius,strength,field)` where field is `'moist'` or `'temp'`, writing the persistent offsets `godTemp`/`godArid` (NOT the live or base fields) + `settleClimate()` (`applyClimate`+`reclassTerrain`, far cheaper than settleTerrain). Gated by `_godClimatePainted`.
+  - Click powers: `emberStrike(tx,ty)` (volcano via `promoteVolcanoAt` at/above `CFG.emberVolcanoMinElev`, else `meteorStrike`), `addSpring(tx,ty)` (pushes a tile index onto `springs`, re-runs `generateRivers`), `seedLifeAt(tx,ty)` (surveys radius `CFG.seedRadius` and places flora / herbivores / a carnivore by what is missing).
+  - Sea: `shiftSeaLevel(dir)` with three branches (rise / withdraw-to-a-level-already-stood-at / below-original-shoreline), backed by `seaSteps`, `drownedElev`, `drownedAt`.
+  - Undo: `godMark()` (returns the mark it displaced), `godCancelMark(prev)`, `godUndo()`, `godCanUndo()`. Built on the existing `snapshotState`/`restoreState` pair.
+  - New state, all reset in `initWorld`/`climateInit` and carried through `snapshotState`/`restoreState` and the JSON save: `godTemp`, `godArid`, `_godClimatePainted`, `springs`, `drownedElev`, `drownedAt`, `seaSteps`.
+  - Spring injection seam: inside `generateRivers`, right after the flow-accumulation init, each spring adds `CFG.springYield`. `rRng` is local and seeded from `_seed`, so re-running is deterministic and touches no shared stream.
+  - CFG knobs: `godClimateDelta`, `godClimateMax`, `springYield`, `emberVolcanoMinElev`, `seedRadius`, `seedFloraNeed`, `seedHerbNeed`, `seedFloraCount`, `seedHerbCount`, `seedCarnCount`, `seaLevelStep`.
+- **Shell (`src/main.js`), all gate-blind:** `TOOLS` (per-power table; `kind` is `'brush'` or `'click'`), `handTool`, `_strokeTool`, `setHandTool`, `setBrushSize`, `_syncFlyout` (retitles the flyout and rescales the strength slider per power; hides size/strength for click powers), `updateBrushRing` (DOM overlay sized off the live canvas rect, coloured by tool + Alt), `_dab`, `_settle`, `handStrokeStart/Move/End`, `handClickPower`, `doGodUndo`, `seaLevel(dir)`, and the `handLaws` toggle.
+- **Hotkeys:** `1`-`6` pick a power, `e` aliases Shape land, `[` `]` size, `Ctrl+Z` undo (ignored mid-stroke), `Escape` disarms.
+
 ## Systems and key symbols
 - **Error / util:** `togglePanel`, `window.onerror` HUD.
 - **State:** grid / elev / aridity / tempField / sunlight (+ `baseTemp`/`baseArid` = the genesis climate before climate offsets) + volcano fields; ecology state (`flora[]`, `fauna[]`, `deathParticles`, `placeMode`, species-name parts, `popHistory`, `biomeBoundary`, `floraRemnants`); river vars; beach vars.

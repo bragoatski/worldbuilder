@@ -2,6 +2,38 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-08-21 - The Hand: on-map god powers - DONE + DEPLOYED
+Newest handoff: **`docs/04 Handoffs/2026-08-21 The Hand - on-map god powers.md`** - read it first.
+
+Owner asked for "a large update for player playability to the map", additive only ("I dont want to take option
+away"). Shipped a tool rail pinned to the left of the map, PRESENT IN VIEWER, carrying nine powers plus undo.
+Every brush is a pair: `Alt` inverts it, so six verbs occupy three buttons.
+
+- **Brushes (drag):** Shape land (`1`, raise / Alt sink), Rain (`2`, rain / Alt parch), Warmth (`3`, warm /
+  Alt chill). Size `[` `]`, per-tool strength, a ring cursor coloured by which half of the pair is armed.
+- **Click powers:** Ember (`4`, volcano on high ground else meteor), Spring (`5`, opens a headwater the real
+  hydrology then routes to the sea), Seed life (`6`, contextual: bare ground gets plants, grass gets a herd,
+  a thick herd gets a predator).
+- **Sea level:** a true LEVEL, not a one-way edit. N rises then N falls is an exact round trip.
+- **The Laws:** the existing Terrain / Climate / Ecology sliders made reachable from Viewer. The SAME controls
+  with the SAME listeners; the Viewer hiding rules just became conditional on `:not(.laws-open)`.
+- **Undo:** single level, marked at stroke START so a whole drag rewinds as one act.
+
+**Nothing was removed.** The entire Developer cockpit, every God-deck button, and both placement modes still work.
+
+**Balance-safe, and structurally so:** `npm run measure` BYTE-IDENTICAL to the pre-change baseline on every
+number. No god power runs inside `step()`, and the one function that does run every tick (`applyClimate`) is
+gated on `_godClimatePainted`, so an unpainted world executes the original arithmetic untouched.
+
+**Adversarial review:** three reviewers (balance / state lifecycle / input) produced 11 findings; 8 confirmed by
+reproduction and fixed, 2 downgraded on evidence, 1 code comment corrected as overclaiming. The serious ones: a
+no-op click power destroyed the previous act's undo; undo after a JSON load reverted the load itself; every
+legacy deck button silently did nothing while a Hand tool was armed; a stroke could change identity mid-drag.
+
+Gate: typecheck clean, lint 0 errors (31 warnings = unchanged baseline), 50/50 tests, build green, measure
+byte-identical. Every power also driven in a real browser, which caught a module-eval crash the headless gate
+cannot see.
+
 ## Session 2026-07-15 - Code-review fixes (6) + Living Food Web (chunk 11) - DONE + DEPLOYED + VERIFIED LIVE
 DEPLOYED 2026-07-15 (Kevin: "doc wrap commit and deploy"): `main` ff'd 76ba9bb -> **2015a4a** + pushed; live
 bundle **index-gTvn8UhR.js** confirmed HTTP 200 at https://bragoatski.github.io/worldbuilder/ , and the live page

@@ -11,6 +11,8 @@ import {
   SPECIES_MIN_GEN, SPECIES_MIN_POP, T, TERRAIN_COLORS, TNAME, W, WORLD_CODE_VERSION, _applyPresetCfg,
   _capType, _seed, _seedScenarioLife, activePreset, activeScenario, applyClimate, applyElevationIntensity,
   applySnapshot, applyWorldCode, aridity, baseArid, baseTemp, biomeBoundary, bloomEvent, brushTerrain,
+  brushTerrainRaw, settleTerrain, brushClimateRaw, settleClimate, godMark, godUndo, godCanUndo,
+  emberStrike, addSpring, seedLifeAt, shiftSeaLevel, godCancelMark,
   buildSnapshot, carrion, chronicle, chronicleNote, chronicleStats, clamp, clearScenario, computeAridity,
   deathParticles, decodeWorldCode, droughtEvent, elev, fauna, flora, floraRemnants, foodWebCensus, generateRivers,
   getSpeciesName, grid, hsv2hex, idx, inb, initWorld, initialScenarioStatus, lakeShapes, landCoverage,
@@ -168,6 +170,9 @@ var PLACE_BTN_IDS={herbivore:'btnPlaceHerb',carnivore:'btnPlaceCarn',raise:'btnB
 var PLACE_LABELS={herbivore:'Click tile to place herbivore',carnivore:'Click tile to place carnivore',raise:'Click the map to RAISE land',lower:'Click the map to LOWER land'};
 function setPlaceMode(mode){
   placeMode=(placeMode===mode)?'none':mode;
+  // The canvas checks handTool BEFORE placeMode, so an armed Hand tool would swallow every click meant
+  // for a deck power. Exclusivity has to run both ways or the old deck buttons quietly stop working.
+  if(placeMode!=='none'&&handTool!=='none')setHandTool(handTool);
   for(var m in PLACE_BTN_IDS){var el=document.getElementById(PLACE_BTN_IDS[m]);if(el)el.classList.toggle('place-active',placeMode===m);}
   var banner=document.getElementById('placeBanner');
   if(banner){banner.classList.toggle('show',placeMode!=='none');banner.textContent=placeMode==='none'?'':(PLACE_LABELS[placeMode]||('Click tile to place '+placeMode));}
@@ -181,7 +186,9 @@ hook('btnBrushLower',function(){setPlaceMode('lower');});
 hook('btnMeteor',function(){meteorStrike();draw();});
 hook('btnDrought',function(){droughtEvent();draw();});
 hook('btnBloom',function(){bloomEvent();draw();});
-document.addEventListener('keydown',function(e){if(e.key==='Escape'&&placeMode!=='none')setPlaceMode('none');});
+document.addEventListener('keydown',function(e){if(e.key!=='Escape')return;
+  if(placeMode!=='none')setPlaceMode('none');
+  if(handTool!=='none')setHandTool(handTool);});
 hook('btnRunTests',function(){runTests();});
 hook('btnExport',exportPNG);
 hook('btnExportJSON',exportJSON);
@@ -222,7 +229,10 @@ function fitCanvas(){
       var deck=document.querySelector('.deck-primary');
       var deckH=deck?deck.offsetHeight:52;
       var availH=window.innerHeight-deckH-16;
-      var availW=window.innerWidth-16;
+      // The Laws drawer gives the sidebar its 380px column back (see .layout in index.html); sizing the
+      // map for the full window would push its right edge under the panel, where overflow:hidden eats it.
+      var sideW=document.body.classList.contains('laws-open')?380:0;
+      var availW=window.innerWidth-16-sideW;
       var p=Math.floor(Math.min(availW,availH)/Math.max(W,H));
       PIX=Math.max(6,Math.min(18,p>0?p:6));
     }else{
@@ -262,7 +272,188 @@ hook('modeToggle',function(){setViewMode(document.body.classList.contains('mode-
   renderLineagePanel(); // show the idle hint at boot
 })();
 
-canvas.addEventListener('click',function(ev){if(!grid)return;var tile=screenToTile(ev.clientX,ev.clientY);var x=tile.x,y=tile.y;
+// ===== The Hand: on-map god tools =====
+// Brushes the player drags across the world. Three things make it work:
+//  1) SPEED. The raw brush does the field edit alone; the settle (which reclassifies biomes, and for terrain
+//     also rebuilds climate) runs on a throttle mid-stroke and once at the end, so dragging stays responsive.
+//  2) ONE STROKE = ONE ACT. godMark() is taken at mousedown, so undo rewinds the whole drag rather than one
+//     sample, and the Chronicle gets a single summary line instead of one per pixel of mouse travel.
+//  3) EVERY POWER IS A PAIR. Alt inverts the brush - raise/sink, rain/parch, warm/chill - so the rail carries
+//     six verbs in three buttons without hiding any of them behind a menu.
+// Balance-safe by construction: none of this runs inside step().
+var TOOLS={
+  earth: { kind:'brush', btn:'handEarth', title:'Shape land', hint:'<kbd>Drag</kbd> raise &nbsp; <kbd>Alt</kbd> sink',
+           min:0.15, max:4,   step:0.05, strength:1.3,  ring:['r-earth','r-sink'] },
+  moist: { kind:'brush', btn:'handMoist', title:'Rain',       hint:'<kbd>Drag</kbd> rain &nbsp; <kbd>Alt</kbd> parch',
+           min:0.05, max:1.2, step:0.05, strength:0.35, ring:['r-rain','r-parch'] },
+  temp:  { kind:'brush', btn:'handTemp',  title:'Warmth',     hint:'<kbd>Drag</kbd> warm &nbsp; <kbd>Alt</kbd> chill',
+           min:0.05, max:1.2, step:0.05, strength:0.35, ring:['r-warm','r-chill'] },
+  // Click powers: one press, one act. They carry a fixed ring radius because their reach is not the
+  // player's to choose - it is the power's own (a meteor blast, a spring's basin, a seeding).
+  ember: { kind:'click', btn:'handEmber',  title:'Ember',     hint:'<kbd>Click</kbd> high ground for a volcano,<br>lower for a meteor',
+           radius:4, ring:['r-warm','r-warm'] },
+  spring:{ kind:'click', btn:'handSpring', title:'Spring',    hint:'<kbd>Click</kbd> high ground to open<br>a headwater',
+           radius:1, ring:['r-rain','r-rain'] },
+  seed:  { kind:'click', btn:'handSeed',   title:'Seed life', hint:'<kbd>Click</kbd> ground. It reads the tile<br>and seeds what fits',
+           radius:3, ring:['r-earth','r-earth'] }
+};
+var handTool='none';                  // 'none' | 'earth' | 'moist' | 'temp'
+var brushSize=4;                      // shared across tools: one hand, one reach
+var _stroking=false,_strokeTool='none',_lastSX=-1,_lastSY=-1,_lastSettle=0,_suppressClick=false;
+var _strokeRose=false,_strokeSank=false,_strokeUp=false,_strokeDown=false;
+var HAND_SETTLE_MS=90;
+
+function refreshUndoBtn(){var b=document.getElementById('handUndo');if(b)b.disabled=!godCanUndo();}
+// Each power keeps its OWN strength (a 1.3 elevation shove and a 0.35 climate nudge are not the same
+// quantity), so the slider re-scales to the active tool rather than pretending one range fits all.
+function _syncFlyout(){
+  var t=TOOLS[handTool];if(!t)return;
+  var ti=document.getElementById('flyTitle');if(ti)ti.textContent=t.title;
+  var hi=document.getElementById('handHint');if(hi)hi.innerHTML=t.hint;
+  var brush=(t.kind==='brush');
+  var rs=document.getElementById('rowSize'),rt=document.getElementById('rowStr');
+  if(rs)rs.style.display=brush?'':'none';                 // a meteor has no 'size' the player sets
+  if(rt)rt.style.display=brush?'':'none';
+  if(!brush)return;
+  var st=document.getElementById('brushStrSlider'),so=document.getElementById('brushStrOut');
+  if(st){st.min=t.min;st.max=t.max;st.step=t.step;st.value=t.strength;}
+  if(so)so.textContent=t.strength.toFixed(2);
+}
+function setHandTool(tool){
+  handTool=(handTool===tool)?'none':tool;
+  if(handTool!=='none'&&placeMode!=='none')setPlaceMode('none');   // the two input modes never fight
+  var rail=document.getElementById('handRail');if(rail)rail.classList.toggle('open',handTool!=='none');
+  for(var k in TOOLS){var b=document.getElementById(TOOLS[k].btn);if(b)b.classList.toggle('active',handTool===k);}
+  // Hide the ring on ANY switch: it carries the old tool's colour and radius until the next mousemove
+  // redraws it, which reads as the wrong power being armed.
+  var ring=document.getElementById('brushRing');if(ring)ring.style.display='none';
+  if(handTool!=='none')_syncFlyout();
+  canvas.style.cursor=handTool!=='none'?'none':(placeMode!=='none'?'cell':'crosshair');
+}
+function setBrushSize(n){
+  brushSize=Math.max(1,Math.min(14,n|0));
+  var sz=document.getElementById('brushSizeSlider'),szo=document.getElementById('brushSizeOut');
+  if(sz)sz.value=brushSize;if(szo)szo.textContent=brushSize;
+}
+// The ring is a DOM overlay positioned in .canvas-wrap space and sized from the LIVE canvas rect, so it stays
+// honest under zoom and pan (the canvas element itself is CSS-transformed by applyZoomPan). It snaps to the
+// tile centre because that, not the raw cursor pixel, is what the brush actually acts on. Its colour states
+// which of the pair is armed, so Alt is visible before you commit rather than after.
+function updateBrushRing(ev){
+  var ring=document.getElementById('brushRing');if(!ring)return;
+  var wrap=canvas.parentElement;if(!wrap)return;
+  var cr=canvas.getBoundingClientRect(),wr=wrap.getBoundingClientRect();
+  if(!cr.width||!canvas.width)return;
+  var t=screenToTile(ev.clientX,ev.clientY),scale=cr.width/canvas.width;
+  var tool=TOOLS[handTool];
+  var reach=(tool&&tool.kind==='click')?tool.radius:brushSize;
+  var d=(reach+0.5)*2*PIX*scale;
+  ring.className='brush-ring'+(tool?' '+tool.ring[ev.altKey?1:0]:'');
+  ring.style.display='block';
+  ring.style.width=d+'px';ring.style.height=d+'px';
+  ring.style.left=(cr.left-wr.left+(t.x+0.5)*PIX*scale)+'px';
+  ring.style.top=(cr.top-wr.top+(t.y+0.5)*PIX*scale)+'px';
+}
+function _dab(tx,ty,dir){
+  var t=TOOLS[_strokeTool];if(!t)return;
+  if(_strokeTool==='earth'){
+    var r=brushTerrainRaw(tx,ty,dir,brushSize,t.strength);
+    if(r.rose)_strokeRose=true;
+    if(r.sank)_strokeSank=true;
+  }else{
+    var c=brushClimateRaw(tx,ty,dir,brushSize,t.strength,_strokeTool==='temp'?'temp':'moist');
+    if(c.touched){ if(dir>0)_strokeUp=true;else _strokeDown=true; }   // no touch, no Chronicle line
+  }
+}
+// Climate strokes settle far cheaper than terrain ones: the base fields are untouched, so only the live
+// fields and the biome pass need redoing.
+function _settle(){ if(_strokeTool==='earth')settleTerrain(); else settleClimate(); }
+// One press, one act. Marked for undo exactly like a stroke, so a misfired meteor is one click back.
+function handClickPower(ev){
+  if(!grid)return;
+  var t=screenToTile(ev.clientX,ev.clientY);if(!inb(t.x,t.y))return;
+  var prevMark=godMark();
+  var did=false;
+  if(handTool==='ember')      did=!!emberStrike(t.x,t.y);
+  else if(handTool==='spring')did=addSpring(t.x,t.y);
+  else if(handTool==='seed')  did=!!seedLifeAt(t.x,t.y);
+  // Nothing happened (ocean, mountain, a tile that already has a spring): put back the mark this press
+  // displaced, so a misclick cannot cost the player the undo for their last real act.
+  if(!did)godCancelMark(prevMark);
+  _suppressClick=true;                          // a power press must not also inspect the tile
+  draw();refreshUndoBtn();
+}
+function handStrokeStart(ev){
+  if(!grid)return;
+  var t=screenToTile(ev.clientX,ev.clientY);if(!inb(t.x,t.y))return;
+  godMark();                                    // one mark per stroke -> undo rewinds the entire drag
+  _stroking=true;_strokeTool=handTool;   // bind the stroke to the tool it began with
+  _strokeRose=false;_strokeSank=false;_strokeUp=false;_strokeDown=false;
+  _lastSX=t.x;_lastSY=t.y;_lastSettle=0;
+  _dab(t.x,t.y,ev.altKey?-1:1);
+  _settle();draw();refreshUndoBtn();
+}
+function handStrokeMove(ev){
+  var t=screenToTile(ev.clientX,ev.clientY),dir=ev.altKey?-1:1;
+  var dx=t.x-_lastSX,dy=t.y-_lastSY,n=Math.max(Math.abs(dx),Math.abs(dy));
+  updateBrushRing(ev);
+  if(n===0)return;                              // paint-style: travel applies the brush, holding still does not
+  for(var k=1;k<=n;k++)_dab(_lastSX+Math.round(dx*k/n),_lastSY+Math.round(dy*k/n),dir);
+  _lastSX=t.x;_lastSY=t.y;
+  var now=(window.performance&&performance.now)?performance.now():0;
+  if(now-_lastSettle>=HAND_SETTLE_MS){_settle();draw();_lastSettle=now;}
+}
+function handStrokeEnd(){
+  if(!_stroking)return;
+  var tool=_strokeTool;
+  _stroking=false;_strokeTool='none';_suppressClick=true;_lastSX=-1;_lastSY=-1;
+  _settle();draw();
+  if(tool==='earth'){
+    if(_strokeRose&&_strokeSank)chronicleNote('god','A shaping hand reworked the coastline.','#8a9a7b');
+    else if(_strokeRose)chronicleNote('god','New land rose from the sea by a shaping hand.','#8a9a7b');
+    else if(_strokeSank)chronicleNote('god','Land sank beneath the waves.','#3aa6e0');
+  }else if(tool==='moist'){
+    if(_strokeUp&&!_strokeDown)chronicleNote('god','Rain swept in, and the ground drank deep.','#58a8ff');
+    else if(_strokeDown&&!_strokeUp)chronicleNote('god','The water was drawn out of the ground.','#e8a838');
+    else if(_strokeUp)chronicleNote('god','The pattern of the rains was rewritten.','#58a8ff');
+  }else if(tool==='temp'){
+    if(_strokeUp&&!_strokeDown)chronicleNote('god','A warmth settled over the land.','#e86048');
+    else if(_strokeDown&&!_strokeUp)chronicleNote('god','A deep cold crept across the land.','#48ced0');
+    else if(_strokeUp)chronicleNote('god','The temper of the air was rewritten.','#48ced0');
+  }
+  refreshUndoBtn();
+}
+function doGodUndo(){ if(godUndo())draw(); refreshUndoBtn(); }   // refresh either way: a Reset clears the mark
+
+// The Hand: rail buttons + the brush flyout. Registered here, AFTER the state above is assigned - `var` hoists
+// the declaration but not the value, and this block reads those values immediately.
+hook('handEarth',function(){setHandTool('earth');});
+hook('handMoist',function(){setHandTool('moist');});
+hook('handTemp', function(){setHandTool('temp');});
+hook('handEmber', function(){setHandTool('ember');});
+hook('handSpring',function(){setHandTool('spring');});
+hook('handSeed',  function(){setHandTool('seed');});
+// The sea is a world-scale act, not a pointer tool: it fires from the rail and is undoable like the rest.
+function seaLevel(dir){ if(!grid)return; godMark(); shiftSeaLevel(dir); draw(); refreshUndoBtn(); }
+hook('handSeaUp',  function(){seaLevel(1);});
+hook('handSeaDown',function(){seaLevel(-1);});
+// The laws of the world: the SAME sliders the cockpit has, made reachable from Viewer. Nothing is copied.
+hook('handLaws',function(){
+  var open=document.body.classList.toggle('laws-open');
+  var b=document.getElementById('handLaws');if(b)b.classList.toggle('active',open);
+  if(document.body.classList.contains('mode-viewer'))fitCanvas();   // the map lost/gained the sidebar's width
+  draw();
+});
+hook('handUndo',doGodUndo);
+(function(){
+  var sz=document.getElementById('brushSizeSlider'),szo=document.getElementById('brushSizeOut');
+  if(sz&&szo){sz.value=brushSize;szo.textContent=brushSize;sz.addEventListener('input',function(e){brushSize=parseInt(e.target.value,10);szo.textContent=brushSize;});}
+  var st=document.getElementById('brushStrSlider'),sto=document.getElementById('brushStrOut');
+  if(st&&sto){st.addEventListener('input',function(e){var t=TOOLS[handTool];var v=parseFloat(e.target.value);if(t)t.strength=v;sto.textContent=v.toFixed(2);});}
+})();
+
+canvas.addEventListener('click',function(ev){if(!grid)return;
+  if(_suppressClick){_suppressClick=false;return;}var tile=screenToTile(ev.clientX,ev.clientY);var x=tile.x,y=tile.y;
   if((placeMode==='raise'||placeMode==='lower')&&inb(x,y)){brushTerrain(x,y,placeMode==='raise'?1:-1);draw();return;}
   if(placeMode!=='none'&&inb(x,y)){var ti=idx(x,y);var t=grid[ti];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,placeMode,null));draw();}return;}
   lastClick={x:x,y:y};inspectTile(x,y);});
@@ -272,9 +463,12 @@ canvas.addEventListener('mousemove',function(ev){
     panX=panStartPX+dx/zoomLevel;panY=panStartPY+dy/zoomLevel;
     applyZoomPan();return;
   }
+  if(_stroking){handStrokeMove(ev);return;}
+  if(handTool!=='none'){updateBrushRing(ev);}
   updateTooltip(ev);
 });
-canvas.addEventListener('mouseleave',function(){var t=document.getElementById('tip');if(t)t.style.display='none';});
+canvas.addEventListener('mouseleave',function(){var t=document.getElementById('tip');if(t)t.style.display='none';
+  var ring=document.getElementById('brushRing');if(ring&&!_stroking)ring.style.display='none';});
 
 // Zoom: mouse wheel
 canvas.addEventListener('wheel',function(ev){
@@ -295,10 +489,18 @@ canvas.addEventListener('wheel',function(ev){
 
 // Pan: right-click drag
 canvas.addEventListener('mousedown',function(ev){
+  _suppressClick=false;   // never let a stale suppress-flag from a drag released off-canvas eat a click
+  if(ev.button===0&&handTool!=='none'){
+    ev.preventDefault();
+    var tl=TOOLS[handTool];
+    if(tl&&tl.kind==='click')handClickPower(ev); else handStrokeStart(ev);
+    return;
+  }
   if(ev.button===2){ev.preventDefault();isPanning=true;panStartX=ev.clientX;panStartY=ev.clientY;panStartPX=panX;panStartPY=panY;canvas.style.cursor='grabbing';}
 });
 window.addEventListener('mouseup',function(ev){
-  if(isPanning){isPanning=false;canvas.style.cursor=placeMode!=='none'?'cell':'crosshair';}
+  if(_stroking&&ev.button===0)handStrokeEnd();
+  if(isPanning){isPanning=false;canvas.style.cursor=handTool!=='none'?'none':(placeMode!=='none'?'cell':'crosshair');}
 });
 canvas.addEventListener('contextmenu',function(ev){ev.preventDefault();});
 
@@ -395,7 +597,17 @@ window.addEventListener('keydown',function(e){
   else if(e.key==='s'||e.key==='S'){e.preventDefault();running=false;step();draw();}
   else if(e.key==='r'||e.key==='R'){e.preventDefault();running=false;init();buildSliders();applyElevationIntensity();draw();}
   else if(e.key==='f'||e.key==='F'){e.preventDefault();running=true;started=false;boot();}
+  else if((e.key==='z'||e.key==='Z')&&(e.ctrlKey||e.metaKey)){e.preventDefault();if(!_stroking)doGodUndo();}
   else if(e.key==='t'||e.key==='T'){e.preventDefault();runTests();}
+  else if(e.key==='1'){e.preventDefault();setHandTool('earth');}
+  else if(e.key==='2'){e.preventDefault();setHandTool('moist');}
+  else if(e.key==='3'){e.preventDefault();setHandTool('temp');}
+  else if(e.key==='4'){e.preventDefault();setHandTool('ember');}
+  else if(e.key==='5'){e.preventDefault();setHandTool('spring');}
+  else if(e.key==='6'){e.preventDefault();setHandTool('seed');}
+  else if(e.key==='e'||e.key==='E'){e.preventDefault();setHandTool('earth');}   // alias, kept from slice 1
+  else if(e.key==='['){e.preventDefault();setBrushSize(brushSize-1);}
+  else if(e.key===']'){e.preventDefault();setBrushSize(brushSize+1);}
 });
 
 // ===== Sliders =====
@@ -904,7 +1116,7 @@ function init(){
       chronicleNote('terrain','A shared world is restored.','#8a9a7b');
       var seedElP=document.getElementById('seedInput');if(seedElP)seedElP.value=_seed;
       var hSeedElP=document.getElementById('hSeed');if(hSeedElP)hSeedElP.textContent=_seed;
-      resize();syncUIToConfig();draw();
+      resize();syncUIToConfig();draw();refreshUndoBtn();   // after the rebuild, which is what clears the mark
       return;
     }catch(e){
       var errBox=document.getElementById('err');if(errBox){errBox.style.display='block';errBox.textContent='World link error: '+e.message+' - starting a fresh world.';}
@@ -926,7 +1138,7 @@ function init(){
     var psH=document.getElementById('presetSelect');if(psH)psH.value=activePreset;
     running=true; speed=60;                 // watch it form at full speed
     var spH=document.getElementById('speed');if(spH)spH.value=60;
-    resize();buildSliders();draw();
+    resize();buildSliders();draw();refreshUndoBtn();
     fitCanvas();                            // size the world to fill the near-full-screen viewer
     return;
   }
@@ -935,7 +1147,7 @@ function init(){
   chronicleNote('terrain','A new world begins.','#8a9a7b');
   var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;
   if(seedEl&&!seedVal)seedEl.value='';
-  resize();buildSliders();draw();
+  resize();buildSliders();draw();refreshUndoBtn();
 }
 function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 

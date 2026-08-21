@@ -12,6 +12,17 @@ var floraLandVigor=1; // maturity-thinning multiplier on flora spread/spawn (1 a
 var coastTTL;
 var volcActive, volcAge, volcLife;
 var baseTemp, baseArid; // genesis climate (temperature/aridity from terrain), BEFORE the seasonal/anomaly/volcano
+// Player-painted climate: a PERSISTENT per-tile offset the climate brushes write and applyClimate adds on
+// top of the base, so a soaked valley stays wet through every base recompute. _godClimatePainted gates the
+// whole thing: while it is false applyClimate runs its original arithmetic untouched, which is what keeps
+// the measured C2 balance byte-identical for anything that never paints (the harness, the tests, CI).
+var godTemp, godArid, _godClimatePainted=false;
+// Player-placed springs (tile indices). Injected into the flow-accumulation pass in generateRivers.
+var springs=[];
+// Elevation the SEA took, per tile. Ocean tiles are pinned to elevation 0 sim-wide, so drowning would
+// otherwise destroy the terrain under the water and make a sea-level rise irreversible. Only shiftSeaLevel
+// writes this; lowering the sea reads it back, so the coast you drowned is the coast you get returned.
+var drownedElev=null, drownedAt=null, seaSteps=0;
                         // offsets. The live tempField/aridity = base + bounded offsets, recomputed every tick by
                         // applyClimate, so climate forcings are OFFSETS that return to baseline - they never
                         // accumulate or drift (the old integrate-onto-the-field model did, only once genesis stopped).
@@ -218,6 +229,12 @@ var CFG={
   // God powers (chunk 3, pillar D): user-triggered interventions. NONE run inside step(), so they sit
   // outside the measured ecology loop and leave the C2 balance byte-identical (verified via the harness).
   godBrushRadius:2, godBrushDelta:1.3,     // land brush: soft-disc radius + centre elevation delta per stroke
+  godClimateDelta:0.35, godClimateMax:4.0, // climate brush: offset added per sample + the cap either way
+  springYield:80,                          // drainage a placed spring pours in (>> riverAccumThreshold)
+  emberVolcanoMinElev:6,                   // at or above this elevation Ember births a volcano, else a meteor
+  seedRadius:3, seedFloraNeed:6, seedHerbNeed:3,   // contextual seed: survey radius + the two thresholds
+  seedFloraCount:18, seedHerbCount:5, seedCarnCount:2,
+  seaLevelStep:0.35,                       // elevation the land moves per sea-level step
   meteorRadius:4, meteorCraterDepth:3.0,   // meteor: blast/crater radius + centre-to-rim elevation gouge
   droughtSeverity:0.5,                     // drought: base per-plant kill prob (scaled up on arid ground)
   bloomCount:250,                          // bloom: plants seeded in a burst (weighted placement)
@@ -321,6 +338,8 @@ function neighbors8(x,y){var a=[]; for(var dy=-1;dy<=1;dy++){ for(var dx=-1;dx<=
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 function climateInit(){
   baseTemp = new Float32Array(W*H); baseArid = new Float32Array(W*H);
+  godTemp = new Float32Array(W*H); godArid = new Float32Array(W*H); _godClimatePainted=false;
+  drownedElev = new Float32Array(W*H); drownedAt = new Int16Array(W*H); seaSteps = 0;
   initAnomalyBlobs();
 }
 function initAnomalyBlobs(){
@@ -402,13 +421,14 @@ function applyClimate(){
   if(CFG.anomalies&&!_prevAnomalies&&tick>0&&anomalyBlobs){for(var rb=0;rb<anomalyBlobs.length;rb++)anomalyBlobs[rb].born=tick;}
   _prevAnomalies=!!CFG.anomalies;
   var ci=CFG.climateIntensity||1;
+  var gP=_godClimatePainted&&godTemp&&godArid;   // false => every line below is the pre-brush arithmetic
   var sW = CFG.seasonalTilt ? seasonWave(seasonPhase())*yearlyVariation : 0;
   var seasT = CFG.seasonalTempAmp*sW, seasA = -CFG.seasonalAridAmp*sW; // warm season is moister (sign kept from the old model)
   var anyOff = CFG.seasonalTilt || CFG.anomalies || CFG.volcanoAsh;
   var blobAmps=null; // per-blob effective amplitude (amplitude x lifecycle envelope), computed once per tick
   if(CFG.anomalies && anomalyBlobs){ blobAmps=[]; for(var eb=0;eb<anomalyBlobs.length;eb++)blobAmps[eb]=anomalyBlobs[eb].amplitude*_blobEnv(anomalyBlobs[eb]); }
   for(var i=0;i<W*H;i++){
-    if(!anyOff){ tempField[i]=baseTemp[i]; aridity[i]=baseArid[i]; continue; } // off => field IS the base (matches the pre-climate baseline exactly)
+    if(!anyOff&&!gP){ tempField[i]=baseTemp[i]; aridity[i]=baseArid[i]; continue; } // off => field IS the base (matches the pre-climate baseline exactly)
     var x=i%W,y=(i/W)|0;
     var atten=1-Math.min(1,(elev[i]||0)/10);
     var tOff=seasT*atten, aOff=seasA*atten;
@@ -421,8 +441,10 @@ function applyClimate(){
       var vs = peakVolcano[i] ? 1 : (volcanoRing[i]===1 ? 0.5 : (volcanoRing[i]===2 ? 0.25 : 0));
       if(vs){ tOff += -CFG.volcanoTempAmp*vs; aOff += -CFG.volcanoAridAmp*vs; }
     }
-    tempField[i]=clamp(baseTemp[i]+tOff*ci,0,10);
-    aridity[i]=clamp(baseArid[i]+aOff*ci,0,10);
+    // The painted offset is deliberately NOT scaled by climateIntensity: it is the player's will, not a
+    // climate forcing, so turning the climate dial down must not quietly undo what they painted.
+    tempField[i]=clamp(baseTemp[i]+(gP?godTemp[i]:0)+tOff*ci,0,10);
+    aridity[i]=clamp(baseArid[i]+(gP?godArid[i]:0)+aOff*ci,0,10);
   }
 }
 
@@ -653,6 +675,9 @@ function generateRivers(){
   // is fully accumulated before it pays its receiver (the receiver is always popped earlier).
   var acc=new Float64Array(N);
   for(var a0=0;a0<N;a0++)acc[a0]=(grid[a0]===T.OCEAN)?0:1;
+  // A placed spring is simply a cell that contributes far more than its own unit area. The reverse-pop
+  // loop below then carries that water downstream exactly like any other drainage.
+  for(var spK=0;spK<springs.length;spK++){var spI=springs[spK];if(spI>=0&&spI<N&&grid[spI]!==T.OCEAN)acc[spI]+=CFG.springYield;}
   for(var k=on-1;k>=0;k--){var cc=order[k];var rc=recv[cc];if(rc>=0)acc[rc]+=acc[cc];}
 
   // Longest upstream flow length per cell (reverse pop order = upstream first, so a cell's value is
@@ -1119,7 +1144,7 @@ function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIn
 // ======================================================================
 //  RENDERING
 // ======================================================================
-function buildSnapshot(){return {meta:{version:'wb-eco-1',W:W,H:H,tick:tick,seed:_seed,preset:activePreset,world:WORLD,cfg:{climateIntensity:CFG.climateIntensity,climateSeasonLength:CFG.climateSeasonLength},sunlightPhase:sunPhase},grid:Array.from(grid),elev:Array.from(elev),aridity:Array.from(aridity),temp:Array.from(tempField),flora:flora.filter(function(f){return f!==null;}),fauna:fauna.filter(function(f){return f!==null;}),remnants:floraRemnants,rivers:riverGenerated?riverData:null};}
+function buildSnapshot(){return {meta:{version:'wb-eco-1',W:W,H:H,tick:tick,seed:_seed,preset:activePreset,world:WORLD,cfg:{climateIntensity:CFG.climateIntensity,climateSeasonLength:CFG.climateSeasonLength},sunlightPhase:sunPhase},grid:Array.from(grid),elev:Array.from(elev),aridity:Array.from(aridity),temp:Array.from(tempField),flora:flora.filter(function(f){return f!==null;}),fauna:fauna.filter(function(f){return f!==null;}),remnants:floraRemnants,rivers:riverGenerated?riverData:null,springs:springs.length?springs.slice():null,seaSteps:seaSteps,drownedElev:seaSteps?Array.from(drownedElev):null,drownedAt:seaSteps?Array.from(drownedAt):null,godTemp:_godClimatePainted?Array.from(godTemp):null,godArid:_godClimatePainted?Array.from(godArid):null,godPainted:_godClimatePainted};}
 var WORLD_CODE_VERSION = 1;
 // These CFG keys are DERIVED from elevationIntensity by applyElevationIntensity and recomputed on every
 // initWorld, so the world code ships elevationIntensity, not its derivatives. A default world then encodes
@@ -1374,9 +1399,21 @@ function _compactLife(){flora=flora.filter(function(f){return f!==null;});fauna=
 
 // Land brush: raise (dir=+1) or lower (dir=-1) a soft disc of terrain, handling the land<->sea boundary,
 // then refresh the climate base + reclassify. Returns the number of tiles that crossed the coastline.
-function brushTerrain(cx,cy,dir){
-  if(!inb(cx,cy))return 0;
-  var R=CFG.godBrushRadius|0,d=CFG.godBrushDelta*dir,crossed=0,rose=false,sank=false;
+// Terrain settle: re-derive every field that depends on elevation / the land mask. Four full-world passes,
+// so a continuous brush STROKE calls this on a throttle rather than once per sample (see brushTerrainRaw).
+function settleTerrain(){
+  _compactLife();computeTemperature();computeAridity();applyClimate();reclassTerrain();
+}
+
+// Raw land brush: the elevation edit ALONE - no field recompute, no Chronicle entry. This is the per-sample
+// half of a drag stroke; the shell accumulates samples and settles on a throttle, then narrates ONCE for the
+// whole stroke. radius / strength default to the CFG knobs, so a 3-arg call is the old single-dab behaviour.
+// Returns {crossed,rose,sank} so a caller can summarise an entire stroke from the accumulated flags.
+function brushTerrainRaw(cx,cy,dir,radius,strength){
+  var out={crossed:0,rose:false,sank:false};
+  if(!inb(cx,cy))return out;
+  var R=(radius===undefined?CFG.godBrushRadius:radius)|0;
+  var d=(strength===undefined?CFG.godBrushDelta:strength)*dir;
   for(var yy=cy-R;yy<=cy+R;yy++)for(var xx=cx-R;xx<=cx+R;xx++){
     if(!inb(xx,yy))continue;
     var ddx=xx-cx,ddy=yy-cy,dist=Math.sqrt(ddx*ddx+ddy*ddy);if(dist>R+0.5)continue;
@@ -1384,14 +1421,51 @@ function brushTerrain(cx,cy,dir){
     var fall=1-dist/(R+1);                                          // soft falloff, 1 at centre
     var wasOcean=(grid[i]===T.OCEAN);
     elev[i]=clamp((elev[i]||0)+d*fall,0,10);
-    if(dir>0&&wasOcean&&elev[i]>=0.5){grid[i]=T.COAST;coastTTL[i]=0;crossed++;rose=true;}
-    else if(dir<0&&!wasOcean&&elev[i]<0.35){_killLifeAt(i);grid[i]=T.OCEAN;elev[i]=0;coastTTL[i]=0;crossed++;sank=true;}
+    if(dir>0&&wasOcean&&elev[i]>=0.5){grid[i]=T.COAST;coastTTL[i]=0;out.crossed++;out.rose=true;}
+    else if(dir<0&&!wasOcean&&elev[i]<0.35){_killLifeAt(i);grid[i]=T.OCEAN;elev[i]=0;coastTTL[i]=0;out.crossed++;out.sank=true;}
   }
-  _compactLife();computeTemperature();computeAridity();applyClimate();reclassTerrain();
-  if(rose)chronicleNote('god','New land rose from the sea by a shaping hand.','#8a9a7b');
-  if(sank)chronicleNote('god','Land sank beneath the waves.','#3aa6e0');
-  return crossed;
+  return out;
 }
+
+// Single-dab land brush (the original God-deck power): raw edit + settle + narrate. Behaviour unchanged.
+function brushTerrain(cx,cy,dir,radius,strength){
+  if(!inb(cx,cy))return 0;
+  var r=brushTerrainRaw(cx,cy,dir,radius,strength);
+  settleTerrain();
+  if(r.rose)chronicleNote('god','New land rose from the sea by a shaping hand.','#8a9a7b');
+  if(r.sank)chronicleNote('god','Land sank beneath the waves.','#3aa6e0');
+  return r.crossed;
+}
+
+// Climate brush: paint moisture or warmth onto the world. Writes ONLY the persistent god offsets - never the
+// live fields (applyClimate overwrites those every tick) and never the base fields (step rebuilds those from
+// terrain every ~20 ticks). field is 'moist' or 'temp'; dir +1 is the named power (rain / warm) and -1 its
+// opposite (parch / chill). Moisture is stored as ARIDITY, which runs the other way, so 'moist' flips sign
+// here rather than making every caller remember it. Returns {touched} for a stroke summary.
+function brushClimateRaw(cx,cy,dir,radius,strength,field){
+  var out={touched:0};
+  if(!inb(cx,cy))return out;
+  var arr = (field==='temp') ? godTemp : godArid;
+  if(!arr)return out;
+  var sign = (field==='temp') ? 1 : -1;            // wetter == LOWER aridity
+  var R=(radius===undefined?CFG.godBrushRadius:radius)|0;
+  var d=(strength===undefined?CFG.godClimateDelta:strength)*dir*sign;
+  var CAP=CFG.godClimateMax;
+  for(var yy=cy-R;yy<=cy+R;yy++)for(var xx=cx-R;xx<=cx+R;xx++){
+    if(!inb(xx,yy))continue;
+    var ddx=xx-cx,ddy=yy-cy,dist=Math.sqrt(ddx*ddx+ddy*ddy);if(dist>R+0.5)continue;
+    var i=idx(xx,yy);
+    var fall=1-dist/(R+1);                          // same soft falloff as the land brush
+    arr[i]=clamp(arr[i]+d*fall,-CAP,CAP);
+    out.touched++;
+  }
+  if(out.touched)_godClimatePainted=true;
+  return out;
+}
+
+// Climate settle: far cheaper than settleTerrain - the bases are untouched, so only the live fields and the
+// biome classification need redoing.
+function settleClimate(){ applyClimate(); reclassTerrain(); }
 
 // Meteor: strike a target (defaults to the densest life for maximum drama), cratering terrain and wiping
 // fauna + flora in the blast radius. Returns the number of creatures killed.
@@ -1437,6 +1511,153 @@ function bloomEvent(){
   chronicleNote('god','A great bloom carpeted the world with new growth'+(sprang?' ('+sprang+' plants).':'.'),'#3fcf6a');
   return sprang;
 }
+
+// Ember: fire both destroys and CREATES land in this world, so one click reads the ground and does the
+// right thing - a volcano tears open on high ground, a meteor craters anything lower.
+function emberStrike(tx,ty){
+  if(!inb(tx,ty))return null;
+  var i=idx(tx,ty);
+  var high=(grid[i]!==T.OCEAN)&&((elev[i]||0)>=CFG.emberVolcanoMinElev)
+        &&!(peakVolcano&&peakVolcano[i])&&!(volcanoRing&&volcanoRing[i]!==0);
+  if(high){
+    promoteVolcanoAt(i);
+    settleTerrain();
+    chronicleNote('god','A volcano tore itself open on the high ground.','#e07b39');
+    return {kind:'volcano'};
+  }
+  return {kind:'meteor',killed:meteorStrike(tx,ty)};   // meteorStrike settles and narrates itself
+}
+
+// Spring: open a headwater. The tile is registered as a spring and the hydrology is re-run, so the river
+// finds its own way to the sea. Rivers also wet their banks (computeAridity), which is why the new course
+// greens as it goes rather than being drawn on top of unchanged ground.
+function addSpring(tx,ty){
+  if(!inb(tx,ty))return false;
+  var i=idx(tx,ty);
+  if(grid[i]===T.OCEAN)return false;
+  for(var k=0;k<springs.length;k++)if(springs[k]===i)return false;   // one spring per tile
+  springs.push(i);
+  generateRivers();
+  computeAridity();applyClimate();reclassTerrain();
+  chronicleNote('god','A spring broke open, and the water found its way to the sea.','#3aa6e0');
+  return true;
+}
+
+// Contextual life seed: ONE click that does the obviously-right thing for the ground under it, so a player
+// never has to know the trophic ladder to use it. Bare ground gets plants; greened ground gets grazers;
+// ground already thick with grazers gets a predator. Teaches the food chain by doing.
+function seedLifeAt(tx,ty){
+  if(!inb(tx,ty))return null;
+  var i=idx(tx,ty),t=grid[i];
+  if(t===T.OCEAN||t===T.MOUNTAIN||t===T.VOLCANIC)return null;
+  var R=CFG.seedRadius|0,floraNear=0,herbNear=0;
+  for(var f=0;f<flora.length;f++){var fl=flora[f];if(fl&&Math.abs(fl.x-tx)<=R&&Math.abs(fl.y-ty)<=R)floraNear++;}
+  for(var a=0;a<fauna.length;a++){var fa=fauna[a];if(!fa)continue;
+    if(Math.abs(fa.x-tx)>R||Math.abs(fa.y-ty)>R)continue;
+    if(fa.type==='herbivore'||fa.type==='omnivore')herbNear++;}
+  var kind=(floraNear<CFG.seedFloraNeed)?'flora':((herbNear<CFG.seedHerbNeed)?'herbivore':'carnivore');
+  var want=(kind==='flora')?CFG.seedFloraCount:((kind==='herbivore')?CFG.seedHerbCount:CFG.seedCarnCount);
+  var placed=0,guard=want*40;
+  while(placed<want&&guard-->0){
+    var ox=tx+((eRng()*(2*R+1))|0)-R,oy=ty+((eRng()*(2*R+1))|0)-R;
+    if(!inb(ox,oy))continue;
+    var tj=grid[idx(ox,oy)];
+    if(tj===T.OCEAN||tj===T.MOUNTAIN||tj===T.VOLCANIC)continue;
+    if(kind==='flora')flora.push(makeFlora(ox,oy,null));
+    else fauna.push(makeFauna(ox,oy,kind,null));
+    placed++;
+  }
+  if(!placed)return null;
+  chronicleNote('god',kind==='flora'?'Green things took root where there had been none.'
+    :(kind==='herbivore'?'A herd was set down on the grass.':'A predator was loosed among the herds.'),
+    kind==='flora'?'#3fcf6a':(kind==='herbivore'?'#c9a24b':'#e85454'));
+  return {kind:kind,count:placed};
+}
+
+// Sea level. dir +1 RAISES the sea (drowning low country), -1 lowers it. Land moves a step either way; on
+// a drop only the SHELF - ocean touching land - rises with it, so the coast creeps outward a ring at a
+// time. Open ocean is deliberately left alone: it carries no bathymetry (every ocean tile is elevation 0),
+// so moving it would surface the entire seabed at once in a single flat sheet.
+function shiftSeaLevel(dir){
+  var step=CFG.seaLevelStep*dir,N=W*H,changed=0,i;
+  if(dir>0){
+    // RISE. Every land tile drops a step; anything that goes under is remembered - both the height it stood
+    // at and WHICH rise took it - so the matching withdrawal can hand back exactly that ring and no more.
+    seaSteps++;
+    for(i=0;i<N;i++){
+      if(peakVolcano&&peakVolcano[i])continue;                 // volcano cores stand above it all
+      if(grid[i]===T.OCEAN)continue;                           // already sea
+      var wasElev=elev[i]||0;                                  // the TRUE height, before any clamping
+      elev[i]=clamp(wasElev-step,0,10);
+      if(elev[i]<0.35){
+        if(drownedElev){drownedElev[i]=wasElev;drownedAt[i]=seaSteps;}
+        _killLifeAt(i);grid[i]=T.OCEAN;elev[i]=0;coastTTL[i]=0;changed++;
+      }
+    }
+  }else if(seaSteps>0){
+    // WITHDRAW to a level the sea has already stood at. Land lifts back by a step, and only the ring drowned
+    // by THIS step resurfaces, so N rises followed by N falls is a round trip rather than a landslide.
+    for(i=0;i<N;i++){
+      if(peakVolcano&&peakVolcano[i])continue;
+      if(grid[i]===T.OCEAN){
+        if(drownedAt&&drownedAt[i]===seaSteps){
+          elev[i]=drownedElev[i]||0;drownedElev[i]=0;drownedAt[i]=0;
+          if(elev[i]>=0.35){grid[i]=T.COAST;coastTTL[i]=0;changed++;}
+        }
+        continue;
+      }
+      elev[i]=clamp((elev[i]||0)-step,0,10);                   // step is negative here, so this lifts
+    }
+    seaSteps--;
+  }else{
+    // BELOW the original shoreline. There is no drowned ground left owing, so new shore has to be won from
+    // the SHELF - ocean touching land - a ring at a time. Open ocean is deliberately untouched: it carries no
+    // bathymetry to speak of, so moving it would surface the whole seabed at once as one flat sheet.
+    // NOTE: ocean elevation is normally 0, but it is NOT an absolute invariant - the land brush deliberately
+    // accumulates elevation on ocean tiles until they cross the 0.5 threshold, which is what makes raising
+    // ground out of the sea feel gradual. A surfacing shelf tile therefore overwrites whatever was there.
+    var shelf=new Uint8Array(N);
+    for(i=0;i<N;i++){
+      if(grid[i]!==T.OCEAN)continue;
+      var sx=i%W,sy=(i/W)|0,nb=neighbors8(sx,sy);
+      for(var n0=0;n0<nb.length;n0++){if(grid[idx(nb[n0][0],nb[n0][1])]!==T.OCEAN){shelf[i]=1;break;}}
+    }
+    for(i=0;i<N;i++){
+      if(peakVolcano&&peakVolcano[i])continue;
+      if(grid[i]===T.OCEAN){
+        // A shelf tile surfaces as new shore in ONE step. Lifting it partway would leave an ocean tile
+        // holding elevation, which nothing downstream ever clears (reclassTerrain skips ocean).
+        if(!shelf[i])continue;
+        elev[i]=clamp(0.5-step*0.5,0,10);
+        grid[i]=T.COAST;coastTTL[i]=0;changed++;
+        continue;
+      }
+      elev[i]=clamp((elev[i]||0)-step,0,10);
+    }
+    seaSteps--;
+  }
+  settleTerrain();
+  if(riverGenerated)generateRivers();
+  chronicleNote('god',dir>0?'The sea rose, and the low country went under.'
+    :'The sea drew back, and shore came up out of it.','#3aa6e0');
+  return changed;
+}
+
+// ===== Undo (single level) =====
+// One step back, and one only. The shell marks the world immediately BEFORE a god act - at stroke START, so
+// an entire drag is ONE undoable act - and can roll back to it. Deliberately not a stack: a world is a
+// multi-megabyte structuredClone, and one step is what makes experimenting safe without hoarding memory.
+// Note restoreState re-seeds the RNG streams from _seed, so an undo also rewinds the ecology's random phase.
+// Harmless here: the ecology has never been seed-reproducible (see the reproducibility lesson), and the same
+// rewind already ships in the JSON world-load path.
+var _godUndo=null;
+// Returns the mark it displaced, so a caller that turns out to have done nothing can restore it with
+// godCancelMark. Without this, clicking a power on invalid ground silently threw away the undo for
+// whatever real act came before it.
+function godMark(){ var prev=_godUndo; _godUndo=snapshotState(); return prev; }
+function godCancelMark(prev){ _godUndo=prev||null; }
+function godCanUndo(){ return !!_godUndo && _godUndo.seed===_seed; }
+function godUndo(){ if(!godCanUndo())return false; restoreState(_godUndo); _godUndo=null; return true; }
 
 // ===== Scenarios + objectives (chunk 5, pillar E): named starting setups with a win/lose observer =====
 // A scenario is a starting RECIPE (a preset + a fixed seed + a burst of initial life) plus an OBJECTIVE.
@@ -1590,7 +1811,7 @@ function initWorld(seedOverride){
   // shift the eRng phase -> the ecology run is byte-identical with or without the cosmetic genes.
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
-  tick=0;grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
+  tick=0;_godUndo=null;springs=[];grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],scav:[],apex:[],omni:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];carrion=[];speciesNameCache={};chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();foodWeb=newFoodWeb();clearRivers();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
@@ -1718,6 +1939,8 @@ function snapshotState(){
     biomeDesiredNext:biomeDesiredNext, biomeBoundary:biomeBoundary,
     // climate fields (genesis baseline; the live temp/aridity above are base + offsets, re-derived next tick)
     baseTemp:baseTemp, baseArid:baseArid, anomalyBlobs:anomalyBlobs,
+    godTemp:godTemp, godArid:godArid, godPainted:_godClimatePainted, springs:springs,
+    drownedElev:drownedElev, drownedAt:drownedAt, seaSteps:seaSteps,
     // rivers
     riverData:riverData,
     // ecology lists
@@ -1742,6 +1965,12 @@ function restoreState(snap){
   volcanoRing=s.volcanoRing; volcanoCenters=s.volcanoCenters; biomeStability=s.biomeStability;
   biomeDesiredNext=s.biomeDesiredNext; biomeBoundary=s.biomeBoundary;
   baseTemp=s.baseTemp; baseArid=s.baseArid; anomalyBlobs=s.anomalyBlobs;
+  // Older snapshots predate the climate brushes: fall back to an unpainted world rather than undefined.
+  godTemp=s.godTemp||new Float32Array(W*H); godArid=s.godArid||new Float32Array(W*H);
+  _godClimatePainted=!!s.godPainted;
+  springs=Array.isArray(s.springs)?s.springs:[];
+  drownedElev=s.drownedElev||new Float32Array(W*H);
+  drownedAt=s.drownedAt||new Int16Array(W*H); seaSteps=s.seaSteps||0;
   riverData=s.riverData;
   flora=s.flora; fauna=s.fauna; floraRemnants=s.floraRemnants; deathParticles=s.deathParticles; carrion=s.carrion||[];
   computeWaterDist(); // derive from the restored grid so snapshot replays use a consistent water field
@@ -1790,6 +2019,21 @@ function applySnapshot(data){
   // leftover seasonAnchorTick from a previous world in the tab cannot give the import an arbitrary season phase.
   seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;
   reseedSunlight();computeSunlight();climateInit();computeTemperature();computeAridity();applyClimate();reclassTerrain();
+  // Painted climate rides along in the save file. climateInit (above) just zeroed these, so restore
+  // AFTER it and re-settle, otherwise a saved rain valley silently loads back as desert.
+  // A load replaces the world, so any undo mark belongs to a world that no longer exists. The seed
+  // guard cannot catch this (painting never changes the seed), so drop the mark explicitly.
+  _godUndo=null;
+  springs=Array.isArray(data.springs)?data.springs.slice():[];
+  seaSteps=data.seaSteps||0;
+  if(seaSteps&&data.drownedElev&&data.drownedElev.length===W*H){
+    drownedElev=new Float32Array(data.drownedElev);
+    drownedAt=data.drownedAt?new Int16Array(data.drownedAt):new Int16Array(W*H);
+  }
+  if(data.godPainted&&data.godTemp&&data.godArid&&data.godTemp.length===W*H){
+    godTemp=new Float32Array(data.godTemp);godArid=new Float32Array(data.godArid);_godClimatePainted=true;
+    applyClimate();reclassTerrain();
+  }
 }
 
 // ===== Public API (chunk 10) =====
@@ -1833,7 +2077,10 @@ export {
   // living food web
   foodWeb, newFoodWeb, foodWebCensus, foodWebSample, FOOD_WEB_EDGES,
   // god powers
-  brushTerrain, meteorStrike, droughtEvent, bloomEvent,
+  brushTerrain, brushTerrainRaw, settleTerrain, brushClimateRaw, settleClimate,
+  emberStrike, addSpring, seedLifeAt, shiftSeaLevel, springs,
+  meteorStrike, droughtEvent, bloomEvent,
+  godMark, godCancelMark, godUndo, godCanUndo,
   // shareable worlds
   buildWorldCode, applyWorldCode, encodeWorldCode, decodeWorldCode, worldPermalink, worldPostcard,
   WORLD_CODE_VERSION,
