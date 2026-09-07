@@ -2,6 +2,17 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-09-07 - The renderer becomes a module - DONE, GATE GREEN
+Newest handoff: **`docs/04 Handoffs/2026-09-07 The renderer becomes a module.md`** - read it first.
+
+The ops dashboard's orrery now shows a live Worldbuilder world on a screen in its sky (owner ask). To do
+that without a second copy of the simulation, `draw()` and `drawRivers()` moved out of `src/main.js` into
+a new DOM-free module `src/render.js` exporting `drawWorld(ctx, PIX, {overlayMode, followId})` and
+`drawRivers(ctx, PIX)`; `main.js`'s `draw()` is now a wrapper that calls `drawWorld` then its own HUD and
+panels. `setWorldSize(w, h)` takes an optional height (one argument still means square). No simulation
+code changed; pixels are identical. The ops server serves `src/sim.js` and `src/render.js` read-only
+under `/wb/`; a worker there runs them at 98x96 with the owner's settings.
+
 ## Session 2026-08-21 (b) - Viewer reachability + rail tooltips + narrow screens - DONE, GATE GREEN
 Newest handoff: **`docs/04 Handoffs/2026-08-21 Viewer reachability, rail tooltips, narrow screens.md`** - read it first.
 

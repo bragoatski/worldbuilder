@@ -1979,7 +1979,7 @@ function restoreState(snap){
 // ===== Split seams (chunk 10) =====
 // Setter so the UI shell can change the world size without reassigning an imported binding
 // (ES module bindings are read-only from the importer). The mapSize handler calls this.
-function setWorldSize(n){ W=n; H=n; }
+function setWorldSize(w,h){ W=w; H=(h===undefined?w:h); }   // one arg = square; two = any grid (2026-09-07)
 // Setter for the scenario handle so the UI shell's async startScenario can install its 'preparing'
 // placeholder without reassigning the imported binding (it then mutates .startTick/.status in place).
 function setActiveScenario(v){ activeScenario=v; }

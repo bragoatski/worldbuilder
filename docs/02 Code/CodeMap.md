@@ -1,5 +1,7 @@
 # CodeMap - Worldbuilder
 
+> 2026-09-07: rendering moved to `src/render.js` (`drawWorld`, `drawRivers`); `main.js` `draw()` is a wrapper. `setWorldSize(w, h)` accepts a height.
+
 ## Project structure (updated 2026-07-03: the sim core is split out of main.js into src/sim.js, chunk 10)
 Vite + TS project. The DOM-free SIMULATION is now a separate module from the UI shell:
 - **`index.html`** - HTML shell + CSS; loads `src/main.js` as an ES module.
