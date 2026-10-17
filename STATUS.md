@@ -5,13 +5,14 @@ _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Hand
 ## Session 2026-10-17 - Root visits the world - DONE (gate: see commit)
 Newest handoff: **`docs/04 Handoffs/2026-10-17 Root visits the world.md`** - read it first.
 
-`npm run visit` opens a visit: Root (the assistant) walks the live world through an MCP "door" whose 8 tools
-(look, walk, plant, name_place, say, listen, note, leave) are its only tools. It sees a 9x9 square; the owner watches
-the whole map on `?visit`, talks in a chat panel, Shift+clicks to point, and keeps every Hand power. Pure cores in
-`src/visit.js` (tested in `src/visit.test.js`); relay + door + launcher in `visit/`. Root's record (world, notes,
-visit logs, field notes) lives in `~/root`, not here. Also fixed: the intro key listener ate Space/Enter page-wide. Same-day bug hunt fixed 14 more (relay origin lock,
-session isolation, one live page, no overwrite on failed load); see the handoff.
-**Next:** the owner runs the first real visit; what Root does with no goal decides the next step.
+`npm run dev` now also starts the visit relay, and the local page gets a **Call Root** toggle in the top bar. The game
+runs as normal; pressed, the relay launches Root (the assistant) as a headless Claude session whose only tools are an
+MCP "door" (look, walk, plant, name_place, say, listen, note, leave). Root sees a 9x9 square of whatever world is on
+screen; the owner talks in a panel, Shift+clicks to point, keeps every Hand power, and can **Send Root home** (Root
+says goodbye and leaves with a field note). Pure cores in `src/visit.js` (tested in `src/visit.test.js`); relay + door
+in `visit/`. Root's record (notes, visit logs, session transcripts, per-world memory, field notes) lives in `~/root`.
+The public Pages build never shows the toggle. Also fixed: the intro key listener ate Space/Enter page-wide.
+**Next:** the owner calls Root in for a first real visit; what Root does with no goal decides the next step.
 
 ## Session 2026-09-07 - The renderer becomes a module - DONE, GATE GREEN
 Newest handoff: **`docs/04 Handoffs/2026-09-07 The renderer becomes a module.md`** - read it first.

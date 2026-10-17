@@ -1,29 +1,44 @@
-// The visit relay: a mailbox between Root's door (door.mjs, an MCP server) and the page that owns the world
-// (src/visit.js on ?visit). Zero dependencies. Root's actions queue here until the page takes them; the page's
-// answers, plus anything Kevin said, go back to Root. Root's own record (notes, the saved world, a log of every
-// visit, field notes) lives under ~/root, because it is Root's life, not the product's.
+// The visit relay: a mailbox between Root's door (door.mjs, an MCP server) and the Worldbuilder page.
+// Zero dependencies. The Vite dev server starts it (vite.config.js), so the normal game can offer a
+// "Call Root" button: the page asks the relay to summon Root, the relay launches a Claude session whose
+// only tools are the door's, and Root's actions queue here until the page carries them out.
+// Root's own record (notes, visit logs, field notes, what it left in each world) lives under ~/root.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawn, execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
+const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 7796;
-// Only the visit page may talk to the relay from a browser. Without this, any website open in Kevin's
-// browser could POST a fake "Kevin says" line into Root's context. Requests with no Origin come from
-// local processes (the door), which already run as Kevin.
-const PAGE_PORT = Number(process.env.VISIT_PAGE_PORT || 5181);
-const PAGE_ORIGINS = ['http://localhost:' + PAGE_PORT, 'http://127.0.0.1:' + PAGE_PORT];
+// Only a local page may talk to the relay from a browser. Without this, any website open in Kevin's browser
+// could POST a fake "Kevin says" line into Root's context. Requests with no Origin come from local processes
+// (the door), which already run as Kevin.
+const PAGE_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1):\d{2,5}$/;
 const HOSTS = ['127.0.0.1:' + PORT, 'localhost:' + PORT];   // refuses DNS-rebinding hosts
 const VISIT_MINUTES = Number(process.env.VISIT_MINUTES || 20);
-const GRACE_MINUTES = 5;   // after time is up, this long to say goodbye and leave; then only leave works
+const GRACE_MINUTES = 5;      // after time is up, this long to say goodbye and leave; then only leave works
+const HOME_GRACE_MS = 3 * 60000;   // after "send Root home", the session is ended if Root has not left by then
 // VISIT_ROOT points a rehearsal at a scratch folder so a test never writes Root's real record.
 const ROOT_DIR = process.env.VISIT_ROOT || path.join(os.homedir(), 'root');
 const HOME = path.join(ROOT_DIR, 'visits');
-const WORLD = path.join(HOME, 'world.json');
+const WORLDS = path.join(HOME, 'worlds');   // what Root left in each world, keyed by seed + size
 const NOTES = path.join(HOME, 'notes.jsonl');
 const FIELD_NOTES = path.join(ROOT_DIR, 'field-notes', 'field-notes.md');
-fs.mkdirSync(HOME, { recursive: true });
+fs.mkdirSync(WORLDS, { recursive: true });
 fs.mkdirSync(path.dirname(FIELD_NOTES), { recursive: true });
+
+// The Claude executable. On Windows `claude` is a .cmd shim that would need a shell (and its quoting);
+// launch the real binary behind it instead.
+function claudeBin() {
+  if (process.env.VISIT_CLAUDE) return process.env.VISIT_CLAUDE;
+  if (process.platform === 'win32' && process.env.APPDATA) {
+    const exe = path.join(process.env.APPDATA, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+    if (fs.existsSync(exe)) return exe;
+  }
+  return 'claude';
+}
 
 // West-coast local time with an explicit offset (global rule: display local, compute UTC).
 function stamp(d = new Date()) {
@@ -33,12 +48,13 @@ function stamp(d = new Date()) {
     p(d.getMinutes()) + ':' + p(d.getSeconds()) + sign + p(a / 60 | 0) + ':' + p(a % 60);
 }
 
-let visit = null;          // { id, started (epoch ms), log path, session }
+let visit = null;          // { id, started (epoch ms), log path, session, dismissed (epoch ms) }
+let child = null;          // the summoned Claude session, while it runs
 let nextId = 1;
 const queue = [];          // actions waiting for the page
 const waiting = new Map(); // action id -> { resolve, taken }
 let pagePoll = null;       // the current page's pending long-poll response
-let currentPage = null;    // the newest visit page; an older tab is told to stand down
+let currentPage = null;    // the newest page; an older tab is told to stand down
 let inbox = [];            // [{ t, text }] what Kevin said, not yet heard by Root
 const wakers = new Set();  // listen calls waiting for Kevin
 
@@ -48,7 +64,7 @@ function log(entry) {
 
 function sendJSON(res, code, obj) {
   if (res.writableEnded) return;
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': res.allowOrigin || PAGE_ORIGINS[0],
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': res.allowOrigin || 'http://localhost:5173',
     'Access-Control-Allow-Headers': 'Content-Type', 'Vary': 'Origin' });
   res.end(JSON.stringify(obj));
 }
@@ -57,7 +73,7 @@ function body(req) {
   return new Promise((resolve, reject) => {
     let s = '';
     req.setEncoding('utf8');   // never split a multibyte character across chunks
-    req.on('data', c => { s += c; if (s.length > 20e6) { reject(new Error('body too large')); req.destroy(); } });
+    req.on('data', c => { s += c; if (s.length > 2e6) { reject(new Error('body too large')); req.destroy(); } });
     req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}); } catch (e) { reject(e); } });
     req.on('error', reject);
   });
@@ -68,7 +84,7 @@ function deliver() {
   const res = pagePoll; pagePoll = null;
   const a = queue.shift();
   const w = waiting.get(a.id); if (w) w.taken = true;
-  sendJSON(res, 200, { ...a, left: visit ? Math.max(0, Math.ceil(minutesLeft())) : null });
+  sendJSON(res, 200, a);
 }
 
 // Hand an action to the page and wait for what Root perceives back. If the page has already TAKEN the action,
@@ -115,12 +131,15 @@ function recentNotes(n) {
   return out.slice(-n);
 }
 
+const PAGE_DOWN = 'The door is open but the world is not: the Worldbuilder page is not open, or there is no ground yet. ' +
+  'Try again in a moment.';
+
 async function arrive(session) {
-  visit = { id: stamp().slice(0, 16).replace(':', ''), started: Date.now(), log: null, session };
+  visit = { id: stamp().slice(0, 16).replace(':', ''), started: Date.now(), log: null, session, dismissed: 0 };
   visit.log = path.join(HOME, visit.id + '.jsonl');
   try {
-    const history = await ask('arrive', {});
-    if (history === null) { visit = null; return null; }
+    const history = await ask('arrive', {}, 90000);   // the page may wait for ground to rise
+    if (history === null || history === '\u0000no-ground') { visit = null; return null; }
     const view = await ask('look', {});
     const notes = recentNotes(12);
     const parts = ['You step through the door. You have ' + VISIT_MINUTES + ' minutes here.'];
@@ -132,9 +151,6 @@ async function arrive(session) {
     return parts.join('\n\n');
   } catch (e) { visit = null; throw e; }
 }
-
-const PAGE_DOWN = 'The door is open but the world is not: the page is not running or is still forming. ' +
-  'Ask Kevin to open the visit page, then try again.';
 
 // Each door process (one Claude session) carries its own session id. A call from a new session while an old
 // visit is still open means that session died without leaving: close it and arrive fresh.
@@ -154,14 +170,16 @@ function footer() {
   const left = minutesLeft();
   let s = '';
   if (heard.length) s += '\n\nYou hear:\n' + heard.join('\n');
-  s += left > 0 ? '\n\n(' + Math.max(1, Math.round(left)) + ' min left)' : '\n\n(Your time here is up. Say goodbye if you like, then leave with your field note.)';
+  if (visit && visit.dismissed) s += '\n\n(Kevin has asked you to head home. Say goodbye if you like, then leave with your field note.)';
+  else s += left > 0 ? '\n\n(' + Math.max(1, Math.round(left)) + ' min left)' : '\n\n(Your time here is up. Say goodbye if you like, then leave with your field note.)';
   return s;
 }
 
 async function act(verb, args) {
   let text;
-  if (minutesLeft() < -GRACE_MINUTES && !['leave', 'say', 'note'].includes(verb)) {
-    return 'Your time here is over and the world has gone still around you. Leave with your field note.';
+  const closing = (visit && visit.dismissed) || minutesLeft() < -GRACE_MINUTES;
+  if (closing && !['leave', 'say', 'note'].includes(verb)) {
+    return 'The world has gone still around you; it is time to go. Leave with your field note.';
   }
   if (verb === 'note') {
     const t = String(args.text || '').trim();
@@ -190,7 +208,7 @@ async function act(verb, args) {
     }
     log({ verb, args, text: saved });
     visit = null;
-    return (saved || 'The page did not answer; the last autosave stands.') + (note ? ' Your field note is written.' : ' You left no field note.');
+    return (saved || 'The page did not answer.') + (note ? ' Your field note is written.' : ' You left no field note.');
   } else {
     text = await ask(verb, args);
     if (text === null) text = PAGE_DOWN;
@@ -201,20 +219,54 @@ async function act(verb, args) {
 
 function wakeListeners() { for (const w of [...wakers]) w(); }
 
-function writeWorld(data) {
-  fs.writeFileSync(WORLD + '.tmp', data);
-  for (let tries = 0; ; tries++) {   // Windows: a rename onto a file someone has open fails with EPERM, briefly
-    try { fs.renameSync(WORLD + '.tmp', WORLD); return; } catch (e) {
-      if (tries >= 5 || (e.code !== 'EPERM' && e.code !== 'EBUSY')) throw e;
-      const until = Date.now() + 100; while (Date.now() < until) { /* short spin, rare */ }
-    }
-  }
+// Launch Root: a headless Claude session whose only tools are the door's. --setting-sources user keeps Root's
+// own global layer (identity, memory) but not ~/CLAUDE.md, the phone bridge's rules. The session's full
+// transcript is kept beside the visit log.
+function summon() {
+  if (child) return false;
+  const cfg = path.join(os.tmpdir(), 'root-door-mcp.json');
+  fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { door: { command: process.execPath, args: [path.join(DIR, 'door.mjs')] } } }));
+  const args = ['-p', '--allowedTools', 'mcp__door', '--tools=', '--setting-sources', 'user',
+    '--mcp-config', cfg, '--strict-mcp-config', '--append-system-prompt-file', path.join(DIR, 'visit-prompt.md'),
+    '--output-format', 'stream-json', '--verbose'];
+  if (process.env.VISIT_MODEL) args.push('--model', process.env.VISIT_MODEL);
+  args.push('Kevin has called you in. The door is in front of you.');   // after a single-value flag: never eaten by a variadic one
+  const out = fs.openSync(path.join(HOME, stamp().slice(0, 16).replace(':', '') + '.session.jsonl'), 'a');
+  const env = { ...process.env }; delete env.CLAUDECODE;   // a fresh session, not a nested one
+  child = spawn(claudeBin(), args, { cwd: HOME, env, stdio: ['ignore', out, out], windowsHide: true });
+  const me = child;
+  const done = () => {
+    if (child !== me) return;
+    child = null; fs.closeSync(out);
+    if (visit) { log({ verb: 'ended without leaving' }); visit = null; }
+  };
+  child.on('exit', done);
+  child.on('error', e => { fs.writeSync(out, JSON.stringify({ relay_error: String(e.message) }) + '\n'); done(); });
+  return true;
 }
+
+function endSession() {
+  if (!child) return;
+  if (process.platform === 'win32') execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], () => {});
+  else child.kill();
+}
+
+function sendHome() {
+  if (visit && !visit.dismissed) {
+    visit.dismissed = Date.now();
+    log({ kevin: 'sent Root home' });
+    wakeListeners();
+    const me = child;
+    setTimeout(() => { if (child && child === me) endSession(); }, HOME_GRACE_MS);
+  } else if (!visit) endSession();   // still starting up and not yet through the door: just stop it
+}
+
+function stateFile(key) { return /^[\w-]{1,64}$/.test(key || '') ? path.join(WORLDS, key + '.json') : null; }
 
 const server = http.createServer(async (req, res) => {
   try {
     const origin = req.headers.origin;
-    if (!HOSTS.includes(req.headers.host) || (origin && !PAGE_ORIGINS.includes(origin))) {
+    if (!HOSTS.includes(req.headers.host) || (origin && !PAGE_ORIGIN.test(origin))) {
       res.writeHead(403); return res.end();
     }
     res.allowOrigin = origin;
@@ -225,12 +277,31 @@ const server = http.createServer(async (req, res) => {
     }
     const u = new URL(req.url, 'http://127.0.0.1');
     const url = u.pathname, page = u.searchParams.get('page');
+    const stale = () => page !== currentPage;
     if (req.method === 'POST' && url === '/door') {
       const b = await body(req);
       return sendJSON(res, 200, { text: await door(String(b.verb || ''), b.args || {}, String(b.session || '')) });
     }
+    if (req.method === 'GET' && url === '/page/hello') {
+      currentPage = page;                   // the newest page is where Root lives from here on
+      if (pagePoll) { const old = pagePoll; pagePoll = null; sendJSON(old, 409, { error: 'a newer page has taken over' }); }
+      return sendJSON(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url === '/page/status') {
+      return sendJSON(res, 200, { mine: !stale(), running: !!child, present: !!visit,
+        left: visit ? Math.max(0, Math.ceil(minutesLeft())) : null, leaving: !!(visit && visit.dismissed) });
+    }
+    if (req.method === 'POST' && url === '/page/summon') {
+      if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
+      return sendJSON(res, 200, { started: summon() });
+    }
+    if (req.method === 'POST' && url === '/page/home') {
+      if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
+      sendHome();
+      return sendJSON(res, 200, { ok: true });
+    }
     if (req.method === 'GET' && url === '/page/poll') {
-      if (page !== currentPage) return sendJSON(res, 409, { error: 'a newer visit page has taken over' });
+      if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
       if (pagePoll) sendJSON(pagePoll, 200, {});
       pagePoll = res;
       res.on('close', () => { if (pagePoll === res) pagePoll = null; });   // never hand an action to a dead socket
@@ -250,19 +321,17 @@ const server = http.createServer(async (req, res) => {
       if (t || b.wake) wakeListeners();     // a point wakes a listening Root; the page words it on delivery
       return sendJSON(res, 200, { ok: true });
     }
-    if (req.method === 'GET' && url === '/page/load') {
-      currentPage = page;                   // the newest page owns the world from here on
-      if (pagePoll) { const old = pagePoll; pagePoll = null; sendJSON(old, 409, { error: 'a newer visit page has taken over' }); }
-      if (!fs.existsSync(WORLD)) return sendJSON(res, 404, {});
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin || PAGE_ORIGINS[0], 'Vary': 'Origin' });
-      return res.end(fs.readFileSync(WORLD));   // read whole, so no open handle blocks a concurrent save's rename
-    }
-    if (req.method === 'POST' && url === '/page/save') {
-      if (page !== currentPage) return sendJSON(res, 409, { error: 'a newer visit page has taken over' });
-      const b = await body(req);
-      if (!b.snapshot || !b.root) return sendJSON(res, 400, { error: 'snapshot and root required' });
-      writeWorld(JSON.stringify(b));
-      return sendJSON(res, 200, { ok: true });
+    if (url === '/page/state') {            // what Root left in one world: names, plantings, footsteps
+      const f = stateFile(u.searchParams.get('key'));
+      if (!f) return sendJSON(res, 400, { error: 'bad key' });
+      if (req.method === 'GET') return sendJSON(res, 200, fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null);   // null: never been here
+      if (req.method === 'POST') {
+        if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
+        const b = await body(req);
+        fs.writeFileSync(f + '.tmp', JSON.stringify(b));
+        fs.renameSync(f + '.tmp', f);
+        return sendJSON(res, 200, { ok: true });
+      }
     }
     sendJSON(res, 404, { error: 'no such path' });
   } catch (e) {
@@ -270,4 +339,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 server.requestTimeout = 0;
+server.on('error', e => {   // another relay already holds the port: that one serves, this one bows out
+  if (e.code === 'EADDRINUSE') { console.log('visit relay already running on ' + PORT); process.exit(0); }
+  throw e;
+});
 server.listen(PORT, '127.0.0.1', () => console.log(stamp() + ' visit relay on http://127.0.0.1:' + PORT + ', record in ' + HOME));
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { endSession(); process.exit(0); });

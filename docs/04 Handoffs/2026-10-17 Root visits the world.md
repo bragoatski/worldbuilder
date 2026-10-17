@@ -29,6 +29,29 @@ Design positions agreed in conversation:
   + `visit/visit-prompt.md`. Verified: the tool list is exactly the 8 door tools, and `--setting-sources user` keeps
   Root's global identity while dropping `~/CLAUDE.md` (the phone bridge's rules, an ancestor of `~/root/visits`).
 
+## Third pass, same day: "Call Root" (owner ask: "the game functions as normal, then when it is selected you join")
+This supersedes the `?visit` page, the shared `world.json`, and `visit/enter.ps1` described above (all removed):
+- `npm run dev` starts the relay too (dev-only `visitRelay` plugin in `vite.config.js`; skipped under Vitest, which
+  also runs Vite in serve mode and would otherwise never exit). If a relay already holds 7796 the new one bows out.
+- On a page served from localhost/127.0.0.1 with a relay answering, `bootVisit` adds a toggle in the top bar, left of
+  the Viewer/Developer switch: Call Root / Root is on the way / Send Root home / Root is leaving. The public site never
+  probes the local network (no browser local-network prompt for visitors).
+- Call Root: the relay launches `claude -p` (the real `claude.exe` behind the npm shim, no shell) with
+  `--setting-sources user --strict-mcp-config --tools= --allowedTools mcp__door` and `visit-prompt.md`; transcript to
+  `~/root/visits/<stamp>.session.jsonl`. `VISIT_MODEL` / `VISIT_MINUTES` / `VISIT_ROOT` override for rehearsals.
+- Root joins the world ON SCREEN. While Root is here the speed is capped at 6 and restored on leaving; seasons are no
+  longer forced on (the game stays the game).
+- Send Root home: Root's next results say Kevin asked it to head home; only say, note and leave work; if it has not
+  left within 3 minutes the session is ended (taskkill /T). Pressed during startup, it simply stops the session.
+- Per-world memory replaces the shared world: `~/root/visits/worlds/s<seed>-<W>x<H>.json` holds Root's names,
+  plantings, footsteps and position for that world. A world run again from the same seed keeps the names (terrain is
+  seeded) but drops plantings and footsteps (`adoptWorldState`, tested). If Kevin starts a new world mid-visit, Root is
+  told the world dissolved and re-formed, and gets that world's memory.
+- A session that ends without `leave` is noticed by the page's status poll: speed restored, memory saved.
+- Rehearsal (scratch `VISIT_ROOT`, `VISIT_MODEL=haiku`, 3-minute visit, real page): toggle appears; arrival 3.5s after
+  the click; speed 60 -> 6 -> 60; Root answered Kevin, walked, planted; Send Root home -> goodbye + field note in 7s;
+  per-world file written; real `~/root` record untouched.
+
 ## Also fixed (found while testing)
 The intro's Space/Enter key listener stayed registered after the intro was dismissed by click, so it ate Space and
 Enter page-wide (a typed space in any input, and likely Space-to-pause after clicking Start). `introKey` now removes
@@ -79,5 +102,5 @@ works" guide in the panel.
 - The world lives only while the page is open (browser-owned sim). A world that runs while nobody watches would need
   a server-side sim; not built until a visit shows it is wanted.
 - Not in the orrery. The planet screen there runs its own random world; putting Root on it is a later step.
-- No phone path. A visit is a desktop act: the owner watches the page and Root runs in a terminal.
+- No phone path. A visit is a desktop act: the owner watches the page and calls Root in from it.
 - First-visit worlds are young (tick ~800 when land reaches 30%), so life is sparse on arrival.

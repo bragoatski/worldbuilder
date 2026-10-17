@@ -664,7 +664,7 @@ function buildSliders(){
 function draw(){
   if(!ctx||!grid||!elev)return;
   drawWorld(ctx,PIX,{overlayMode:overlayMode,followId:followId});
-  visitDraw(ctx,PIX);   // Root's body, sight and named places; no-op unless ?visit
+  visitDraw(ctx,PIX);   // Root's body, sight and named places; no-op unless Root is here
   drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
 }
 
@@ -1108,18 +1108,16 @@ function dismissIntro(){
   var startBtn=document.getElementById('introStart');
   if(startBtn)startBtn.addEventListener('click',dismissIntro);
   // Keyboard shortcut: Space or Enter to start
-  // Inert once the intro is gone (dismissed by click or ?visit), or it would eat Space/Enter page-wide.
+  // Inert once the intro is gone (dismissed by click or key), or it would eat Space/Enter page-wide.
   function introKey(e){var ov=document.getElementById('introOverlay');if(!ov||ov.classList.contains('dismissing')){window.removeEventListener('keydown',introKey);return;}
     if(e.code==='Space'||e.code==='Enter'){e.preventDefault();dismissIntro();window.removeEventListener('keydown',introKey);}}
   window.addEventListener('keydown',introKey);
 })();
 
-// Root's visit (?visit): the assistant walks this world through visit/relay.mjs. Skips the intro.
-if(typeof location!=='undefined'&&/[?&]visit(\b|=)/.test(location.search)){
-  bootVisit({draw:draw,importJSON:importJSON,buildSnapshot:buildSnapshot,screenToTile:screenToTile,canvas:canvas,
-    setSpeed:function(s){speed=s;var sp=document.getElementById('speed');if(sp)sp.value=s;}});
-  dismissIntro();
-}
+// Root's visit: on a locally served page with the relay running, a "Call Root" toggle joins the top bar.
+// Inert on the public site and when no relay answers; the game is unchanged until Root is called in.
+bootVisit({draw:draw,screenToTile:screenToTile,canvas:canvas,getSpeed:function(){return speed;},
+  setSpeed:function(s){speed=s;var sp=document.getElementById('speed');if(sp)sp.value=s;}});
 
 // Verification handle, active ONLY with ?debug in the URL (inert for normal users). Lets the
 // gate-blind river visual verify drive load->rivers->draw from one script call, no file dialog.

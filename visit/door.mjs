@@ -1,6 +1,6 @@
 // Root's door: a minimal MCP server (stdio, JSON-RPC, zero dependencies) whose tools are the ONLY way into
 // the world during a visit. Every tool forwards to the relay (relay.mjs) and returns what Root perceives.
-// The launcher (enter.ps1) starts Claude with these tools and no others, so the world reaches Root through
+// The relay (relay.mjs) launches Claude with these tools and no others, so the world reaches Root through
 // its senses alone: no file reads, no god view.
 import readline from 'node:readline';
 import { randomUUID } from 'node:crypto';
@@ -38,7 +38,7 @@ async function callRelay(verb, args) {
     if (!r.ok) return { text: 'The door jams (relay answered ' + r.status + ').', isError: true };
     return { text: (await r.json()).text };
   } catch {
-    return { text: 'The door is shut: the visit relay is not running. Ask Kevin to start it (npm run visit).', isError: true };
+    return { text: 'The door is shut: the visit relay is not running. Ask Kevin to start the dev server (npm run dev).', isError: true };
   }
 }
 

@@ -11,8 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "measure": "node scripts/harness.mjs",
-    "lint": "eslint .",
-    "visit": "powershell -NoProfile -ExecutionPolicy Bypass -File visit/enter.ps1"
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -89,6 +89,20 @@ describe('visit: how Root moves', () => {
     expect(v.arrivalText(st)).not.toContain('since you left');
   });
 
+  it('keeps its names but not its plantings when a seed is run again from the start', () => {
+    const saved = { x: 3, y: 4, places: [{ name: 'Ridge', x: 3, y: 4, tick: 900 }], planted: [{ id: 7, x: 3, y: 4, tick: 900 }],
+      trail: [[3, 4]], leftTick: 1000, lastTick: 1000 };
+    const later = v.adoptWorldState(saved, 1200);
+    expect(later.restarted).toBe(false);
+    expect(later.st.planted).toHaveLength(1);
+    const again = v.adoptWorldState(saved, 50);
+    expect(again.restarted).toBe(true);
+    expect(again.st.places).toHaveLength(1);
+    expect(again.st.planted).toHaveLength(0);
+    expect(again.st.trail).toHaveLength(0);
+    expect(v.adoptWorldState(null, 0).st.places).toEqual([]);
+  });
+
   it('arrives on land nearest the centre', () => {
     const a = v.arrivalTile();
     expect(sim.grid[sim.idx(a.x, a.y)]).toBe(sim.T.PLAINS);

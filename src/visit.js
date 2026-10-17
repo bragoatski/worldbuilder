@@ -1,12 +1,13 @@
 'use strict';
 // Root's visit: the assistant walks this world as a body, through a door that carries only its senses.
 // The pure cores below (perceive / walkFrom / plantAt / bearing / pointText) are DOM-free and gate-tested.
-// bootVisit() is the browser shell: it runs ONLY with ?visit in the URL and talks to visit/relay.mjs,
-// which hands it Root's actions and carries back what Root perceives. The page owns the world: Kevin's
-// own tools (the Hand, the inspector) keep working, and anything he does reaches Root only if Root can see it.
+// bootVisit() is the browser shell: on a locally served page with the relay running (visit/relay.mjs, started by
+// the dev server) it adds a "Call Root" toggle. The game runs as normal until Kevin calls Root in; then the relay
+// launches Root's session and carries its actions here. Kevin's own tools keep working, and anything he does
+// reaches Root only if Root can see it.
 import {
-  CFG, T, TNAME, W, H, chronicleNote, elev, aridity, fauna, flora, getSpeciesName, grid, idx, inb,
-  landCoverage, makeFlora, riverData, seasonPhase, seasonWave, tempField, tick, volcActive,
+  CFG, T, TNAME, W, H, _seed, chronicleNote, elev, aridity, fauna, flora, getSpeciesName, grid, idx, inb,
+  makeFlora, riverData, seasonPhase, seasonWave, tempField, tick, volcActive,
 } from './sim.js';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
@@ -238,6 +239,16 @@ export function namePlace(st, raw) {
   return 'This place is now "' + name + '".';
 }
 
+// Root's memory of one world (seed + size), as saved by the relay. A world run again from the same seed keeps the
+// names Root gave its ground (terrain is seeded), but its plantings and footsteps belonged to the earlier run.
+export function adoptWorldState(saved, nowTick) {
+  const st = Object.assign(newVisitState(), saved || {});
+  const restarted = !!saved && saved.lastTick != null && saved.lastTick > nowTick;
+  if (restarted) { st.planted = []; st.trail = []; st.leftTick = null; }
+  delete st.lastTick;
+  return { st, restarted };
+}
+
 // Kevin pointing at a tile, as Root would perceive it: exact if in sight, a bearing if not.
 export function pointText(st, px, py) {
   const dx = px - st.x, dy = py - st.y;
@@ -249,12 +260,11 @@ export function pointText(st, px, py) {
 
 // ===================== Browser shell (gate-blind) =====================
 const RELAY = 'http://127.0.0.1:7796';
-const LAND_READY = 0.3;   // a fresh world grows from ocean; Root arrives once there is ground to stand on
-const VISIT_SPEED = 6;
-let V = null;             // live visit: { st, ready, said:{text,until}, status }
+const VISIT_SPEED = 6;    // while Root is here, the world runs no faster than this between its moves
+let V = null;             // the page's side of a visit: { st, key, here, phase, said, retired, points, ... }
 
 export function visitDraw(ctx, PIX) {
-  if (!V || !V.ready) return;
+  if (!V || !V.here) return;
   const st = V.st, now = Date.now();
   ctx.save();
   const tr = st.trail || [];
@@ -287,7 +297,9 @@ export function visitDraw(ctx, PIX) {
 function panel() {
   const el = document.createElement('div');
   el.id = 'visitPanel';
-  el.innerHTML = '<div class="vp-head"><span class="vp-dot"></span><span id="vpStatus">Opening the door</span></div>' +
+  el.hidden = true;
+  el.innerHTML = '<div class="vp-head"><span class="vp-dot"></span><span id="vpStatus"></span>' +
+    '<button type="button" id="vpClose" aria-label="Hide">&times;</button></div>' +
     '<div id="vpLog"></div>' +
     '<form id="vpForm"><input id="vpInput" autocomplete="off" placeholder="Say something to Root"/></form>' +
     '<div class="vp-hint"><span>Shift+click the map to point</span><button type="button" id="vpHelpBtn">how this works</button></div>' +
@@ -295,26 +307,38 @@ function panel() {
     '<li><b>Talk.</b> Type above. Root hears you the next time it moves or stops to listen.</li>' +
     '<li><b>Point.</b> Shift+click the map. Inside the amber square Root sees exactly where; outside it, only a direction and a distance.</li>' +
     '<li><b>The square</b> is everything Root can see. Your Hand powers work as always, but Root only notices what happens inside it.</li>' +
-    '<li><b>On the map,</b> faint amber dots are Root&rsquo;s footsteps and amber flags are places it has named.</li>' +
-    '<li><b>Speed.</b> Slower gives Root a calmer world between its moves.</li>' +
-    '<li><b>A visit</b> lasts about 20 minutes. Root leaves on its own and writes a field note. The world saves itself.</li>' +
+    '<li><b>On the map,</b> faint amber dots are Root&rsquo;s footsteps and amber flags are places it has named. Root remembers them in this world, even if you start it over from the same seed.</li>' +
+    '<li><b>Speed</b> drops while Root is here so the world is calm between its moves, and comes back when it leaves.</li>' +
+    '<li><b>A visit</b> lasts about 20 minutes. Root leaves on its own and writes a field note, or press <i>Send Root home</i> and it will say goodbye first.</li>' +
     '<li>It is Root, with its memory, not a character. Ask it anything.</li>' +
     '</ul></div>';
   const css = document.createElement('style');
   css.textContent = '#visitPanel{position:fixed;right:16px;bottom:16px;width:min(340px,calc(100vw - 32px));z-index:50;' +
     'background:var(--bg-panel);border:1px solid var(--border-hi);border-radius:8px;color:var(--fg);font:12px/1.45 "JetBrains Mono",monospace;}' +
+    '#visitPanel[hidden]{display:none;}' +
     '#visitPanel .vp-head{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--fg-dim);}' +
-    '#visitPanel .vp-dot{width:9px;height:9px;border-radius:50%;background:#e8a838;box-shadow:0 0 0 2px #fff3;}' +
-    '#visitPanel.away .vp-dot{background:var(--fg-faint);}' +
+    '#vpStatus{flex:1;}' +
+    '#vpClose{background:none;border:0;color:var(--fg-faint);font:16px/1 inherit;cursor:pointer;padding:0 2px;}' +
+    '#vpClose:hover{color:var(--fg);}' +
+    '.vp-dot{width:9px;height:9px;border-radius:50%;background:var(--fg-faint);flex:none;}' +
+    '.root-here .vp-dot{background:#e8a838;box-shadow:0 0 0 2px #fff3;}' +
+    '.root-coming .vp-dot{background:#e8a838;animation:vpPulse 1.2s ease-in-out infinite;}' +
+    '@keyframes vpPulse{50%{opacity:.25;}}' +
     '#vpLog{max-height:30vh;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px;}' +
+    '#vpLog:empty{display:none;}' +
     '#vpLog .r{color:#f3d9a4;} #vpLog .k{color:var(--fg);} #vpLog .s{color:var(--fg-faint);}' +
-    '#vpForm{padding:0 10px 4px;} #vpInput{width:100%;box-sizing:border-box;background:var(--bg-input);color:var(--fg);' +
+    '#vpForm{padding:8px 10px 4px;} #vpInput{width:100%;box-sizing:border-box;background:var(--bg-input);color:var(--fg);' +
     'border:1px solid var(--border);border-radius:6px;padding:7px 8px;font:inherit;}' +
     '#visitPanel .vp-hint{display:flex;justify-content:space-between;gap:8px;padding:0 10px 8px;color:var(--fg-faint);font-size:11px;}' +
     '#vpHelpBtn{background:none;border:0;padding:0;color:var(--fg-faint);font:inherit;cursor:pointer;text-decoration:underline dotted;}' +
     '#vpHelpBtn:hover,#vpHelpBtn[aria-expanded="true"]{color:var(--fg-dim);}' +
     '#vpHelp{border-top:1px solid var(--border);padding:8px 10px 10px;color:var(--fg-dim);font-size:11px;}' +
-    '#vpHelp ul{margin:0;padding-left:14px;display:flex;flex-direction:column;gap:5px;} #vpHelp b{color:var(--fg);font-weight:600;}';
+    '#vpHelp ul{margin:0;padding-left:14px;display:flex;flex-direction:column;gap:5px;} #vpHelp b{color:var(--fg);font-weight:600;}' +
+    '#rootCall{display:inline-flex;align-items:center;gap:7px;margin-left:auto;margin-right:8px;padding:6px 11px;border-radius:7px;' +
+    'background:transparent;border:1px solid var(--border-hi);color:var(--fg-dim);font:600 12px/1 inherit;cursor:pointer;white-space:nowrap;}' +
+    '#rootCall:hover{background:rgba(255,255,255,.05);color:var(--fg);}' +
+    '#rootCall.root-here{border-color:#e8a83866;color:#f3d9a4;}' +
+    '#rootCall:disabled{cursor:default;opacity:.7;}';
   document.head.appendChild(css);
   document.body.appendChild(el);
   const btn = el.querySelector('#vpHelpBtn'), help = el.querySelector('#vpHelp');
@@ -326,7 +350,21 @@ function panel() {
   try { open = localStorage.getItem('wb.visitHelp') === '1'; } catch { /* default closed */ }
   show(open);
   btn.addEventListener('click', () => show(help.hidden));
+  el.querySelector('#vpClose').addEventListener('click', () => { el.hidden = true; });
   return el;
+}
+
+// The toggle in the top bar: Call Root / Send Root home.
+function callButton(onClick) {
+  const b = document.createElement('button');
+  b.id = 'rootCall'; b.type = 'button';
+  b.innerHTML = '<span class="vp-dot"></span><span id="rootCallLabel">Call Root</span>';
+  b.setAttribute('data-tip', 'Root|Call Root into this world, or send it home');
+  const mode = document.getElementById('modeToggle');
+  if (mode && mode.parentNode) { mode.parentNode.insertBefore(b, mode); mode.style.marginLeft = '0'; }
+  else { b.style.cssText = 'position:fixed;top:12px;right:16px;z-index:50;'; document.body.appendChild(b); }
+  b.addEventListener('click', onClick);
+  return b;
 }
 
 function logLine(cls, text) {
@@ -334,32 +372,74 @@ function logLine(cls, text) {
   const d = document.createElement('div'); d.className = cls; d.textContent = text;
   log.appendChild(d); log.scrollTop = log.scrollHeight;
 }
-function setStatus(text, away) {
-  if (!V.offline) V.status = text;
-  const s = document.getElementById('vpStatus'); if (s) s.textContent = text;
-  const p = document.getElementById('visitPanel'); if (p) p.classList.toggle('away', !!away);
+
+// One place that paints the button and the panel head from the visit's phase.
+const PHASES = {
+  idle:    { label: 'Call Root',          status: 'Root is not here',            cls: '' },
+  coming:  { label: 'Root is on the way', status: 'Root is on the way',          cls: 'root-coming' },
+  here:    { label: 'Send Root home',     status: 'Root is here',                cls: 'root-here' },
+  leaving: { label: 'Root is leaving',    status: 'Root is saying goodbye',      cls: 'root-coming' },
+  resting: { label: 'Root',               status: 'Another tab has Root now',    cls: '' },
+};
+function paint(phase, extra) {
+  V.phase = phase;
+  const p = PHASES[phase];
+  const b = document.getElementById('rootCall'), lab = document.getElementById('rootCallLabel');
+  if (b) { b.className = p.cls; b.disabled = phase === 'leaving' || phase === 'resting'; }
+  if (lab) lab.textContent = p.label;
+  const panelEl = document.getElementById('visitPanel');
+  if (panelEl) panelEl.className = p.cls;
+  const s = document.getElementById('vpStatus'); if (s) s.textContent = p.status + (extra ? ', ' + extra : '');
 }
 
+export const NO_GROUND = '\u0000no-ground';
 const PAGE_ID = Math.random().toString(36).slice(2);   // the relay serves one live page; an older tab stands down
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Only a page served from this machine ever looks for the relay. The public site never probes the local network.
+const LOCAL = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 
 async function post(path, body) {
-  const r = await fetch(RELAY + path + '?page=' + PAGE_ID,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(RELAY + path + (path.includes('?') ? '&' : '?') + 'page=' + PAGE_ID,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   if (r.status === 409) retire();
   return r.ok ? r.json() : null;
 }
 
-function retire() {
-  if (V.retired) return;
-  V.retired = true;
-  setStatus('Another visit page has taken over. This tab is resting.', true);
+function retire() { if (!V.retired) { V.retired = true; paint('resting'); } }
+
+function worldKey() { return 's' + _seed + '-' + W + 'x' + H; }
+
+// hooks: { draw, screenToTile, canvas, getSpeed, setSpeed }
+export function bootVisit(hooks) {
+  if (!LOCAL) return;
+  V = { st: newVisitState(), key: null, here: false, phase: 'idle', said: null, retired: false, points: [], speedBefore: null };
+  V.hooks = hooks;
+  (async function start() {
+    // The dev server starts the relay alongside itself, so give it a moment. No relay: the game is just the game.
+    let ok = false;
+    for (let k = 0; k < 8 && !ok; k++) {
+      try { ok = (await fetch(RELAY + '/page/hello?page=' + PAGE_ID)).ok; } catch { await sleep(1000); }
+    }
+    if (!ok) return;
+    panel();
+    callButton(() => {
+      if (V.phase === 'idle') {
+        post('/page/summon').then(r => { if (r) { paint('coming'); showPanel(); logLine('s', 'You call Root.'); } })
+          .catch(() => logLine('s', 'The relay is not running.'));
+      } else if (V.phase === 'coming' || V.phase === 'here') {
+        post('/page/home').then(() => { paint('leaving'); logLine('s', 'You ask Root to head home.'); }).catch(() => {});
+      }
+    });
+    paint('idle');
+    wireInput(hooks);
+    watchStatus();
+    pump(hooks);
+  })();
 }
 
-// hooks: { draw, importJSON, buildSnapshot, setSpeed, screenToTile, canvas }
-export function bootVisit(hooks) {
-  V = { st: newVisitState(), ready: false, said: null, left: false, here: false, retired: false, points: [] };
-  panel();
+function showPanel() { const p = document.getElementById('visitPanel'); if (p) p.hidden = false; }
+
+function wireInput(hooks) {
   document.getElementById('vpForm').addEventListener('submit', e => {
     e.preventDefault();
     const inp = document.getElementById('vpInput'), text = inp.value.trim();
@@ -367,10 +447,10 @@ export function bootVisit(hooks) {
     inp.value = ''; logLine('k', 'You: ' + text);
     post('/page/kevin', { text: 'Kevin says: "' + text + '"' }).catch(() => logLine('s', 'The relay is not running.'));
   });
-  // Shift+click points. Capture phase on window so the Hand (and the double-click zoom reset) never see it.
-  // The point is worded when Root next hears, relative to where Root stands THEN, not where it stood at the click.
+  // Shift+click points while Root is here. Capture phase on window so the Hand (and the double-click zoom reset)
+  // never see it. The point is worded when Root next hears it, from where Root stands THEN.
   ['pointerdown', 'mousedown', 'click', 'dblclick'].forEach(type => window.addEventListener(type, ev => {
-    if (!ev.shiftKey || ev.target !== hooks.canvas || !V.ready) return;
+    if (!ev.shiftKey || ev.target !== hooks.canvas || !V.here) return;
     ev.stopImmediatePropagation(); ev.preventDefault();
     if (type !== 'click') return;
     const t = hooks.screenToTile(ev.clientX, ev.clientY);
@@ -379,57 +459,75 @@ export function bootVisit(hooks) {
     V.points.push({ x: t.x, y: t.y, t: Date.now() });
     post('/page/kevin', { wake: true }).catch(() => {});
   }, true));
-
-  // Resolves true only when the relay confirms the world is on disk.
-  const save = async () => {
-    if (V.retired || !V.ready) return false;
-    try { return !!(await post('/page/save', { snapshot: hooks.buildSnapshot(), root: V.st })); } catch { return false; }
-  };
-
-  (async function start() {
-    while (!grid) await sleep(200);   // boot() has built the first world
-    // Load Root's world. Only a clean 404 means "no world yet": an unreachable relay or an unreadable file must
-    // never fall through to a fresh world, because the autosave would then overwrite the real one.
-    let saved = null;
-    for (;;) {
-      let r;
-      try { r = await fetch(RELAY + '/page/load?page=' + PAGE_ID); }
-      catch { setStatus('Waiting for the relay (npm run visit starts it)', true); await sleep(3000); continue; }
-      if (r.status === 404) break;
-      if (!r.ok) { V.retired = true; setStatus('The relay refused this page (' + r.status + ')', true); return; }
-      try { saved = await r.json(); break; }
-      catch { V.retired = true; setStatus('The saved world could not be read. Nothing will be overwritten.', true); return; }
-    }
-    if (saved && saved.snapshot) {
-      const want = saved.snapshot.meta && saved.snapshot.meta.tick;
-      hooks.importJSON(saved.snapshot);
-      if (tick !== want) {   // importJSON reports its own errors; never save over the good file after a failed load
-        V.retired = true; setStatus('The saved world did not load. Nothing will be overwritten.', true); return;
-      }
-      Object.assign(V.st, newVisitState(), saved.root || {});
-      logLine('s', 'The world you share is back, at tick ' + tick + '.');
-    } else {
-      setStatus('The world is forming');
-      logLine('s', 'A new world is forming. Root arrives once there is ground to stand on.');
-      while (landCoverage() < LAND_READY) await sleep(500);
-    }
-    CFG.seasonalTilt = true;   // a visited world has seasons, so what Root learns goes stale
-    const tiltEl = document.getElementById('seasonalToggle'); if (tiltEl) tiltEl.checked = true;
-    standOnGround();
-    hooks.setSpeed(VISIT_SPEED);
-    V.ready = true; hooks.draw();
-    await save();              // a reload must never lose a world Root has stood in
-    if (!V.retired) setStatus('Waiting for Root at the door', true);
-    setInterval(save, 60000);  // keeps saving after Root leaves: Kevin may go on shaping the world
-    pump(hooks, save);
-  })();
 }
 
-// If the ground under Root is gone (the sea rose, a new world was loaded), step to the nearest ground.
+// The relay knows whether Root's session is starting, inside, or gone; the page follows it.
+async function watchStatus() {
+  for (;;) {
+    await sleep(2000);
+    if (V.retired) return;
+    let s;
+    try { s = await (await fetch(RELAY + '/page/status?page=' + PAGE_ID)).json(); } catch { continue; }
+    if (!s.mine) { retire(); return; }
+    if (V.here && !s.present) depart('Root has gone.');            // the session ended without leaving
+    if (s.present && s.leaving) paint('leaving');
+    else if (s.present) paint('here', s.left != null ? s.left + ' min left' : '');
+    else if (s.running) paint('coming');
+    else {
+      if (V.phase === 'coming') logLine('s', 'Root could not come through. The session transcript is in ~/root/visits.');
+      paint('idle');
+    }
+  }
+}
+
+async function saveState() {
+  if (V.retired || !V.key) return false;
+  try { return !!(await post('/page/state?key=' + V.key, { ...V.st, lastTick: tick })); } catch { return false; }
+}
+
+// Root's memory of one world (seed + size). A world run again from the same seed keeps the names Root gave its
+// ground, but its plantings and footsteps belonged to the earlier run.
+async function loadState(key) {
+  let saved = null;
+  try { const r = await fetch(RELAY + '/page/state?key=' + key); if (r.ok) saved = await r.json(); } catch { /* fresh */ }
+  return adoptWorldState(saved, tick);
+}
+
 function standOnGround() {
   const st = V.st;
-  if (inb(st.x, st.y) && !blockedAt(st.x, st.y)) return;
-  Object.assign(st, (inb(st.x, st.y) ? arrivalTile(st.x, st.y) : arrivalTile()) || { x: W >> 1, y: H >> 1 });
+  if (inb(st.x, st.y) && !blockedAt(st.x, st.y)) return true;
+  const t = inb(st.x, st.y) ? arrivalTile(st.x, st.y) : arrivalTile();
+  if (!t) return false;
+  st.x = t.x; st.y = t.y;
+  return true;
+}
+
+async function arriveHere() {
+  V.key = worldKey();
+  const loaded = await loadState(V.key);
+  V.st = loaded.st;
+  V.st.plantsThisVisit = 0;
+  // A world still rising from the sea: wait for ground (the relay gives arrival 90 seconds).
+  for (let k = 0; k < 160 && !standOnGround(); k++) { if (k === 0) logLine('s', 'Root is waiting for ground to rise.'); await sleep(500); }
+  if (!standOnGround()) return null;
+  V.here = true;
+  V.speedBefore = V.hooks.getSpeed();
+  V.hooks.setSpeed(Math.min(V.speedBefore, VISIT_SPEED));
+  paint('here'); showPanel();
+  logLine('s', 'Root steps through the door.');
+  await saveState();
+  return (loaded.restarted ? 'You have been in this world before, but it has started over since. The names you gave its ground remain.\n' : '') +
+    arrivalText(V.st);
+}
+
+function depart(line) {
+  if (!V.here) return;
+  V.here = false;
+  V.st.leftTick = tick;
+  if (V.speedBefore != null) { V.hooks.setSpeed(V.speedBefore); V.speedBefore = null; }
+  logLine('s', line);
+  V.hooks.draw();
+  return saveState();
 }
 
 function heardPoints() {
@@ -443,7 +541,8 @@ function heardPoints() {
   return '\n\nYou see:\n' + lines.join('\n');
 }
 
-async function pump(hooks, save) {
+async function pump(hooks) {
+  setInterval(() => { if (V.here) saveState(); }, 60000);
   while (!V.retired) {
     let act;
     try {
@@ -451,36 +550,37 @@ async function pump(hooks, save) {
       if (r.status === 409) { retire(); return; }
       if (!r.ok) throw new Error('relay ' + r.status);
       act = await r.json();
-      if (V.offline) { V.offline = false; setStatus(V.status, V.left || !V.here); }
-    } catch {
-      if (!V.offline) { V.offline = true; setStatus('Relay offline, retrying', true); }
-      await sleep(3000); continue;
-    }
+    } catch { await sleep(3000); continue; }
     if (!act || !act.id) continue;
-    if (act.left != null && V.here) setStatus('Root is here, ' + act.left + ' min left');
-    const st = V.st, a = act.args || {};
+    const a = act.args || {};
     let text;
     try {
-      standOnGround();
-      switch (act.verb) {
-        case 'arrive': V.left = false; V.here = true; st.plantsThisVisit = 0;
-          setStatus('Root is here'); logLine('s', 'Root steps through the door.');
-          text = arrivalText(st); break;
-        case 'look': text = perceive(st) + heardPoints(); break;
-        case 'walk': text = walkFrom(st, a.direction, a.steps) + '\n\n' + perceive(st) + heardPoints(); break;
-        case 'plant': text = plantAt(st); await save(); text += heardPoints(); break;
-        case 'name_place': text = namePlace(st, a.name); logLine('s', 'Root named a place: ' + String(a.name || '')); await save();
-          text += heardPoints(); break;
-        case 'say': V.said = { text: String(a.text || ''), until: Date.now() + 15000 };
-          logLine('r', 'Root: ' + String(a.text || '')); text = 'Said.' + heardPoints(); break;
-        case 'leave': {
-          V.left = true; V.here = false; st.leftTick = tick;
-          const ok = await save();
-          setStatus('Root has left', true); logLine('s', 'Root leaves through the door.');
-          text = ok ? 'The world is saved at tick ' + tick + '.' : 'The world could NOT be saved just now; the last autosave stands.';
-          break;
+      if (act.verb === 'arrive') {
+        text = await arriveHere();
+        if (text === null) text = NO_GROUND;   // the relay turns this into "the world is not ready" and stays outside
+      } else {
+        let prefix = '';
+        if (V.here && worldKey() !== V.key) {   // Kevin started a new world while Root stood in the old one
+          await saveState();
+          V.key = worldKey();
+          const loaded = await loadState(V.key);
+          V.st = Object.assign(loaded.st, { plantsThisVisit: V.st.plantsThisVisit });
+          prefix = 'The world dissolves and re-forms around you. This is a different world.\n\n';
         }
-        default: text = 'Nothing happens: "' + act.verb + '" is not something you can do here.';
+        standOnGround();
+        const st = V.st;
+        switch (act.verb) {
+          case 'look': text = perceive(st) + heardPoints(); break;
+          case 'walk': text = walkFrom(st, a.direction, a.steps) + '\n\n' + perceive(st) + heardPoints(); break;
+          case 'plant': text = plantAt(st); await saveState(); text += heardPoints(); break;
+          case 'name_place': text = namePlace(st, a.name); logLine('s', 'Root named a place: ' + String(a.name || '')); await saveState();
+            text += heardPoints(); break;
+          case 'say': V.said = { text: String(a.text || ''), until: Date.now() + 15000 };
+            logLine('r', 'Root: ' + String(a.text || '')); text = 'Said.' + heardPoints(); break;
+          case 'leave': text = (await depart('Root leaves through the door.')) ? 'What you left in this world is kept.' : 'You leave.'; break;
+          default: text = 'Nothing happens: "' + act.verb + '" is not something you can do here.';
+        }
+        text = prefix + text;
       }
     } catch (e) {
       // A failure in one action must never stop the loop, or every later call stalls until it times out.
