@@ -69,6 +69,26 @@ describe('visit: how Root moves', () => {
     expect([st.x, st.y]).toEqual([16, 16]);
   });
 
+  it('leaves a capped trail of footsteps for the map', () => {
+    for (let k = 0; k < 3; k++) { v.walkFrom(st, 'E', 2); v.walkFrom(st, 'W', 2); }
+    expect(st.trail).toHaveLength(12);
+    expect(st.trail[st.trail.length - 1]).toEqual([16, 16]);
+    for (let k = 0; k < v.TRAIL_MAX; k++) v.walkFrom(st, k % 2 ? 'E' : 'W', 1);
+    expect(st.trail).toHaveLength(v.TRAIL_MAX);
+  });
+
+  it('steps to the nearest ground, not the centre, when the sea took its tile', () => {
+    const a = v.arrivalTile(26, 20);
+    expect(a).toEqual({ x: 23, y: 20 });
+  });
+
+  it('knows how long the world ran while it was away', () => {
+    st.leftTick = sim.tick - 1;
+    expect(v.arrivalText(st)).toContain('The world has run 1 ticks since you left');
+    st.leftTick = null;
+    expect(v.arrivalText(st)).not.toContain('since you left');
+  });
+
   it('arrives on land nearest the centre', () => {
     const a = v.arrivalTile();
     expect(sim.grid[sim.idx(a.x, a.y)]).toBe(sim.T.PLAINS);
@@ -86,6 +106,15 @@ describe('visit: what Root can do', () => {
     expect(v.plantAt(st)).toContain('no seeds left');
     const st2 = world(); st2.x = 2; st2.y = 2;
     expect(v.plantAt(st2)).toContain('Nothing roots in water');
+  });
+
+  it('does not mistake an unrelated plant that reused its id for its own', () => {
+    v.plantAt(st);
+    const mine = st.planted[0];
+    sim.flora.length = 0;                                   // Root's plant died...
+    const imposter = sim.makeFlora(mine.x, mine.y, null);   // ...and after a load an unrelated plant got its id
+    imposter.id = mine.id; sim.flora.push(imposter);
+    expect(v.arrivalText(st)).toContain('1 things you have planted, 0 still live');
   });
 
   it('names a place once per tile, trimmed to 40 characters', () => {

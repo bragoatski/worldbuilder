@@ -3,8 +3,10 @@
 // The launcher (enter.ps1) starts Claude with these tools and no others, so the world reaches Root through
 // its senses alone: no file reads, no god view.
 import readline from 'node:readline';
+import { randomUUID } from 'node:crypto';
 
 const RELAY = 'http://127.0.0.1:7796/door';
+const SESSION = randomUUID();   // one per Claude session: lets the relay tell a new visit from a dead one
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const TOOLS = [
@@ -32,7 +34,7 @@ const INSTRUCTIONS = 'This is a door into a living simulated world. Inside, you 
 
 async function callRelay(verb, args) {
   try {
-    const r = await fetch(RELAY, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verb, args }) });
+    const r = await fetch(RELAY, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verb, args, session: SESSION }) });
     if (!r.ok) return { text: 'The door jams (relay answered ' + r.status + ').', isError: true };
     return { text: (await r.json()).text };
   } catch {

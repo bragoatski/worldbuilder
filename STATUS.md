@@ -9,7 +9,8 @@ Newest handoff: **`docs/04 Handoffs/2026-10-17 Root visits the world.md`** - rea
 (look, walk, plant, name_place, say, listen, note, leave) are its only tools. It sees a 9x9 square; the owner watches
 the whole map on `?visit`, talks in a chat panel, Shift+clicks to point, and keeps every Hand power. Pure cores in
 `src/visit.js` (tested in `src/visit.test.js`); relay + door + launcher in `visit/`. Root's record (world, notes,
-visit logs, field notes) lives in `~/root`, not here. Also fixed: the intro key listener ate Space/Enter page-wide.
+visit logs, field notes) lives in `~/root`, not here. Also fixed: the intro key listener ate Space/Enter page-wide. Same-day bug hunt fixed 14 more (relay origin lock,
+session isolation, one live page, no overwrite on failed load); see the handoff.
 **Next:** the owner runs the first real visit; what Root does with no goal decides the next step.
 
 ## Session 2026-09-07 - The renderer becomes a module - DONE, GATE GREEN

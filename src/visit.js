@@ -20,8 +20,10 @@ const DIRS = { N: [0, -1], NE: [1, -1], E: [1, 0], SE: [1, 1], S: [0, 1], SW: [-
 const CREATURE = { apex: 'A', carnivore: 'C', omnivore: 'O', scavenger: 'S', herbivore: 'H' };
 const CREATURE_RANK = ['apex', 'carnivore', 'omnivore', 'scavenger', 'herbivore'];
 
+export const TRAIL_MAX = 400;      // footsteps kept for Kevin's map
+
 export function newVisitState() {
-  return { x: -1, y: -1, places: [], planted: [], plantsThisVisit: 0 };
+  return { x: -1, y: -1, places: [], planted: [], plantsThisVisit: 0, trail: [], leftTick: null };
 }
 
 function isWaterAt(i) {
@@ -40,9 +42,9 @@ function blockedAt(x, y) {
   return null;
 }
 
-// The land tile closest to the world's centre: where Root first arrives.
-export function arrivalTile() {
-  const cx = W >> 1, cy = H >> 1;
+// The standable tile closest to (cx,cy), default the world's centre: where Root first arrives, and where it
+// steps to if the ground under it has gone (the sea rose while it was away).
+export function arrivalTile(cx = W >> 1, cy = H >> 1) {
   let best = -1, bestD = Infinity;
   for (let i = 0; i < W * H; i++) {
     const x = i % W, y = (i / W) | 0;
@@ -77,6 +79,10 @@ function seasonText() {
   const name = w > 0.5 ? 'the warm season' : w < -0.5 ? 'the cold season' : 'between seasons';
   return 'It is ' + name + trend + '.';
 }
+
+// A plant Root put in the ground. Ids alone are not enough: a load resets the id counter, so an id can come back
+// on an unrelated plant. Root's mark rides in the save with the plant; plants never move.
+function findPlanted(p) { return flora.find(q => q && q.id === p.id && q.byRoot && q.x === p.x && q.y === p.y); }
 
 function liveFloraAt(x, y) {
   let n = 0;
@@ -160,7 +166,7 @@ export function perceive(st) {
   if (mine.length) {
     out.push('Your plantings in sight:');
     mine.forEach(p => {
-      const f = flora.find(q => q && q.id === p.id);
+      const f = findPlanted(p);
       out.push('- at ' + bearing(p.x - sx, p.y - sy) + ', planted tick ' + p.tick + ': ' +
         (f ? 'alive, health ' + Math.round(f.health * 100) + '%' : 'gone'));
     });
@@ -174,6 +180,9 @@ export function perceive(st) {
 // and how its plantings fared. Bearings, not maps: it has to walk to see them.
 export function arrivalText(st) {
   const out = [];
+  if (st.leftTick != null && tick > st.leftTick) {
+    out.push('The world has run ' + (tick - st.leftTick) + ' ticks since you left (you left at tick ' + st.leftTick + ').');
+  }
   if (st.places.length) {
     out.push('Places you have named (rough direction from here):');
     st.places.forEach(p => {
@@ -182,14 +191,15 @@ export function arrivalText(st) {
     });
   }
   if (st.planted.length) {
-    const alive = st.planted.filter(p => flora.some(q => q && q.id === p.id)).length;
+    const alive = st.planted.filter(p => findPlanted(p)).length;
     out.push('Of the ' + st.planted.length + ' things you have planted, ' + alive + ' still live.');
   }
   return out.join('\n');
 }
 
 export function walkFrom(st, dir, steps) {
-  const d = DIRS[String(dir || '').toUpperCase()];
+  dir = String(dir || '').toUpperCase();
+  const d = DIRS[dir];
   if (!d) return 'There is no direction "' + dir + '". Use N, NE, E, SE, S, SW, W or NW.';
   const n = Math.max(1, Math.min(MAX_STRIDE, steps | 0 || 1));
   let moved = 0, why = '';
@@ -198,9 +208,11 @@ export function walkFrom(st, dir, steps) {
     const b = blockedAt(nx, ny);
     if (b) { why = 'Stopped by ' + b + '.'; break; }
     st.x = nx; st.y = ny; moved++;
+    if (!st.trail) st.trail = [];
+    st.trail.push([nx, ny]); if (st.trail.length > TRAIL_MAX) st.trail.shift();
     if (STEEP.includes(grid[idx(nx, ny)]) && s < n - 1) { why = 'Steep ground: you stop to climb.'; break; }
   }
-  return 'You walk ' + moved + ' of ' + n + ' ' + dir.toUpperCase() + '.' + (why ? ' ' + why : '');
+  return 'You walk ' + moved + ' of ' + n + ' ' + dir + '.' + (why ? ' ' + why : '');
 }
 
 export function plantAt(st) {
@@ -209,6 +221,7 @@ export function plantAt(st) {
   if (isWaterAt(i)) return 'Nothing roots in water.';
   if (liveFloraAt(st.x, st.y) >= (CFG.floraPerTileMax || 4)) return 'This ground is already full of plants.';
   const f = makeFlora(st.x, st.y, null);
+  f.byRoot = true;
   flora.push(f);
   st.plantsThisVisit++;
   st.planted.push({ id: f.id, x: st.x, y: st.y, tick });
@@ -244,6 +257,11 @@ export function visitDraw(ctx, PIX) {
   if (!V || !V.ready) return;
   const st = V.st, now = Date.now();
   ctx.save();
+  const tr = st.trail || [];
+  for (let k = 0; k < tr.length; k++) {           // footsteps fade with age
+    ctx.fillStyle = 'rgba(232,168,56,' + (0.08 + 0.32 * k / tr.length).toFixed(3) + ')';
+    ctx.fillRect(tr[k][0] * PIX + PIX * 0.35, tr[k][1] * PIX + PIX * 0.35, PIX * 0.3, PIX * 0.3);
+  }
   ctx.strokeStyle = 'rgba(232,168,56,0.55)'; ctx.lineWidth = Math.max(1, PIX / 4);
   ctx.strokeRect((st.x - SIGHT) * PIX, (st.y - SIGHT) * PIX, (2 * SIGHT + 1) * PIX, (2 * SIGHT + 1) * PIX);
   const font = Math.max(9, PIX * 1.6);
@@ -272,7 +290,16 @@ function panel() {
   el.innerHTML = '<div class="vp-head"><span class="vp-dot"></span><span id="vpStatus">Opening the door</span></div>' +
     '<div id="vpLog"></div>' +
     '<form id="vpForm"><input id="vpInput" autocomplete="off" placeholder="Say something to Root"/></form>' +
-    '<div class="vp-hint">Shift+click the map to point.</div>';
+    '<div class="vp-hint"><span>Shift+click the map to point</span><button type="button" id="vpHelpBtn">how this works</button></div>' +
+    '<div id="vpHelp" hidden><ul>' +
+    '<li><b>Talk.</b> Type above. Root hears you the next time it moves or stops to listen.</li>' +
+    '<li><b>Point.</b> Shift+click the map. Inside the amber square Root sees exactly where; outside it, only a direction and a distance.</li>' +
+    '<li><b>The square</b> is everything Root can see. Your Hand powers work as always, but Root only notices what happens inside it.</li>' +
+    '<li><b>On the map,</b> faint amber dots are Root&rsquo;s footsteps and amber flags are places it has named.</li>' +
+    '<li><b>Speed.</b> Slower gives Root a calmer world between its moves.</li>' +
+    '<li><b>A visit</b> lasts about 20 minutes. Root leaves on its own and writes a field note. The world saves itself.</li>' +
+    '<li>It is Root, with its memory, not a character. Ask it anything.</li>' +
+    '</ul></div>';
   const css = document.createElement('style');
   css.textContent = '#visitPanel{position:fixed;right:16px;bottom:16px;width:min(340px,calc(100vw - 32px));z-index:50;' +
     'background:var(--bg-panel);border:1px solid var(--border-hi);border-radius:8px;color:var(--fg);font:12px/1.45 "JetBrains Mono",monospace;}' +
@@ -283,9 +310,22 @@ function panel() {
     '#vpLog .r{color:#f3d9a4;} #vpLog .k{color:var(--fg);} #vpLog .s{color:var(--fg-faint);}' +
     '#vpForm{padding:0 10px 4px;} #vpInput{width:100%;box-sizing:border-box;background:var(--bg-input);color:var(--fg);' +
     'border:1px solid var(--border);border-radius:6px;padding:7px 8px;font:inherit;}' +
-    '#visitPanel .vp-hint{padding:0 10px 8px;color:var(--fg-faint);font-size:11px;}';
+    '#visitPanel .vp-hint{display:flex;justify-content:space-between;gap:8px;padding:0 10px 8px;color:var(--fg-faint);font-size:11px;}' +
+    '#vpHelpBtn{background:none;border:0;padding:0;color:var(--fg-faint);font:inherit;cursor:pointer;text-decoration:underline dotted;}' +
+    '#vpHelpBtn:hover,#vpHelpBtn[aria-expanded="true"]{color:var(--fg-dim);}' +
+    '#vpHelp{border-top:1px solid var(--border);padding:8px 10px 10px;color:var(--fg-dim);font-size:11px;}' +
+    '#vpHelp ul{margin:0;padding-left:14px;display:flex;flex-direction:column;gap:5px;} #vpHelp b{color:var(--fg);font-weight:600;}';
   document.head.appendChild(css);
   document.body.appendChild(el);
+  const btn = el.querySelector('#vpHelpBtn'), help = el.querySelector('#vpHelp');
+  const show = open => {
+    help.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+    try { localStorage.setItem('wb.visitHelp', open ? '1' : '0'); } catch { /* storage blocked: still works */ }
+  };
+  let open = false;
+  try { open = localStorage.getItem('wb.visitHelp') === '1'; } catch { /* default closed */ }
+  show(open);
+  btn.addEventListener('click', () => show(help.hidden));
   return el;
 }
 
@@ -295,18 +335,30 @@ function logLine(cls, text) {
   log.appendChild(d); log.scrollTop = log.scrollHeight;
 }
 function setStatus(text, away) {
+  if (!V.offline) V.status = text;
   const s = document.getElementById('vpStatus'); if (s) s.textContent = text;
   const p = document.getElementById('visitPanel'); if (p) p.classList.toggle('away', !!away);
 }
 
+const PAGE_ID = Math.random().toString(36).slice(2);   // the relay serves one live page; an older tab stands down
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 async function post(path, body) {
-  const r = await fetch(RELAY + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(RELAY + path + '?page=' + PAGE_ID,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (r.status === 409) retire();
   return r.ok ? r.json() : null;
+}
+
+function retire() {
+  if (V.retired) return;
+  V.retired = true;
+  setStatus('Another visit page has taken over. This tab is resting.', true);
 }
 
 // hooks: { draw, importJSON, buildSnapshot, setSpeed, screenToTile, canvas }
 export function bootVisit(hooks) {
-  V = { st: newVisitState(), ready: false, said: null, left: false };
+  V = { st: newVisitState(), ready: false, said: null, left: false, here: false, retired: false, points: [] };
   panel();
   document.getElementById('vpForm').addEventListener('submit', e => {
     e.preventDefault();
@@ -315,64 +367,125 @@ export function bootVisit(hooks) {
     inp.value = ''; logLine('k', 'You: ' + text);
     post('/page/kevin', { text: 'Kevin says: "' + text + '"' }).catch(() => logLine('s', 'The relay is not running.'));
   });
-  // Shift+click points. Capture phase on window so the Hand never sees the click.
-  ['pointerdown', 'mousedown', 'click'].forEach(type => window.addEventListener(type, ev => {
+  // Shift+click points. Capture phase on window so the Hand (and the double-click zoom reset) never see it.
+  // The point is worded when Root next hears, relative to where Root stands THEN, not where it stood at the click.
+  ['pointerdown', 'mousedown', 'click', 'dblclick'].forEach(type => window.addEventListener(type, ev => {
     if (!ev.shiftKey || ev.target !== hooks.canvas || !V.ready) return;
     ev.stopImmediatePropagation(); ev.preventDefault();
     if (type !== 'click') return;
     const t = hooks.screenToTile(ev.clientX, ev.clientY);
     if (!inb(t.x, t.y)) return;
     logLine('k', 'You point at (' + t.x + ',' + t.y + ').');
-    post('/page/kevin', { text: pointText(V.st, t.x, t.y) }).catch(() => {});
+    V.points.push({ x: t.x, y: t.y, t: Date.now() });
+    post('/page/kevin', { wake: true }).catch(() => {});
   }, true));
 
-  const save = () => post('/page/save', { snapshot: hooks.buildSnapshot(), root: V.st }).catch(() => {});
+  // Resolves true only when the relay confirms the world is on disk.
+  const save = async () => {
+    if (V.retired || !V.ready) return false;
+    try { return !!(await post('/page/save', { snapshot: hooks.buildSnapshot(), root: V.st })); } catch { return false; }
+  };
 
   (async function start() {
-    while (!grid) await new Promise(r => setTimeout(r, 200));   // boot() has built the first world
+    while (!grid) await sleep(200);   // boot() has built the first world
+    // Load Root's world. Only a clean 404 means "no world yet": an unreachable relay or an unreadable file must
+    // never fall through to a fresh world, because the autosave would then overwrite the real one.
     let saved = null;
-    try { const r = await fetch(RELAY + '/page/load'); if (r.ok) saved = await r.json(); } catch { /* relay down: shown below */ }
-    CFG.seasonalTilt = true;                 // a visited world has seasons, so what Root learns goes stale
+    for (;;) {
+      let r;
+      try { r = await fetch(RELAY + '/page/load?page=' + PAGE_ID); }
+      catch { setStatus('Waiting for the relay (npm run visit starts it)', true); await sleep(3000); continue; }
+      if (r.status === 404) break;
+      if (!r.ok) { V.retired = true; setStatus('The relay refused this page (' + r.status + ')', true); return; }
+      try { saved = await r.json(); break; }
+      catch { V.retired = true; setStatus('The saved world could not be read. Nothing will be overwritten.', true); return; }
+    }
     if (saved && saved.snapshot) {
+      const want = saved.snapshot.meta && saved.snapshot.meta.tick;
       hooks.importJSON(saved.snapshot);
-      CFG.seasonalTilt = true;
-      Object.assign(V.st, saved.root || {}, { plantsThisVisit: 0 });
+      if (tick !== want) {   // importJSON reports its own errors; never save over the good file after a failed load
+        V.retired = true; setStatus('The saved world did not load. Nothing will be overwritten.', true); return;
+      }
+      Object.assign(V.st, newVisitState(), saved.root || {});
       logLine('s', 'The world you share is back, at tick ' + tick + '.');
     } else {
       setStatus('The world is forming');
       logLine('s', 'A new world is forming. Root arrives once there is ground to stand on.');
-      while (landCoverage() < LAND_READY) await new Promise(r => setTimeout(r, 500));
+      while (landCoverage() < LAND_READY) await sleep(500);
     }
-    if (!inb(V.st.x, V.st.y) || blockedAt(V.st.x, V.st.y)) Object.assign(V.st, arrivalTile() || { x: W >> 1, y: H >> 1 });
+    CFG.seasonalTilt = true;   // a visited world has seasons, so what Root learns goes stale
+    const tiltEl = document.getElementById('seasonalToggle'); if (tiltEl) tiltEl.checked = true;
+    standOnGround();
     hooks.setSpeed(VISIT_SPEED);
     V.ready = true; hooks.draw();
-    save();                                  // a reload must never lose a world Root has stood in
-    setStatus('Waiting for Root at the door', true);
-    setInterval(() => { if (!V.left) save(); }, 60000);
+    await save();              // a reload must never lose a world Root has stood in
+    if (!V.retired) setStatus('Waiting for Root at the door', true);
+    setInterval(save, 60000);  // keeps saving after Root leaves: Kevin may go on shaping the world
     pump(hooks, save);
   })();
 }
 
+// If the ground under Root is gone (the sea rose, a new world was loaded), step to the nearest ground.
+function standOnGround() {
+  const st = V.st;
+  if (inb(st.x, st.y) && !blockedAt(st.x, st.y)) return;
+  Object.assign(st, (inb(st.x, st.y) ? arrivalTile(st.x, st.y) : arrivalTile()) || { x: W >> 1, y: H >> 1 });
+}
+
+function heardPoints() {
+  if (!V.points.length) return '';
+  const now = Date.now();
+  const lines = V.points.map(p => {
+    const s = Math.round((now - p.t) / 1000);
+    return pointText(V.st, p.x, p.y) + (s >= 20 ? ' (' + (s < 90 ? s + ' seconds' : Math.round(s / 60) + ' minutes') + ' ago)' : '');
+  });
+  V.points = [];
+  return '\n\nYou see:\n' + lines.join('\n');
+}
+
 async function pump(hooks, save) {
-  for (;;) {
+  while (!V.retired) {
     let act;
-    try { const r = await fetch(RELAY + '/page/poll'); act = r.ok ? await r.json() : null; }
-    catch { setStatus('Relay offline, retrying', true); await new Promise(r => setTimeout(r, 3000)); continue; }
+    try {
+      const r = await fetch(RELAY + '/page/poll?page=' + PAGE_ID);
+      if (r.status === 409) { retire(); return; }
+      if (!r.ok) throw new Error('relay ' + r.status);
+      act = await r.json();
+      if (V.offline) { V.offline = false; setStatus(V.status, V.left || !V.here); }
+    } catch {
+      if (!V.offline) { V.offline = true; setStatus('Relay offline, retrying', true); }
+      await sleep(3000); continue;
+    }
     if (!act || !act.id) continue;
+    if (act.left != null && V.here) setStatus('Root is here, ' + act.left + ' min left');
     const st = V.st, a = act.args || {};
     let text;
-    switch (act.verb) {
-      case 'arrive': V.left = false; setStatus('Root is here'); logLine('s', 'Root steps through the door.');
-        text = arrivalText(st); break;
-      case 'look': text = perceive(st); break;
-      case 'walk': text = walkFrom(st, a.direction, a.steps) + '\n\n' + perceive(st); break;
-      case 'plant': text = plantAt(st); save(); break;
-      case 'name_place': text = namePlace(st, a.name); logLine('s', 'Root named a place: ' + a.name); save(); break;
-      case 'say': V.said = { text: String(a.text || ''), until: Date.now() + 15000 };
-        logLine('r', 'Root: ' + a.text); text = 'Said.'; break;
-      case 'leave': V.left = true; await save(); setStatus('Root has left', true); logLine('s', 'Root leaves through the door.');
-        text = 'The world is saved at tick ' + tick + '.'; break;
-      default: text = 'Unknown action.';
+    try {
+      standOnGround();
+      switch (act.verb) {
+        case 'arrive': V.left = false; V.here = true; st.plantsThisVisit = 0;
+          setStatus('Root is here'); logLine('s', 'Root steps through the door.');
+          text = arrivalText(st); break;
+        case 'look': text = perceive(st) + heardPoints(); break;
+        case 'walk': text = walkFrom(st, a.direction, a.steps) + '\n\n' + perceive(st) + heardPoints(); break;
+        case 'plant': text = plantAt(st); await save(); text += heardPoints(); break;
+        case 'name_place': text = namePlace(st, a.name); logLine('s', 'Root named a place: ' + String(a.name || '')); await save();
+          text += heardPoints(); break;
+        case 'say': V.said = { text: String(a.text || ''), until: Date.now() + 15000 };
+          logLine('r', 'Root: ' + String(a.text || '')); text = 'Said.' + heardPoints(); break;
+        case 'leave': {
+          V.left = true; V.here = false; st.leftTick = tick;
+          const ok = await save();
+          setStatus('Root has left', true); logLine('s', 'Root leaves through the door.');
+          text = ok ? 'The world is saved at tick ' + tick + '.' : 'The world could NOT be saved just now; the last autosave stands.';
+          break;
+        }
+        default: text = 'Nothing happens: "' + act.verb + '" is not something you can do here.';
+      }
+    } catch (e) {
+      // A failure in one action must never stop the loop, or every later call stalls until it times out.
+      text = 'Something in the world went wrong (' + (e && e.message || e) + '). You are unharmed; try again.';
+      logLine('s', 'Error handling ' + act.verb + ': ' + (e && e.message || e));
     }
     hooks.draw();
     await post('/page/result', { id: act.id, text }).catch(() => {});

@@ -24,22 +24,55 @@ Design positions agreed in conversation:
   visit. `leave` appends the field note to `~/root/field-notes/field-notes.md`. `VISIT_ROOT` redirects all of it to a
   scratch folder for rehearsals.
 - `visit/door.mjs` - zero-dep stdio MCP server with 8 tools: look, walk, plant, name_place, say, listen, note, leave.
-  `visit/enter.ps1` (`npm run visit`) starts relay + dev server, opens the page, and runs `claude` from `~/root/visits`
-  with `--strict-mcp-config --tools= --allowedTools mcp__door` + `visit/visit-prompt.md`. Verified: under those
-  flags the session's tool list is exactly the 8 door tools.
+  `visit/enter.ps1` (`npm run visit`) starts relay + a dedicated dev server on port 5181, opens the page, and runs
+  `claude` from `~/root/visits` with `--setting-sources user --strict-mcp-config --tools= --allowedTools mcp__door`
+  + `visit/visit-prompt.md`. Verified: the tool list is exactly the 8 door tools, and `--setting-sources user` keeps
+  Root's global identity while dropping `~/CLAUDE.md` (the phone bridge's rules, an ancestor of `~/root/visits`).
 
 ## Also fixed (found while testing)
 The intro's Space/Enter key listener stayed registered after the intro was dismissed by click, so it ate Space and
 Enter page-wide (a typed space in any input, and likely Space-to-pause after clicking Start). `introKey` now removes
 itself once the overlay is dismissing.
 
+## Bug hunt (second pass, same day)
+A critic review plus a hostile re-read. Fixed:
+- Relay accepted any browser origin: a website could inject "Kevin says" into Root's context. Now Origin must be the
+  visit page (port 5181), Host must be 127.0.0.1/localhost:7796, POSTs must be JSON (forces a preflight).
+- Root loaded `~/CLAUDE.md` (bridge rules) as an ancestor file. Fixed with `--setting-sources user`.
+- A dead session's visit stayed open; each door process now carries a session id and a new one arrives fresh.
+- Two tabs fought over the poll and a stale tab could overwrite the world: the newest page (by `/page/load`) owns the
+  world; older tabs get 409 and stand down.
+- A failed load (relay down, unreadable file, import that did not take) fell through to a fresh world that the autosave
+  then wrote over the real one. Only a clean 404 starts a new world; anything else refuses to save.
+- One throw in the page's action loop stalled every later call; the loop now catches per action.
+- An action the page had taken but answered late was reported "page down", so Root would retry it (walk twice). Taken
+  actions now get 60s more; a closed poll socket is dropped instead of being handed an action.
+- Planted-plant tracking matched by id alone, which a load can reuse. Plants carry `byRoot` and match on id + tile.
+- A point was worded from Root's position at click time; it is now worded when Root hears it, with its age. Typed
+  lines carry their age too.
+- Concurrent or abandoned `listen` calls shared one wake slot; now a set.
+- No hard stop at the visit limit: 5 minutes past it, only say, note and leave work.
+- Plant budget reset on page reload instead of on arrival; saves stopped after Root left; field-note title could
+  break the markdown header; non-ASCII bodies could split across chunks; a damaged notes line blocked arrival;
+  Windows rename-onto-open-file during a load. All fixed.
+- Shift+double-click reset the zoom; the seasons checkbox did not show seasons as on. Fixed.
+Not fixed, deliberately: the save format does not carry active vents (true for every world, not the visit's), and the
+season clock jumps once on a fresh world's first reload.
+
+Added for Kevin: a faint footprint trail, minutes left in the panel header, "the world has run N ticks since you left"
+on arrival, Root stepping to the nearest ground (not the centre) if the sea took its tile, and a collapsed "how this
+works" guide in the panel.
+
 ## Verification
-- `src/visit.test.js`: 10 tests (sight square exact, creature one tile outside sight unseen, stride clamp, sea stops,
+- `src/visit.test.js`: 14 tests (added: trail cap, nearest-ground arrival, time away, id-reuse imposter) (sight square exact, creature one tile outside sight unseen, stride clamp, sea stops,
   steep stops, bad direction, arrival on land, planting into real flora + seed limit + no water, naming, pointing).
 - Rehearsal against a scratch `VISIT_ROOT`, real page in Playwright: door driven over stdio (arrive, look, walk, name,
   plant, say, note, hear the owner's typed line and Shift+click point, leave -> world saved, field note written to
   scratch only); page reload restores the saved world; a headless `claude -p` with the launcher's flags looked, spoke
   and heard the owner. Real `~/root` record untouched.
+- Second rehearsal (scratch `VISIT_ROOT`, port 5181): foreign Origin 403, text/plain 415, spoofed Host 403; a second
+  tab retires the first; a point is worded at delivery; a new door process arrives fresh and logs the old visit
+  abandoned; the help panel renders collapsed by default.
 - Full gate: see STATUS.
 
 ## Not done, deliberately
