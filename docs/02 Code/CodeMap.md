@@ -1,5 +1,6 @@
 # CodeMap - Worldbuilder
 
+> 2026-10-17: Root's visit. `src/visit.js` = pure cores (`perceive`, `walkFrom`, `plantAt`, `namePlace`, `pointText`, `arrivalText`, `arrivalTile`; tested in `src/visit.test.js`) + browser shell (`bootVisit`, `visitDraw`, only on `?visit`). `main.js` hooks: `visitDraw` in `draw()`, the `?visit` boot block above the `?debug` handle. `visit/relay.mjs` (127.0.0.1:7796), `visit/door.mjs` (stdio MCP), `visit/enter.ps1` (`npm run visit`). See the 2026-10-17 handoff.
 > 2026-09-07: rendering moved to `src/render.js` (`drawWorld`, `drawRivers`); `main.js` `draw()` is a wrapper. `setWorldSize(w, h)` accepts a height.
 
 ## Project structure (updated 2026-07-03: the sim core is split out of main.js into src/sim.js, chunk 10)

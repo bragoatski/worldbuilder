@@ -20,7 +20,7 @@ export default [
     },
   },
   {
-    files: ['src/**/*.test.js', 'scripts/**/*.mjs', 'eslint.config.js', 'vite.config.js'],
+    files: ['src/**/*.test.js', 'scripts/**/*.mjs', 'visit/**/*.mjs', 'eslint.config.js', 'vite.config.js'],
     languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: { ...globals.node } },
     rules: { 'no-unused-vars': 'warn' },
   },
