@@ -52,6 +52,14 @@ This supersedes the `?visit` page, the shared `world.json`, and `visit/enter.ps1
   the click; speed 60 -> 6 -> 60; Root answered Kevin, walked, planted; Send Root home -> goodbye + field note in 7s;
   per-world file written; real `~/root` record untouched.
 
+## Always on (owner ruling 2026-10-17: "You have permission to do this every time or the one time it is needed")
+`visit/start-worldbuilder.ps1` is a keepalive in the holodeck's shape: a named mutex (one loop), every 30s it starts
+the dev server if 127.0.0.1:5173 is down (which also starts the relay), or just the relay if only 7796 is down.
+`visit/worldbuilder.vbs` is copied into the Startup folder and runs it hidden at logon. Logs: `.local/` (gitignored).
+The dev server is pinned to `--host 127.0.0.1`: unpinned, Vite listened on [::1] only, the keepalive's IPv4 probe
+saw it as down, and it would have relaunched every cycle. If you run `npm run dev` yourself while it is up, Vite takes
+the next port and the relay bows out to the running one; the button works on either page.
+
 ## Also fixed (found while testing)
 The intro's Space/Enter key listener stayed registered after the intro was dismissed by click, so it ate Space and
 Enter page-wide (a typed space in any input, and likely Space-to-pause after clicking Start). `introKey` now removes

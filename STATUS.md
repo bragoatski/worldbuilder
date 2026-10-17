@@ -12,6 +12,8 @@ screen; the owner talks in a panel, Shift+clicks to point, keeps every Hand powe
 says goodbye and leaves with a field note). Pure cores in `src/visit.js` (tested in `src/visit.test.js`); relay + door
 in `visit/`. Root's record (notes, visit logs, session transcripts, per-world memory, field notes) lives in `~/root`.
 The public Pages build never shows the toggle. Also fixed: the intro key listener ate Space/Enter page-wide.
+**Always on (owner ruling 2026-10-17):** `visit/start-worldbuilder.ps1` keeps the dev server (127.0.0.1:5173) and relay
+running; `worldbuilder.vbs` in the Startup folder starts it at logon. Logs in `.local/` (gitignored).
 **Next:** the owner calls Root in for a first real visit; what Root does with no goal decides the next step.
 
 ## Session 2026-09-07 - The renderer becomes a module - DONE, GATE GREEN
