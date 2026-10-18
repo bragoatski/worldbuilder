@@ -10,21 +10,21 @@ const SESSION = randomUUID();   // one per Claude session: lets the relay tell a
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const TOOLS = [
-  { name: 'look', description: 'Look around: the ground, life and anything Kevin said within a few tiles of you. Your first call of a visit steps you through the door.',
+  { name: 'look', description: 'See your square (terse code, key in your brief). First call steps you through the door.',
     inputSchema: { type: 'object', properties: {} } },
-  { name: 'walk', description: 'Walk 1 to 3 tiles in a compass direction (north is up). Water, the world edge and active vents stop you; steep ground stops you after one step. Returns what you see where you end up.',
+  { name: 'walk', description: 'Walk 1-3 tiles (north up). Water, edge, vents block; steep ground stops you after 1. Returns a look.',
     inputSchema: { type: 'object', properties: { direction: { type: 'string', enum: DIRS }, steps: { type: 'integer', minimum: 1, maximum: 3 } }, required: ['direction'] } },
-  { name: 'plant', description: 'Plant a seed on the tile you stand on. It lives or dies by the world\'s rules like any plant. 5 seeds per visit.',
+  { name: 'plant', description: 'Plant a seed here; it lives or dies by the world\'s rules. 5 per visit.',
     inputSchema: { type: 'object', properties: {} } },
-  { name: 'name_place', description: 'Give the tile you stand on a name (up to 40 characters). Names persist across visits and Kevin sees them on his map.',
+  { name: 'name_place', description: 'Name this tile (<=40 chars). Persists; Kevin sees it.',
     inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
-  { name: 'say', description: 'Speak to Kevin. He reads it beside you on the map.',
+  { name: 'say', description: 'Speak to Kevin.',
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
-  { name: 'listen', description: 'Stand still and wait for Kevin to speak or point, up to the given seconds (5 to 120). Returns early if he does. Waiting costs nothing.',
+  { name: 'listen', description: 'Wait up to N s (5-120) for Kevin; returns early if he speaks or points. Free.',
     inputSchema: { type: 'object', properties: { seconds: { type: 'integer', minimum: 5, maximum: 120 } } } },
-  { name: 'note', description: 'Write a note to yourself. Your recent notes are given back to you when you next arrive.',
+  { name: 'note', description: 'Note to yourself; recent notes return on your next arrival.',
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
-  { name: 'leave', description: 'Leave through the door. The world is saved. Your field note (first person, signed by you automatically) is appended to your field notes.',
+  { name: 'leave', description: 'Leave. Title + first-person field note go into your field notes (signed for you).',
     inputSchema: { type: 'object', properties: { title: { type: 'string' }, field_note: { type: 'string' } }, required: ['title', 'field_note'] } },
 ];
 

@@ -25,21 +25,20 @@ describe('visit: what Root perceives', () => {
   beforeEach(() => { st = world(); });
 
   it('sees exactly its square, centred on itself', () => {
-    const text = v.perceive(st);
-    const lines = text.split('\n');
-    const g = lines.indexOf('Ground (north is up, you are @):');
-    const rows = lines.slice(g + 1, g + 2 + 2 * v.SIGHT);
+    const lines = v.perceive(st).split('\n');
+    expect(lines[0]).toMatch(/^t\d+ @16,16 grassland /);     // head: tick, position, biome (seasons are off here)
+    const rows = lines.slice(1, 2 + 2 * v.SIGHT).map(r => r.split('  '));
     expect(rows).toHaveLength(2 * v.SIGHT + 1);
-    rows.forEach(r => expect(r).toHaveLength(2 * v.SIGHT + 1));
-    expect(rows[v.SIGHT][v.SIGHT]).toBe('@');
-    expect(rows[0][v.SIGHT]).toBe('M');           // the mountain 4 north is inside the square
+    rows.forEach(([g, l]) => { expect(g).toHaveLength(2 * v.SIGHT + 1); expect(l).toHaveLength(2 * v.SIGHT + 1); });
+    expect(rows[v.SIGHT][0][v.SIGHT]).toBe('@');
+    expect(rows[0][0][v.SIGHT]).toBe('M');        // the mountain 4 north is inside the square
   });
 
   it('does not see a creature one tile outside its sight', () => {
     sim.fauna.push(sim.makeFauna(16 + v.SIGHT + 1, 16, 'herbivore'));
-    expect(v.perceive(st)).toContain('No creatures in sight.');
+    expect(v.perceive(st)).not.toMatch(/^H /m);
     sim.fauna.push(sim.makeFauna(16 + v.SIGHT, 16, 'herbivore'));
-    expect(v.perceive(st)).toContain('Creatures in sight (1):');
+    expect(v.perceive(st)).toMatch(/^H 4E /m);
   });
 });
 
@@ -54,13 +53,13 @@ describe('visit: how Root moves', () => {
 
   it('is stopped by the sea at the shore', () => {
     st.x = 23;
-    expect(v.walkFrom(st, 'E', 2)).toContain('Stopped by open ocean');
+    expect(v.walkFrom(st, 'E', 2)).toBe('walked 0/2E, blocked: open ocean');
     expect(st.x).toBe(23);
   });
 
   it('stops after one step onto steep ground', () => {
     st.y = 13;
-    expect(v.walkFrom(st, 'N', 3)).toContain('Steep ground');
+    expect(v.walkFrom(st, 'N', 3)).toBe('walked 1/3N, steep');
     expect([st.x, st.y]).toEqual([16, 12]);
   });
 
@@ -84,7 +83,7 @@ describe('visit: how Root moves', () => {
 
   it('knows how long the world ran while it was away', () => {
     st.leftTick = sim.tick - 1;
-    expect(v.arrivalText(st)).toContain('The world has run 1 ticks since you left');
+    expect(v.arrivalText(st)).toContain('since you left: 1 ticks');
     st.leftTick = null;
     expect(v.arrivalText(st)).not.toContain('since you left');
   });
@@ -119,7 +118,7 @@ describe('visit: what Root can do', () => {
     expect(sim.flora.filter(f => f && st.planted.some(p => p.id === f.id))).toHaveLength(v.PLANTS_PER_VISIT);
     expect(v.plantAt(st)).toContain('no seeds left');
     const st2 = world(); st2.x = 2; st2.y = 2;
-    expect(v.plantAt(st2)).toContain('Nothing roots in water');
+    expect(v.plantAt(st2)).toBe('nothing roots in water');
   });
 
   it('does not mistake an unrelated plant that reused its id for its own', () => {
@@ -128,7 +127,14 @@ describe('visit: what Root can do', () => {
     sim.flora.length = 0;                                   // Root's plant died...
     const imposter = sim.makeFlora(mine.x, mine.y, null);   // ...and after a load an unrelated plant got its id
     imposter.id = mine.id; sim.flora.push(imposter);
-    expect(v.arrivalText(st)).toContain('1 things you have planted, 0 still live');
+    expect(v.arrivalText(st)).toContain('planted 1, alive 0');
+  });
+
+  it('keeps a look short: one head line, nine rows, one tally', () => {
+    sim.fauna.push(sim.makeFauna(17, 15, 'herbivore'));
+    const text = v.perceive(st);
+    expect(text.split('\n')).toHaveLength(1 + (2 * v.SIGHT + 1) + 2);   // head, rows, creatures, tally
+    expect(text.length).toBeLessThan(400);
   });
 
   it('names a place once per tile, trimmed to 40 characters', () => {
@@ -136,11 +142,11 @@ describe('visit: what Root can do', () => {
     v.namePlace(st, '  a   very long name that keeps on going past the limit  ');
     expect(st.places).toHaveLength(1);
     expect(st.places[0].name.length).toBeLessThanOrEqual(40);
-    expect(v.namePlace(st, '   ')).toContain('needs at least one word');
+    expect(v.namePlace(st, '   ')).toBe('a name needs a word');
   });
 
   it('hears a point exactly in sight and only as a bearing beyond it', () => {
-    expect(v.pointText(st, 18, 15)).toBe('Kevin points at the tile 1N 2E of you.');
-    expect(v.pointText(st, 30, 2)).toMatch(/^Kevin points far off to the northeast, about 14 tiles away\.$/);
+    expect(v.pointText(st, 18, 15)).toBe('Kevin points 1N2E');
+    expect(v.pointText(st, 30, 2)).toBe('Kevin points far northeast ~14');
   });
 });

@@ -61,7 +61,7 @@ export function bearing(dx, dy) {
   const parts = [];
   if (dy) parts.push(Math.abs(dy) + (dy < 0 ? 'N' : 'S'));
   if (dx) parts.push(Math.abs(dx) + (dx > 0 ? 'E' : 'W'));
-  return parts.join(' ');
+  return parts.join('');
 }
 
 function compass(dx, dy) {
@@ -73,12 +73,11 @@ function compass(dx, dy) {
 function tempWord(v) { return v < 2 ? 'freezing' : v < 4 ? 'cold' : v < 6 ? 'mild' : v < 8 ? 'warm' : 'hot'; }
 function aridWord(v) { return v < 2 ? 'wet' : v < 4 ? 'damp' : v < 6 ? 'moderate' : v < 8 ? 'dry' : 'parched'; }
 
-function seasonText() {
-  if (!CFG.seasonalTilt) return 'No seasons turn in this world.';
+// Season as one token-cheap word: warm / cold / mid, with + warming or - cooling. Empty when seasons are off.
+function seasonCode() {
+  if (!CFG.seasonalTilt) return '';
   const p = seasonPhase(), w = seasonWave(p), next = seasonWave((p + 0.02) % 1);
-  const trend = next > w + 1e-6 ? ', warming' : next < w - 1e-6 ? ', cooling' : '';
-  const name = w > 0.5 ? 'the warm season' : w < -0.5 ? 'the cold season' : 'between seasons';
-  return 'It is ' + name + trend + '.';
+  return (w > 0.5 ? 'warm' : w < -0.5 ? 'cold' : 'mid') + (next > w + 1e-6 ? '+' : next < w - 1e-6 ? '-' : '');
 }
 
 // A plant Root put in the ground. Ids alone are not enough: a load resets the id counter, so an id can come back
@@ -91,26 +90,22 @@ function liveFloraAt(x, y) {
   return n;
 }
 
-function creatureLine(f, sx, sy) {
+function creatureCode(f, sx, sy) {
   const e = f.maxEnergy ? f.energy / f.maxEnergy : 0.5;
-  const fed = e < 0.25 ? 'starving' : e < 0.5 ? 'hungry' : 'well fed';
   const a = f.maxAge ? f.age / f.maxAge : 0;
-  const life = a < 0.2 ? 'young' : a > 0.8 ? 'old' : 'adult';
-  const size = f.size >= 1.7 ? 'giant ' : f.size >= 1.3 ? 'large ' : f.size <= 0.75 ? 'small ' : '';
+  const size = f.size >= 1.7 ? 'huge ' : f.size >= 1.3 ? 'big ' : f.size <= 0.75 ? 'small ' : '';
   const sp = getSpeciesName(f);
-  return '- ' + size + f.type + (sp ? ' (' + sp + ')' : '') + ' at ' + bearing(f.x - sx, f.y - sy) + ', ' + life + ', ' + fed;
+  return (CREATURE[f.type] || '?') + ' ' + bearing(f.x - sx, f.y - sy) + ' ' + size + (a < 0.2 ? 'young' : a > 0.8 ? 'old' : 'adult') +
+    ' ' + (e < 0.25 ? 'starving' : e < 0.5 ? 'hungry' : 'fed') + (sp ? ' (' + sp + ')' : '');
 }
 
-// What Root perceives from (sx,sy): a text view of its square and nothing beyond it.
+// What Root perceives from where it stands: its square and nothing beyond it, in the terse code whose key is in
+// Root's visit brief (visit/visit-prompt.md). Each row is ground, two spaces, life; north up. Kept short on purpose: every
+// look stays in Root's context for the rest of the visit and is re-read on every later step.
 export function perceive(st) {
   const sx = st.x, sy = st.y, i0 = idx(sx, sy);
-  const out = [];
-  out.push('Tick ' + tick + '. ' + seasonText());
-  out.push('You stand at (' + sx + ',' + sy + '): ' + TNAME[grid[i0]].toLowerCase() + ', elevation ' +
-    elev[i0].toFixed(1) + ', ' + tempWord(tempField[i0]) + ', ' + aridWord(aridity[i0]) + '.');
-
-  const seen = new Set();
-  const ground = [], life = [];
+  const head = ['t' + tick, seasonCode(), '@' + sx + ',' + sy, TNAME[grid[i0]].toLowerCase(), 'e' + elev[i0].toFixed(1),
+    tempWord(tempField[i0]), aridWord(aridity[i0])].filter(Boolean).join(' ');
   const byTile = new Map();
   for (let k = 0; k < fauna.length; k++) {
     const f = fauna[k];
@@ -119,16 +114,16 @@ export function perceive(st) {
     if (!byTile.has(key)) byTile.set(key, []);
     byTile.get(key).push(f);
   }
+  const rows = [];
   let plantTiles = 0, plants = 0;
   for (let dy = -SIGHT; dy <= SIGHT; dy++) {
     let g = '', l = '';
     for (let dx = -SIGHT; dx <= SIGHT; dx++) {
       const x = sx + dx, y = sy + dy;
-      if (dx === 0 && dy === 0) { g += '@'; l += '@'; seen.add('@'); continue; }
-      if (!inb(x, y)) { g += 'x'; l += ' '; seen.add('x'); continue; }
+      if (dx === 0 && dy === 0) { g += '@'; l += '@'; continue; }
+      if (!inb(x, y)) { g += 'x'; l += ' '; continue; }
       const i = idx(x, y), rd = riverData && riverData[i];
-      const c = volcActive[i] ? '*' : rd && rd.lake ? 'L' : rd ? '~' : GLYPH[grid[i]];
-      g += c; seen.add(c);
+      g += volcActive[i] ? '*' : rd && rd.lake ? 'L' : rd ? '~' : GLYPH[grid[i]];
       const here = byTile.get(i);
       if (here) {
         let top = here[0];
@@ -140,103 +135,80 @@ export function perceive(st) {
         l += n ? String(Math.min(n, 9)) : '.';
       }
     }
-    ground.push(g); life.push(l);
+    rows.push(g + '  ' + l);   // two spaces, not a symbol: a '|' got read as terrain
   }
-  out.push('', 'Ground (north is up, you are @):', ...ground);
-  const legend = [];
-  GLYPH.forEach((c, t) => { if (seen.has(c)) legend.push(c + ' ' + TNAME[t].toLowerCase()); });
-  if (seen.has('~')) legend.push('~ river');
-  if (seen.has('L')) legend.push('L lake');
-  if (seen.has('*')) legend.push('* active vent');
-  if (seen.has('x')) legend.push('x beyond the edge');
-  out.push('Legend: ' + legend.join(', '));
-  out.push('', 'Life (digits = plants on a tile, letters = creatures: H herbivore, C carnivore, O omnivore, S scavenger, A apex):', ...life);
-
+  const out = [head, ...rows];
   const creatures = [];
   byTile.forEach(list => list.forEach(f => creatures.push(f)));
   creatures.sort((a, b) => Math.max(Math.abs(a.x - sx), Math.abs(a.y - sy)) - Math.max(Math.abs(b.x - sx), Math.abs(b.y - sy)));
-  out.push('');
   if (creatures.length) {
-    out.push('Creatures in sight (' + creatures.length + '):');
-    creatures.slice(0, 12).forEach(f => out.push(creatureLine(f, sx, sy)));
-    if (creatures.length > 12) out.push('- and ' + (creatures.length - 12) + ' more, further off');
-  } else out.push('No creatures in sight.');
-  out.push(plants ? 'Plants in sight: ' + plants + ' on ' + plantTiles + ' tiles.' : 'No plants in sight.');
-
+    out.push(creatures.slice(0, 8).map(f => creatureCode(f, sx, sy)).join('; ') +
+      (creatures.length > 8 ? '; +' + (creatures.length - 8) + ' more' : ''));
+  }
+  const tail = ['plants ' + plants + '/' + plantTiles];
   const mine = st.planted.filter(p => Math.abs(p.x - sx) <= SIGHT && Math.abs(p.y - sy) <= SIGHT);
   if (mine.length) {
-    out.push('Your plantings in sight:');
-    mine.forEach(p => {
-      const f = findPlanted(p);
-      out.push('- at ' + bearing(p.x - sx, p.y - sy) + ', planted tick ' + p.tick + ': ' +
-        (f ? 'alive, health ' + Math.round(f.health * 100) + '%' : 'gone'));
-    });
+    tail.push('mine ' + mine.map(p => { const f = findPlanted(p); return bearing(p.x - sx, p.y - sy) + ' ' + (f ? Math.round(f.health * 100) + '%' : 'gone'); }).join(', '));
   }
   const near = st.places.filter(p => Math.abs(p.x - sx) <= SIGHT && Math.abs(p.y - sy) <= SIGHT);
-  if (near.length) out.push('Places you named, in sight: ' + near.map(p => '"' + p.name + '" ' + bearing(p.x - sx, p.y - sy)).join('; '));
+  if (near.length) tail.push('named ' + near.map(p => '"' + p.name + '" ' + bearing(p.x - sx, p.y - sy)).join(', '));
+  out.push(tail.join(' · '));
   return out.join('\n');
 }
 
-// Root's sense of its own history on arrival: its named places (it remembers roughly where they are)
-// and how its plantings fared. Bearings, not maps: it has to walk to see them.
+// Root's sense of its own history on arrival: its named places (roughly where) and how its plantings fared.
+// Bearings, not maps: it has to walk to see them.
 export function arrivalText(st) {
   const out = [];
-  if (st.leftTick != null && tick > st.leftTick) {
-    out.push('The world has run ' + (tick - st.leftTick) + ' ticks since you left (you left at tick ' + st.leftTick + ').');
-  }
+  if (st.leftTick != null && tick > st.leftTick) out.push('since you left: ' + (tick - st.leftTick) + ' ticks');
   if (st.places.length) {
-    out.push('Places you have named (rough direction from here):');
-    st.places.forEach(p => {
+    out.push('named: ' + st.places.map(p => {
       const dx = p.x - st.x, dy = p.y - st.y, d = Math.max(Math.abs(dx), Math.abs(dy));
-      out.push('- "' + p.name + '": ' + (d === 0 ? 'here' : 'about ' + d + ' tiles ' + compass(dx, dy)));
-    });
+      return '"' + p.name + '" ' + (d === 0 ? 'here' : '~' + d + ' ' + compass(dx, dy));
+    }).join('; '));
   }
-  if (st.planted.length) {
-    const alive = st.planted.filter(p => findPlanted(p)).length;
-    out.push('Of the ' + st.planted.length + ' things you have planted, ' + alive + ' still live.');
-  }
+  if (st.planted.length) out.push('planted ' + st.planted.length + ', alive ' + st.planted.filter(p => findPlanted(p)).length);
   return out.join('\n');
 }
 
 export function walkFrom(st, dir, steps) {
   dir = String(dir || '').toUpperCase();
   const d = DIRS[dir];
-  if (!d) return 'There is no direction "' + dir + '". Use N, NE, E, SE, S, SW, W or NW.';
+  if (!d) return 'no direction "' + dir + '" (N NE E SE S SW W NW)';
   const n = Math.max(1, Math.min(MAX_STRIDE, steps | 0 || 1));
   let moved = 0, why = '';
   for (let s = 0; s < n; s++) {
     const nx = st.x + d[0], ny = st.y + d[1];
     const b = blockedAt(nx, ny);
-    if (b) { why = 'Stopped by ' + b + '.'; break; }
+    if (b) { why = ', blocked: ' + b; break; }
     st.x = nx; st.y = ny; moved++;
     if (!st.trail) st.trail = [];
     st.trail.push([nx, ny]); if (st.trail.length > TRAIL_MAX) st.trail.shift();
-    if (STEEP.includes(grid[idx(nx, ny)]) && s < n - 1) { why = 'Steep ground: you stop to climb.'; break; }
+    if (STEEP.includes(grid[idx(nx, ny)]) && s < n - 1) { why = ', steep'; break; }
   }
-  return 'You walk ' + moved + ' of ' + n + ' ' + dir + '.' + (why ? ' ' + why : '');
+  return 'walked ' + (moved === n ? moved + dir : moved + '/' + n + dir) + why;
 }
 
 export function plantAt(st) {
-  if (st.plantsThisVisit >= PLANTS_PER_VISIT) return 'You have no seeds left this visit (' + PLANTS_PER_VISIT + ' per visit).';
+  if (st.plantsThisVisit >= PLANTS_PER_VISIT) return 'no seeds left (' + PLANTS_PER_VISIT + ' per visit)';
   const i = idx(st.x, st.y);
-  if (isWaterAt(i)) return 'Nothing roots in water.';
-  if (liveFloraAt(st.x, st.y) >= (CFG.floraPerTileMax || 4)) return 'This ground is already full of plants.';
+  if (isWaterAt(i)) return 'nothing roots in water';
+  if (liveFloraAt(st.x, st.y) >= (CFG.floraPerTileMax || 4)) return 'ground full of plants';
   const f = makeFlora(st.x, st.y, null);
   f.byRoot = true;
   flora.push(f);
   st.plantsThisVisit++;
   st.planted.push({ id: f.id, x: st.x, y: st.y, tick });
-  return 'You plant a seed. It takes its chances with this ground like anything else (' +
-    (PLANTS_PER_VISIT - st.plantsThisVisit) + ' seeds left this visit).';
+  return 'planted (' + (PLANTS_PER_VISIT - st.plantsThisVisit) + ' seeds left)';
 }
 
 export function namePlace(st, raw) {
   const name = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-  if (!name) return 'A name needs at least one word.';
+  if (!name) return 'a name needs a word';
   st.places = st.places.filter(p => !(p.x === st.x && p.y === st.y));
   st.places.push({ name, x: st.x, y: st.y, tick });
   chronicleNote('terrain', 'Root names a place: ' + name + '.', '#e8a838');
-  return 'This place is now "' + name + '".';
+  return 'named "' + name + '"';
 }
 
 // Root's memory of one world (seed + size), as saved by the relay. A world run again from the same seed keeps the
@@ -252,10 +224,8 @@ export function adoptWorldState(saved, nowTick) {
 // Kevin pointing at a tile, as Root would perceive it: exact if in sight, a bearing if not.
 export function pointText(st, px, py) {
   const dx = px - st.x, dy = py - st.y;
-  if (Math.abs(dx) <= SIGHT && Math.abs(dy) <= SIGHT) {
-    return 'Kevin points at ' + (dx || dy ? 'the tile ' + bearing(dx, dy) + ' of you' : 'you') + '.';
-  }
-  return 'Kevin points far off to the ' + compass(dx, dy) + ', about ' + Math.max(Math.abs(dx), Math.abs(dy)) + ' tiles away.';
+  if (Math.abs(dx) <= SIGHT && Math.abs(dy) <= SIGHT) return 'Kevin points ' + (dx || dy ? bearing(dx, dy) : 'at you');
+  return 'Kevin points far ' + compass(dx, dy) + ' ~' + Math.max(Math.abs(dx), Math.abs(dy));
 }
 
 // ===================== Browser shell (gate-blind) =====================
@@ -298,7 +268,7 @@ function panel() {
   const el = document.createElement('div');
   el.id = 'visitPanel';
   el.hidden = true;
-  el.innerHTML = '<div class="vp-head"><span class="vp-dot"></span><span id="vpStatus"></span>' +
+  el.innerHTML = '<div class="vp-head"><span class="vp-dot"></span><span id="vpStatus"></span><span id="vpTok"></span>' +
     '<button type="button" id="vpClose" aria-label="Hide">&times;</button></div>' +
     '<div id="vpLog"></div>' +
     '<form id="vpForm"><input id="vpInput" autocomplete="off" placeholder="Say something to Root"/></form>' +
@@ -309,7 +279,8 @@ function panel() {
     '<li><b>The square</b> is everything Root can see. Your Hand powers work as always, but Root only notices what happens inside it.</li>' +
     '<li><b>On the map,</b> faint amber dots are Root&rsquo;s footsteps and amber flags are places it has named. Root remembers them in this world, even if you start it over from the same seed.</li>' +
     '<li><b>Speed</b> drops while Root is here so the world is calm between its moves, and comes back when it leaves.</li>' +
-    '<li><b>A visit</b> lasts about 20 minutes. Root leaves on its own and writes a field note, or press <i>Send Root home</i> and it will say goodbye first.</li>' +
+    '<li><b>A visit</b> has no time limit. Root leaves when it wants to and writes a field note, or press <i>Send Root home</i> and it says goodbye first.</li>' +
+    '<li><b>Cost.</b> The faint number up top is tokens this visit has used; a quiet line marks each million.</li>' +
     '<li>It is Root, with its memory, not a character. Ask it anything.</li>' +
     '</ul></div>';
   const css = document.createElement('style');
@@ -318,6 +289,7 @@ function panel() {
     '#visitPanel[hidden]{display:none;}' +
     '#visitPanel .vp-head{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--fg-dim);}' +
     '#vpStatus{flex:1;}' +
+    '#vpTok{color:var(--fg-faint);font-size:11px;font-variant-numeric:tabular-nums;}' +
     '#vpClose{background:none;border:0;color:var(--fg-faint);font:16px/1 inherit;cursor:pointer;padding:0 2px;}' +
     '#vpClose:hover{color:var(--fg);}' +
     '.vp-dot{width:9px;height:9px;border-radius:50%;background:var(--fg-faint);flex:none;}' +
@@ -424,7 +396,7 @@ export function bootVisit(hooks) {
     panel();
     callButton(() => {
       if (V.phase === 'idle') {
-        post('/page/summon').then(r => { if (r) { paint('coming'); showPanel(); logLine('s', 'You call Root.'); } })
+        post('/page/summon').then(r => { if (r) { V.departed = false; paint('coming'); showPanel(); logLine('s', 'You call Root.'); } })
           .catch(() => logLine('s', 'The relay is not running.'));
       } else if (V.phase === 'coming' || V.phase === 'here') {
         post('/page/home').then(() => { paint('leaving'); logLine('s', 'You ask Root to head home.'); }).catch(() => {});
@@ -445,7 +417,7 @@ function wireInput(hooks) {
     const inp = document.getElementById('vpInput'), text = inp.value.trim();
     if (!text) return;
     inp.value = ''; logLine('k', 'You: ' + text);
-    post('/page/kevin', { text: 'Kevin says: "' + text + '"' }).catch(() => logLine('s', 'The relay is not running.'));
+    post('/page/kevin', { text: 'Kevin: "' + text + '"' }).catch(() => logLine('s', 'The relay is not running.'));
   });
   // Shift+click points while Root is here. Capture phase on window so the Hand (and the double-click zoom reset)
   // never see it. The point is worded when Root next hears it, from where Root stands THEN.
@@ -470,11 +442,12 @@ async function watchStatus() {
     try { s = await (await fetch(RELAY + '/page/status?page=' + PAGE_ID)).json(); } catch { continue; }
     if (!s.mine) { retire(); return; }
     if (V.here && !s.present) depart('Root has gone.');            // the session ended without leaving
+    tally(s.tokens || 0);
     if (s.present && s.leaving) paint('leaving');
     else if (s.present) paint('here', s.left != null ? s.left + ' min left' : '');
-    else if (s.running) paint('coming');
+    else if (s.running) paint(V.departed ? 'leaving' : 'coming');   // after leave, the session takes a moment to close
     else {
-      if (V.phase === 'coming') logLine('s', 'Root could not come through. The session transcript is in ~/root/visits.');
+      if (V.phase === 'coming' && !V.departed) logLine('s', 'Root could not come through. The session transcript is in ~/root/visits.');
       paint('idle');
     }
   }
@@ -522,12 +495,22 @@ async function arriveHere() {
 
 function depart(line) {
   if (!V.here) return;
-  V.here = false;
+  V.here = false; V.departed = true;
   V.st.leftTick = tick;
   if (V.speedBefore != null) { V.hooks.setSpeed(V.speedBefore); V.speedBefore = null; }
-  logLine('s', line);
+  logLine('s', line + (V.tokens ? ' (' + fmtTokens(V.tokens) + ' tokens so far)' : ''));
   V.hooks.draw();
   return saveState();
+}
+
+// The visit's cost, quietly: a faint running count in the panel head, and one log line per million tokens.
+function fmtTokens(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
+function tally(n) {
+  if (n < V.tokens) V.million = 0;       // a new session started counting from zero
+  V.tokens = n;
+  const el = document.getElementById('vpTok'); if (el) el.textContent = n ? fmtTokens(n) + ' tokens' : '';
+  const m = Math.floor(n / 1e6);
+  if (m > (V.million || 0)) { V.million = m; logLine('s', m + 'M tokens so far'); }
 }
 
 function heardPoints() {
@@ -538,7 +521,7 @@ function heardPoints() {
     return pointText(V.st, p.x, p.y) + (s >= 20 ? ' (' + (s < 90 ? s + ' seconds' : Math.round(s / 60) + ' minutes') + ' ago)' : '');
   });
   V.points = [];
-  return '\n\nYou see:\n' + lines.join('\n');
+  return '\n' + lines.join('\n');
 }
 
 async function pump(hooks) {
@@ -565,7 +548,7 @@ async function pump(hooks) {
           V.key = worldKey();
           const loaded = await loadState(V.key);
           V.st = Object.assign(loaded.st, { plantsThisVisit: V.st.plantsThisVisit });
-          prefix = 'The world dissolves and re-forms around you. This is a different world.\n\n';
+          prefix = 'the world dissolves and re-forms: a different world\n';
         }
         standOnGround();
         const st = V.st;
@@ -576,9 +559,9 @@ async function pump(hooks) {
           case 'name_place': text = namePlace(st, a.name); logLine('s', 'Root named a place: ' + String(a.name || '')); await saveState();
             text += heardPoints(); break;
           case 'say': V.said = { text: String(a.text || ''), until: Date.now() + 15000 };
-            logLine('r', 'Root: ' + String(a.text || '')); text = 'Said.' + heardPoints(); break;
+            logLine('r', 'Root: ' + String(a.text || '')); text = 'said' + heardPoints(); break;
           case 'leave': text = (await depart('Root leaves through the door.')) ? 'What you left in this world is kept.' : 'You leave.'; break;
-          default: text = 'Nothing happens: "' + act.verb + '" is not something you can do here.';
+          default: text = 'nothing happens ("' + act.verb + '" is not a thing you can do)';
         }
         text = prefix + text;
       }

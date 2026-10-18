@@ -17,8 +17,10 @@ const PORT = 7796;
 // (the door), which already run as Kevin.
 const PAGE_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1):\d{2,5}$/;
 const HOSTS = ['127.0.0.1:' + PORT, 'localhost:' + PORT];   // refuses DNS-rebinding hosts
-const VISIT_MINUTES = Number(process.env.VISIT_MINUTES || 20);
-const GRACE_MINUTES = 5;      // after time is up, this long to say goodbye and leave; then only leave works
+// No time limit by default (owner ruling 2026-10-17): Root stays until it leaves or Kevin sends it home. Kevin sees
+// the cost instead, as a token counter. VISIT_MINUTES (rehearsals) restores a limit.
+const VISIT_MINUTES = Number(process.env.VISIT_MINUTES || 0);
+const GRACE_MINUTES = 5;      // with a limit: after time is up, this long to say goodbye; then only leave works
 const HOME_GRACE_MS = 3 * 60000;   // after "send Root home", the session is ended if Root has not left by then
 // VISIT_ROOT points a rehearsal at a scratch folder so a test never writes Root's real record.
 const ROOT_DIR = process.env.VISIT_ROOT || path.join(os.homedir(), 'root');
@@ -109,7 +111,10 @@ function ask(verb, args, timeoutMs = 25000) {
   });
 }
 
-function minutesLeft() { return visit ? VISIT_MINUTES - (Date.now() - visit.started) / 60000 : VISIT_MINUTES; }
+function minutesLeft() {
+  if (!VISIT_MINUTES) return Infinity;
+  return visit ? VISIT_MINUTES - (Date.now() - visit.started) / 60000 : VISIT_MINUTES;
+}
 
 function ago(ms) {
   const s = Math.round(ms / 1000);
@@ -142,7 +147,7 @@ async function arrive(session) {
     if (history === null || history === '\u0000no-ground') { visit = null; return null; }
     const view = await ask('look', {});
     const notes = recentNotes(12);
-    const parts = ['You step through the door. You have ' + VISIT_MINUTES + ' minutes here.'];
+    const parts = ['You step through the door. ' + (VISIT_MINUTES ? 'You have ' + VISIT_MINUTES + ' minutes here.' : 'Stay as long as you like.')];
     if (notes.length) parts.push('Your notes from before:\n' + notes.map(n => '- [' + String(n.t).slice(0, 10) + '] ' + n.text).join('\n'));
     else parts.push('This is your first visit. You have no notes yet.');
     if (history) parts.push(history);
@@ -169,23 +174,23 @@ function footer() {
   const heard = drainInbox();
   const left = minutesLeft();
   let s = '';
-  if (heard.length) s += '\n\nYou hear:\n' + heard.join('\n');
-  if (visit && visit.dismissed) s += '\n\n(Kevin has asked you to head home. Say goodbye if you like, then leave with your field note.)';
-  else s += left > 0 ? '\n\n(' + Math.max(1, Math.round(left)) + ' min left)' : '\n\n(Your time here is up. Say goodbye if you like, then leave with your field note.)';
+  if (heard.length) s += '\n' + heard.join('\n');
+  if (visit && visit.dismissed) s += '\n\n(Kevin asks you to head home. Say goodbye if you like, then CALL leave with your field note. Ending your turn without leave loses the note.)';
+  else if (VISIT_MINUTES) s += left > 0 ? '\n\n(' + Math.max(1, Math.round(left)) + ' min left)' : '\n\n(Your time here is up. Say goodbye if you like, then leave with your field note.)';
   return s;
 }
 
 async function act(verb, args) {
   let text;
-  const closing = (visit && visit.dismissed) || minutesLeft() < -GRACE_MINUTES;
+  const closing = (visit && visit.dismissed) || (VISIT_MINUTES && minutesLeft() < -GRACE_MINUTES);
   if (closing && !['leave', 'say', 'note'].includes(verb)) {
     return 'The world has gone still around you; it is time to go. Leave with your field note.';
   }
   if (verb === 'note') {
     const t = String(args.text || '').trim();
-    if (!t) return 'An empty note.' + footer();
+    if (!t) return 'empty note' + footer();
     fs.appendFileSync(NOTES, JSON.stringify({ t: stamp(), visit: visit && visit.id, text: t }) + '\n');
-    text = 'Noted. It will be with you next visit.';
+    text = 'noted';
   } else if (verb === 'listen') {
     const secs = Math.max(5, Math.min(120, Number(args.seconds) || 30));
     let woke = inbox.length > 0;
@@ -197,7 +202,7 @@ async function act(verb, args) {
       });
     }
     const view = await ask('look', {});
-    text = (woke ? '' : 'You wait ' + secs + ' seconds. Nobody speaks.\n\n') + (view || PAGE_DOWN);
+    text = (woke ? '' : 'quiet ' + secs + 's\n') + (view || PAGE_DOWN);
   } else if (verb === 'leave') {
     if (!visit) return 'You are not inside.';
     const saved = await ask('leave', {});
@@ -222,6 +227,20 @@ function wakeListeners() { for (const w of [...wakers]) w(); }
 // Launch Root: a headless Claude session whose only tools are the door's. --setting-sources user keeps Root's
 // own global layer (identity, memory) but not ~/CLAUDE.md, the phone bridge's rules. The session's full
 // transcript is kept beside the visit log.
+// Tokens processed by the current visit's session: input + cache writes + cache reads + output, per model reply.
+// The stream repeats a reply's usage once per content block, so each reply id counts once.
+let tokens = 0;
+const tokenIds = new Set();
+function countTokens(line) {
+  let e;
+  try { e = JSON.parse(line); } catch { return; }
+  const m = e && e.type === 'assistant' && e.message;
+  if (!m || !m.usage || tokenIds.has(m.id)) return;
+  tokenIds.add(m.id);
+  const u = m.usage;
+  tokens += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
+}
+
 function summon() {
   if (child) return false;
   const cfg = path.join(os.tmpdir(), 'root-door-mcp.json');
@@ -233,14 +252,24 @@ function summon() {
   args.push('Kevin has called you in. The door is in front of you.');   // after a single-value flag: never eaten by a variadic one
   const out = fs.openSync(path.join(HOME, stamp().slice(0, 16).replace(':', '') + '.session.jsonl'), 'a');
   const env = { ...process.env }; delete env.CLAUDECODE;   // a fresh session, not a nested one
-  child = spawn(claudeBin(), args, { cwd: HOME, env, stdio: ['ignore', out, out], windowsHide: true });
+  child = spawn(claudeBin(), args, { cwd: HOME, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   const me = child;
+  tokens = 0; tokenIds.clear();
+  // Keep the transcript, and count what the visit costs from the session's own usage reports.
+  let partial = '';
+  child.stdout.on('data', chunk => {
+    fs.writeSync(out, chunk);
+    partial += chunk.toString('utf8');
+    const lines = partial.split('\n'); partial = lines.pop();
+    for (const line of lines) countTokens(line);
+  });
+  child.stderr.on('data', chunk => fs.writeSync(out, chunk));
   const done = () => {
     if (child !== me) return;
     child = null; fs.closeSync(out);
     if (visit) { log({ verb: 'ended without leaving' }); visit = null; }
   };
-  child.on('exit', done);
+  child.on('close', done);   // after its output is drained, so the last usage report is counted
   child.on('error', e => { fs.writeSync(out, JSON.stringify({ relay_error: String(e.message) }) + '\n'); done(); });
   return true;
 }
@@ -289,7 +318,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url === '/page/status') {
       return sendJSON(res, 200, { mine: !stale(), running: !!child, present: !!visit,
-        left: visit ? Math.max(0, Math.ceil(minutesLeft())) : null, leaving: !!(visit && visit.dismissed) });
+        left: visit && VISIT_MINUTES ? Math.max(0, Math.ceil(minutesLeft())) : null, leaving: !!(visit && visit.dismissed),
+        tokens });
     }
     if (req.method === 'POST' && url === '/page/summon') {
       if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });

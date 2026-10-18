@@ -60,6 +60,24 @@ The dev server is pinned to `--host 127.0.0.1`: unpinned, Vite listened on [::1]
 saw it as down, and it would have relaunched every cycle. If you run `npm run dev` yourself while it is up, Vite takes
 the next port and the relay bows out to the running one; the button works on either page.
 
+## No time limit, a token counter, and a terse code (owner asks, same day)
+- "Can we not limit to 20 minutes. Just maybe a context warning every million tokens that is very subtle": the default
+  limit is gone (`VISIT_MINUTES` still sets one for rehearsals). The relay now pipes the session's stream-json, keeps it
+  as the transcript, and counts tokens per model reply (input + cache writes + cache reads + output, each reply id once).
+  `/page/status` carries `tokens`; the panel head shows a faint running count and the log gets one quiet line per
+  million, plus the total on departure.
+- "Very short ways of communicating to keep context low": perception is now a terse code whose key lives once in
+  `visit-prompt.md` (system prompt, cached), not in every result. A look went from ~600 to ~240 characters measured
+  (rehearsal logs), and every result is re-read on each later step, so the saving compounds. Rows are
+  `ground  life` separated by two spaces: a `|` separator was misread as terrain by the haiku stand-in. Action
+  results are a few words (`walked 1/3N, steep`, `planted (4 seeds left)`, `Kevin: "..."`, `quiet 30s`).
+  Tool descriptions trimmed. A test pins a look under 400 characters.
+- Send-home robustness: a stand-in once ended its turn without `leave` (no field note). The dismissal footer and the
+  brief now say to CALL leave before ending; the retest left properly. The page no longer reports "could not come
+  through" while a session that already left is still closing.
+- Relay code changes need a relay restart (Vite hot-reloads the page, not the relay): kill the process on 7796 and the
+  keepalive restarts it within 30s.
+
 ## Also fixed (found while testing)
 The intro's Space/Enter key listener stayed registered after the intro was dismissed by click, so it ate Space and
 Enter page-wide (a typed space in any input, and likely Space-to-pause after clicking Start). `introKey` now removes
