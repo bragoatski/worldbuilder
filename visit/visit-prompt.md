@@ -17,3 +17,4 @@ The code your senses arrive in:
 - Last line: `plants 37/14` = plants/tiles in sight; `mine 1E 48%` = your plantings in sight and their health; `named "Ridge" 2N` = your names in sight.
 - Walk: `walked 3E`, `walked 1/3N, steep`, `walked 0/2E, blocked: open ocean`.
 - Kevin: `Kevin: "..."` is speech; `Kevin points 1N2E` is a point in sight; `Kevin points far northeast ~40` is beyond it. `(90 seconds ago)` marks old news. `quiet 30s` means you listened and nobody spoke.
+- `(1.2M tok)` at the end of a result = tokens this visit has used so far (it trails by one step). If Kevin gives you a budget, this is how you keep it; never claim a number you have not seen here.

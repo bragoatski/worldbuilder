@@ -177,8 +177,14 @@ function footer() {
   if (heard.length) s += '\n' + heard.join('\n');
   if (visit && visit.dismissed) s += '\n\n(Kevin asks you to head home. Say goodbye if you like, then CALL leave with your field note. Ending your turn without leave loses the note.)';
   else if (VISIT_MINUTES) s += left > 0 ? '\n\n(' + Math.max(1, Math.round(left)) + ' min left)' : '\n\n(Your time here is up. Say goodbye if you like, then leave with your field note.)';
+  // Root sees its own running cost, so a token budget Kevin sets is one Root can keep (and never has to guess at:
+  // the first real visit ran 1.5M against a 1M ask and its field note claimed it left "well before" the budget).
+  // Counted from the session's usage reports, so it trails the current step by one reply.
+  if (tokens) s += '\n(' + fmtTok(tokens) + ' tok)';
   return s;
 }
+
+function fmtTok(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Math.round(n / 1e3) + 'k'; }
 
 async function act(verb, args) {
   let text;
