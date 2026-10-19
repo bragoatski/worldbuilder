@@ -60,6 +60,34 @@ The dev server is pinned to `--host 127.0.0.1`: unpinned, Vite listened on [::1]
 saw it as down, and it would have relaunched every cycle. If you run `npm run dev` yourself while it is up, Vite takes
 the next port and the relay bows out to the running one; the button works on either page.
 
+## 2026-10-18: a friend, a field guide, and a far cheaper Root
+Owner: "capture animals like pokemon, or influence them" -> Root argued against literal capture (pulling animals out
+of a live ecology) and proposed the two good parts; owner: "I like your first two ideas, a lot."
+- Friend (`befriend`, `companionTick`, `findCompanion`, `lineCount`): one creature within 1 tile, named; drifts one
+  tile toward Root per sim tick when more than `FOLLOW_GAP` (2) away, never into blocked tiles; still eats, starves
+  and dies by the sim. Root is told once when it dies; arrival reports its family line (`lineageId`) living count.
+  Ringed and labelled on Kevin's map. Per-world, forgotten on a restarted seed. `visitTick()` runs after `step()` in
+  `main.js` `loop`. Rehearsal: befriended a starving grazer "Tam", it followed three moves, died of hunger, Root told.
+- Field guide (`sightings` page-side, `recordSightings`/`guideAct` relay-side, `~/root/visits/field-guide.json`):
+  every NAMED species in sight (the sim names a lineage at `SPECIES_MIN_GEN`), keyed by `speciesKey`; a name is a
+  pure function of the genome so it is the same in every world. "new in your guide: X" on first sight; `guide` tool
+  lists, shows one, or writes Root's note. Verified end to end with a scripted page (first sight, repeat, list,
+  note, missing).
+- Cost (owner: "your existence was fairly expensive ... far cheaper"). Measured on the first real visit: 1.5M over
+  64 replies; the standing context (12.5k) was 53% of it. Now:
+  - Slim launch: `--system-prompt-file visit-prompt.md --setting-sources local` replaces the default system prompt and
+    loads no CLAUDE.md. Standing context 13.4k -> 3.2k measured; ~4.2k with tools in a real visit. `--bare` was
+    rejected: it forces API-key auth. Trade-off: in the world Root runs on a compact identity in the brief, not the
+    full global layer; continuity comes from notes, per-world memory and the guide.
+  - Fewer replies: any action carries an optional `say`; `walk` takes a `path` like "3N2E1NW" (`walkPath`, up to 9
+    tiles, stops at the first leg that cannot finish).
+  - Model picker beside the button (Sonnet default, Opus, Haiku), remembered per browser; relay allowlists aliases.
+  - Rehearsal growth: ~350 tokens per reply (was ~1,000 before the terse code).
+- Arrival now prefers roomy ground (`arrivalTile(cx, cy, roomy)`): nearest-to-centre once dropped Root on a 3-tile
+  islet. Straight-line distance kept for the "sea took my tile" case (a square metric tied and picked arbitrarily).
+- Rehearsals moved to a separate headless Chromium (Taipan's installed Playwright, driven from the scratchpad) when
+  the shared Playwright profile was held by another session.
+
 ## No time limit, a token counter, and a terse code (owner asks, same day)
 - "Can we not limit to 20 minutes. Just maybe a context warning every million tokens that is very subtle": the default
   limit is gone (`VISIT_MINUTES` still sets one for rehearsals). The relay now pipes the session's stream-json, keeps it

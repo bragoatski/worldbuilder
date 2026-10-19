@@ -9,19 +9,24 @@ const RELAY = 'http://127.0.0.1:7796/door';
 const SESSION = randomUUID();   // one per Claude session: lets the relay tell a new visit from a dead one
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
+const SAY = { type: 'string', description: 'optional: words to Kevin, spoken in the same step' };
 const TOOLS = [
   { name: 'look', description: 'See your square (terse code, key in your brief). First call steps you through the door.',
-    inputSchema: { type: 'object', properties: {} } },
-  { name: 'walk', description: 'Walk 1-3 tiles (north up). Water, edge, vents block; steep ground stops you after 1. Returns a look.',
-    inputSchema: { type: 'object', properties: { direction: { type: 'string', enum: DIRS }, steps: { type: 'integer', minimum: 1, maximum: 3 } }, required: ['direction'] } },
+    inputSchema: { type: 'object', properties: { say: SAY } } },
+  { name: 'walk', description: 'Walk. Either direction + steps (1-3), or path like "3N2E1NW" (up to 9 tiles, stops at the first leg that cannot finish). Water, edge, vents block; steep ground stops a leg. Returns a look.',
+    inputSchema: { type: 'object', properties: { direction: { type: 'string', enum: DIRS }, steps: { type: 'integer', minimum: 1, maximum: 3 }, path: { type: 'string' }, say: SAY } } },
   { name: 'plant', description: 'Plant a seed here; it lives or dies by the world\'s rules. 5 per visit.',
-    inputSchema: { type: 'object', properties: {} } },
+    inputSchema: { type: 'object', properties: { say: SAY } } },
   { name: 'name_place', description: 'Name this tile (<=40 chars). Persists; Kevin sees it.',
-    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
-  { name: 'say', description: 'Speak to Kevin.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, say: SAY }, required: ['name'] } },
+  { name: 'befriend', description: 'Befriend the nearest creature within 1 tile and name it. It follows you; one friend at a time.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, say: SAY }, required: ['name'] } },
+  { name: 'guide', description: 'Your field guide of named species, across all worlds. No args: list. species: one entry. species + note: write your note on it.',
+    inputSchema: { type: 'object', properties: { species: { type: 'string' }, note: { type: 'string' } } } },
+  { name: 'say', description: 'Speak to Kevin (or add say to any other action instead).',
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
   { name: 'listen', description: 'Wait up to N s (5-120) for Kevin; returns early if he speaks or points. Free.',
-    inputSchema: { type: 'object', properties: { seconds: { type: 'integer', minimum: 5, maximum: 120 } } } },
+    inputSchema: { type: 'object', properties: { seconds: { type: 'integer', minimum: 5, maximum: 120 }, say: SAY } } },
   { name: 'note', description: 'Note to yourself; recent notes return on your next arrival.',
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
   { name: 'leave', description: 'Leave. Title + first-person field note go into your field notes (signed for you).',

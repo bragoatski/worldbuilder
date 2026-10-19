@@ -102,6 +102,13 @@ describe('visit: how Root moves', () => {
     expect(v.adoptWorldState(null, 0).st.places).toEqual([]);
   });
 
+  it('a first arrival prefers ground with room over a nearer speck', () => {
+    sim.grid[sim.idx(26, 26)] = sim.T.PLAINS;              // a one-tile islet right off the main land's corner
+    expect(v.arrivalTile(27, 27)).toEqual({ x: 26, y: 26 });   // nearest
+    const roomy = v.arrivalTile(27, 27, true);
+    expect(roomy.x).toBeLessThanOrEqual(23);              // on the main land instead
+  });
+
   it('arrives on land nearest the centre', () => {
     const a = v.arrivalTile();
     expect(sim.grid[sim.idx(a.x, a.y)]).toBe(sim.T.PLAINS);
@@ -148,5 +155,72 @@ describe('visit: what Root can do', () => {
   it('hears a point exactly in sight and only as a bearing beyond it', () => {
     expect(v.pointText(st, 18, 15)).toBe('Kevin points 1N2E');
     expect(v.pointText(st, 30, 2)).toBe('Kevin points far northeast ~14');
+  });
+});
+
+describe('visit: a friend and a field guide', () => {
+  let st;
+  beforeEach(() => { st = world(); });
+
+  it('befriends only a creature within one tile, and names it', () => {
+    sim.fauna.push(sim.makeFauna(16 + 2, 16, 'herbivore'));
+    expect(v.befriend(st, 'Pip')).toBe('no creature within reach (1 tile)');
+    sim.fauna.push(sim.makeFauna(17, 15, 'herbivore'));
+    expect(v.befriend(st, 'Pip')).toBe('befriended H 1N1E as "Pip"');
+    expect(v.perceive(st)).toMatch(/H "Pip" 1N1E /);
+    expect(v.befriend(st, '  ')).toBe('a friend needs a name');
+  });
+
+  it('a friend drifts back toward Root, one tile per tick, never into the sea', () => {
+    const f = sim.makeFauna(17, 16, 'herbivore'); sim.fauna.push(f);
+    v.befriend(st, 'Pip');
+    st.x = 21;                                            // Root walks off 4 tiles east
+    v.companionTick(st);
+    expect([f.x, f.y]).toEqual([18, 16]);                 // one step closer
+    v.companionTick(st);
+    expect([f.x, f.y]).toEqual([19, 16]);                 // still 3 away: another step
+    v.companionTick(st);
+    expect([f.x, f.y]).toEqual([19, 16]);                 // within the follow gap now: stays put
+    sim.grid[sim.idx(12, 16)] = sim.T.OCEAN;              // water between them
+    st.x = 10; f.x = 14; f.y = 16;
+    v.companionTick(st);
+    expect(f.x).toBe(13);
+    v.companionTick(st);
+    expect(f.x).toBe(13);                                 // the next tile is sea: it waits rather than swim
+  });
+
+  it('notices once when a friend dies, and remembers its line', () => {
+    const f = sim.makeFauna(17, 16, 'herbivore'); sim.fauna.push(f);
+    v.befriend(st, 'Pip');
+    sim.fauna.length = 0;
+    expect(v.companionTick(st)).toBe('gone');
+    expect(v.companionTick(st)).toBe(null);
+    expect(v.arrivalText(st)).toMatch(/friend "Pip" \(H\): gone since t\d+, its line 0 living/);
+  });
+
+  it('a world started over forgets the friend', () => {
+    const saved = { companion: { id: 3, lineageId: 3, type: 'herbivore', name: 'Pip' }, lastTick: 1000 };
+    expect(v.adoptWorldState(saved, 10).st.companion).toBe(null);
+    expect(v.adoptWorldState(saved, 2000).st.companion.name).toBe('Pip');
+  });
+
+  it('records only named species for the guide, once per species', () => {
+    const young = sim.makeFauna(17, 16, 'herbivore'); sim.fauna.push(young);
+    expect(v.sightings(st)).toEqual([]);                 // too young a lineage to have a name
+    const old = sim.makeFauna(18, 16, 'herbivore', { ...young, gen: 5 });
+    const twin = sim.makeFauna(19, 16, 'herbivore', { ...young, gen: 6 });
+    sim.fauna.push(old, twin);
+    const seen = v.sightings(st);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].name).toBe(sim.getSpeciesName(old));
+  });
+
+  it('walks a whole route in one call, and stops at the first leg that cannot finish', () => {
+    expect(v.walkPath(st, '2N2E')).toBe('walked 2N 2E');
+    expect([st.x, st.y]).toEqual([18, 14]);
+    st.x = 20; st.y = 16;
+    expect(v.walkPath(st, '5E 1N')).toBe('walked 3E 0/2E, blocked: open ocean');
+    expect([st.x, st.y]).toEqual([23, 16]);
+    expect(v.walkPath(st, 'up')).toContain('no route');
   });
 });

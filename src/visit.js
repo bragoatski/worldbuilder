@@ -6,7 +6,7 @@
 // launches Root's session and carries its actions here. Kevin's own tools keep working, and anything he does
 // reaches Root only if Root can see it.
 import {
-  CFG, T, TNAME, W, H, _seed, chronicleNote, elev, aridity, fauna, flora, getSpeciesName, grid, idx, inb,
+  CFG, T, TNAME, W, H, _seed, chronicleNote, speciesKey, elev, aridity, fauna, flora, getSpeciesName, grid, idx, inb,
   makeFlora, riverData, seasonPhase, seasonWave, tempField, tick, volcActive,
 } from './sim.js';
 
@@ -24,7 +24,7 @@ const CREATURE_RANK = ['apex', 'carnivore', 'omnivore', 'scavenger', 'herbivore'
 export const TRAIL_MAX = 400;      // footsteps kept for Kevin's map
 
 export function newVisitState() {
-  return { x: -1, y: -1, places: [], planted: [], plantsThisVisit: 0, trail: [], leftTick: null };
+  return { x: -1, y: -1, places: [], planted: [], plantsThisVisit: 0, trail: [], leftTick: null, companion: null };
 }
 
 function isWaterAt(i) {
@@ -45,13 +45,21 @@ function blockedAt(x, y) {
 
 // The standable tile closest to (cx,cy), default the world's centre: where Root first arrives, and where it
 // steps to if the ground under it has gone (the sea rose while it was away).
-export function arrivalTile(cx = W >> 1, cy = H >> 1) {
-  let best = -1, bestD = Infinity;
+// roomy: a first arrival wants ground with room to move, not the nearest speck: score = standable tiles in sight
+// minus distance from (cx,cy). Without it (the sea took Root's tile), simply the nearest standable tile.
+export function arrivalTile(cx = W >> 1, cy = H >> 1, roomy = false) {
+  let best = -1, bestScore = -Infinity;
   for (let i = 0; i < W * H; i++) {
     const x = i % W, y = (i / W) | 0;
     if (blockedAt(x, y) || STEEP.includes(grid[i])) continue;
-    const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-    if (d < bestD) { bestD = d; best = i; }
+    const d = Math.hypot(x - cx, y - cy);
+    let score = -d;
+    if (roomy) {
+      let room = 0;
+      for (let dy = -SIGHT; dy <= SIGHT; dy++) for (let dx = -SIGHT; dx <= SIGHT; dx++) if (inb(x + dx, y + dy) && !blockedAt(x + dx, y + dy)) room++;
+      score = room - d * 0.75;
+    }
+    if (score > bestScore) { bestScore = score; best = i; }
   }
   return best < 0 ? null : { x: best % W, y: (best / W) | 0 };
 }
@@ -90,12 +98,31 @@ function liveFloraAt(x, y) {
   return n;
 }
 
-function creatureCode(f, sx, sy) {
+export const FOLLOW_GAP = 2;     // a companion drifts back toward Root when it is further than this
+
+// The one creature Root has befriended, if it is still alive in this world. Matched on id, lineage and type: ids can
+// come back on an unrelated creature after a load, the other two make that a non-issue.
+export function findCompanion(st) {
+  const c = st.companion;
+  if (!c || c.goneTick != null) return null;
+  return fauna.find(f => f && f.id === c.id && f.lineageId === c.lineageId && f.type === c.type) || null;
+}
+
+// Living members of a lineage: what a companion leaves behind once it is gone.
+export function lineCount(lineageId) {
+  let n = 0;
+  for (let k = 0; k < fauna.length; k++) if (fauna[k] && fauna[k].lineageId === lineageId) n++;
+  return n;
+}
+
+function creatureCode(f, sx, sy, st) {
   const e = f.maxEnergy ? f.energy / f.maxEnergy : 0.5;
   const a = f.maxAge ? f.age / f.maxAge : 0;
   const size = f.size >= 1.7 ? 'huge ' : f.size >= 1.3 ? 'big ' : f.size <= 0.75 ? 'small ' : '';
   const sp = getSpeciesName(f);
-  return (CREATURE[f.type] || '?') + ' ' + bearing(f.x - sx, f.y - sy) + ' ' + size + (a < 0.2 ? 'young' : a > 0.8 ? 'old' : 'adult') +
+  const c = st && st.companion;
+  const mine = c && c.goneTick == null && f.id === c.id && f.lineageId === c.lineageId ? ' "' + c.name + '"' : '';
+  return (CREATURE[f.type] || '?') + mine + ' ' + bearing(f.x - sx, f.y - sy) + ' ' + size + (a < 0.2 ? 'young' : a > 0.8 ? 'old' : 'adult') +
     ' ' + (e < 0.25 ? 'starving' : e < 0.5 ? 'hungry' : 'fed') + (sp ? ' (' + sp + ')' : '');
 }
 
@@ -142,7 +169,7 @@ export function perceive(st) {
   byTile.forEach(list => list.forEach(f => creatures.push(f)));
   creatures.sort((a, b) => Math.max(Math.abs(a.x - sx), Math.abs(a.y - sy)) - Math.max(Math.abs(b.x - sx), Math.abs(b.y - sy)));
   if (creatures.length) {
-    out.push(creatures.slice(0, 8).map(f => creatureCode(f, sx, sy)).join('; ') +
+    out.push(creatures.slice(0, 8).map(f => creatureCode(f, sx, sy, st)).join('; ') +
       (creatures.length > 8 ? '; +' + (creatures.length - 8) + ' more' : ''));
   }
   const tail = ['plants ' + plants + '/' + plantTiles];
@@ -150,6 +177,8 @@ export function perceive(st) {
   if (mine.length) {
     tail.push('mine ' + mine.map(p => { const f = findPlanted(p); return bearing(p.x - sx, p.y - sy) + ' ' + (f ? Math.round(f.health * 100) + '%' : 'gone'); }).join(', '));
   }
+  const friend = findCompanion(st);
+  if (friend && (Math.abs(friend.x - sx) > SIGHT || Math.abs(friend.y - sy) > SIGHT)) tail.push('"' + st.companion.name + '" out of sight');
   const near = st.places.filter(p => Math.abs(p.x - sx) <= SIGHT && Math.abs(p.y - sy) <= SIGHT);
   if (near.length) tail.push('named ' + near.map(p => '"' + p.name + '" ' + bearing(p.x - sx, p.y - sy)).join(', '));
   out.push(tail.join(' · '));
@@ -168,6 +197,13 @@ export function arrivalText(st) {
     }).join('; '));
   }
   if (st.planted.length) out.push('planted ' + st.planted.length + ', alive ' + st.planted.filter(p => findPlanted(p)).length);
+  const c = st.companion;
+  if (c) {
+    const f = findCompanion(st);
+    if (!f && c.goneTick == null) c.goneTick = tick;
+    out.push('friend "' + c.name + '" (' + (CREATURE[c.type] || '?') + (c.species ? ' ' + c.species : '') + '): ' +
+      (f ? 'alive ' + bearing(f.x - st.x, f.y - st.y) : 'gone since t' + c.goneTick) + ', its line ' + lineCount(c.lineageId) + ' living');
+  }
   return out.join('\n');
 }
 
@@ -189,6 +225,31 @@ export function walkFrom(st, dir, steps) {
   return 'walked ' + (moved === n ? moved + dir : moved + '/' + n + dir) + why;
 }
 
+export const PATH_MAX = 9;      // tiles one walk(path) may cover
+
+// A route like "3N2E1NW" walked in one call (one reply instead of several). Legs longer than a stride are split;
+// the route stops at the first leg that cannot finish, so Root never walks blind past an obstacle.
+export function walkPath(st, path) {
+  const legs = [];
+  const re = /(\d*)\s*(NE|NW|SE|SW|N|E|S|W)/gi;
+  let m, total = 0;
+  while ((m = re.exec(String(path || ''))) && total < PATH_MAX) {
+    const n = Math.min(m[1] ? parseInt(m[1], 10) : 1, PATH_MAX - total);
+    if (n > 0) { legs.push([m[2].toUpperCase(), n]); total += n; }
+  }
+  if (!legs.length) return 'no route in "' + path + '" (like 3N2E1NW)';
+  const done = [];
+  for (const [dir, n] of legs) {
+    for (let left = n; left > 0; left -= MAX_STRIDE) {
+      const want = Math.min(MAX_STRIDE, left);
+      const r = walkFrom(st, dir, want);
+      if (r !== 'walked ' + want + dir) { done.push(r.replace(/^walked /, '')); return 'walked ' + done.join(' '); }
+      done.push(want + dir);
+    }
+  }
+  return 'walked ' + done.join(' ');
+}
+
 export function plantAt(st) {
   if (st.plantsThisVisit >= PLANTS_PER_VISIT) return 'no seeds left (' + PLANTS_PER_VISIT + ' per visit)';
   const i = idx(st.x, st.y);
@@ -200,6 +261,55 @@ export function plantAt(st) {
   st.plantsThisVisit++;
   st.planted.push({ id: f.id, x: st.x, y: st.y, tick });
   return 'planted (' + (PLANTS_PER_VISIT - st.plantsThisVisit) + ' seeds left)';
+}
+
+// Befriend the nearest creature within one tile and name it. One companion at a time: a new one releases the old.
+export function befriend(st, raw) {
+  const name = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+  if (!name) return 'a friend needs a name';
+  let best = null, bestD = 2;
+  for (let k = 0; k < fauna.length; k++) {
+    const f = fauna[k];
+    if (!f) continue;
+    const d = Math.max(Math.abs(f.x - st.x), Math.abs(f.y - st.y));
+    if (d < bestD) { best = f; bestD = d; }
+  }
+  if (!best) return 'no creature within reach (1 tile)';
+  const prev = st.companion && st.companion.goneTick == null ? st.companion.name : null;
+  st.companion = { id: best.id, lineageId: best.lineageId, type: best.type, name, species: getSpeciesName(best) || null, since: tick, goneTick: null };
+  chronicleNote('terrain', 'Root befriends a ' + best.type + ' and calls it ' + name + '.', '#e8a838');
+  return 'befriended ' + (CREATURE[best.type] || '?') + ' ' + bearing(best.x - st.x, best.y - st.y) + ' as "' + name + '"' +
+    (prev ? ' ("' + prev + '" goes its own way)' : '');
+}
+
+// One sim tick of companionship: a companion further than FOLLOW_GAP drifts one tile toward Root, if it can stand
+// there. It still eats, breeds, starves and dies by the world's rules; following Root can cost it food.
+// Returns 'gone' the first tick the companion is found dead, so the page can tell Root once.
+export function companionTick(st) {
+  const c = st.companion;
+  if (!c || c.goneTick != null) return null;
+  const f = findCompanion(st);
+  if (!f) { c.goneTick = tick; return 'gone'; }
+  const dx = st.x - f.x, dy = st.y - f.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) <= FOLLOW_GAP) return null;
+  const nx = f.x + Math.sign(dx), ny = f.y + Math.sign(dy);
+  if (!blockedAt(nx, ny)) { f.x = nx; f.y = ny; }
+  return null;
+}
+
+// Named species in sight, for Root's field guide. The sim names a species only once its lineage is a few
+// generations deep (SPECIES_MIN_GEN); a name is a pure function of the genome, so it is the same in every world.
+export function sightings(st) {
+  const out = new Map();
+  for (let k = 0; k < fauna.length; k++) {
+    const f = fauna[k];
+    if (!f || Math.abs(f.x - st.x) > SIGHT || Math.abs(f.y - st.y) > SIGHT) continue;
+    const name = getSpeciesName(f);
+    if (!name) continue;
+    const key = speciesKey(f);
+    if (!out.has(key)) out.set(key, { key, name, type: f.type, biome: TNAME[grid[idx(f.x, f.y)]].toLowerCase() });
+  }
+  return [...out.values()];
 }
 
 export function namePlace(st, raw) {
@@ -216,7 +326,7 @@ export function namePlace(st, raw) {
 export function adoptWorldState(saved, nowTick) {
   const st = Object.assign(newVisitState(), saved || {});
   const restarted = !!saved && saved.lastTick != null && saved.lastTick > nowTick;
-  if (restarted) { st.planted = []; st.trail = []; st.leftTick = null; }
+  if (restarted) { st.planted = []; st.trail = []; st.leftTick = null; st.companion = null; }
   delete st.lastTick;
   return { st, restarted };
 }
@@ -253,6 +363,13 @@ export function visitDraw(ctx, PIX) {
     ctx.fillStyle = '#f3d9a4'; ctx.fillText(p.name, p.x * PIX + PIX + 3, p.y * PIX + 1);
   }
   const cx = (st.x + 0.5) * PIX, cy = (st.y + 0.5) * PIX, r = Math.max(3, PIX * 0.9);
+  const friend = findCompanion(st);
+  if (friend) {   // Kevin sees the companion: an amber ring and its name
+    const fx = (friend.x + 0.5) * PIX, fy = (friend.y + 0.5) * PIX;
+    ctx.beginPath(); ctx.arc(fx, fy, Math.max(3, PIX * 0.85), 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1.2, PIX / 4); ctx.strokeStyle = '#e8a838'; ctx.stroke();
+    ctx.fillStyle = '#f3d9a4'; ctx.fillText(st.companion.name, fx + PIX, fy - PIX * 0.4);
+  }
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = '#e8a838'; ctx.fill(); ctx.lineWidth = Math.max(1.5, PIX / 3); ctx.strokeStyle = '#ffffff'; ctx.stroke();
   if (V.said && V.said.until > now) {
@@ -278,9 +395,12 @@ function panel() {
     '<li><b>Point.</b> Shift+click the map. Inside the amber square Root sees exactly where; outside it, only a direction and a distance.</li>' +
     '<li><b>The square</b> is everything Root can see. Your Hand powers work as always, but Root only notices what happens inside it.</li>' +
     '<li><b>On the map,</b> faint amber dots are Root&rsquo;s footsteps and amber flags are places it has named. Root remembers them in this world, even if you start it over from the same seed.</li>' +
+    '<li><b>Model.</b> The small menu beside the button picks what Root runs on: Sonnet (default, much cheaper), Opus, or Haiku (cheapest).</li>' +
     '<li><b>Speed</b> drops while Root is here so the world is calm between its moves, and comes back when it leaves.</li>' +
     '<li><b>A visit</b> has no time limit. Root leaves when it wants to and writes a field note, or press <i>Send Root home</i> and it says goodbye first.</li>' +
     '<li><b>Cost.</b> The faint number up top is tokens this visit has used; a quiet line marks each million.</li>' +
+    '<li><b>Friend.</b> Root can befriend one creature beside it and name it. It follows Root (ringed on the map) and still lives or dies by the world&rsquo;s rules; its family line is tracked across visits.</li>' +
+    '<li><b>Field guide.</b> Every named species Root sees goes into its guide, kept across all worlds.</li>' +
     '<li>It is Root, with its memory, not a character. Ask it anything.</li>' +
     '</ul></div>';
   const css = document.createElement('style');
@@ -310,7 +430,10 @@ function panel() {
     'background:transparent;border:1px solid var(--border-hi);color:var(--fg-dim);font:600 12px/1 inherit;cursor:pointer;white-space:nowrap;}' +
     '#rootCall:hover{background:rgba(255,255,255,.05);color:var(--fg);}' +
     '#rootCall.root-here{border-color:#e8a83866;color:#f3d9a4;}' +
-    '#rootCall:disabled{cursor:default;opacity:.7;}';
+    '#rootCall:disabled{cursor:default;opacity:.7;}' +
+    '#rootModel{margin-right:8px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--fg-faint);' +
+    'font:11px/1 inherit;padding:5px 4px;cursor:pointer;} #rootModel:hover{color:var(--fg-dim);}' +
+    '#rootModel option{background:var(--bg-panel);color:var(--fg);}';
   document.head.appendChild(css);
   document.body.appendChild(el);
   const btn = el.querySelector('#vpHelpBtn'), help = el.querySelector('#vpHelp');
@@ -336,6 +459,13 @@ function callButton(onClick) {
   if (mode && mode.parentNode) { mode.parentNode.insertBefore(b, mode); mode.style.marginLeft = '0'; }
   else { b.style.cssText = 'position:fixed;top:12px;right:16px;z-index:50;'; document.body.appendChild(b); }
   b.addEventListener('click', onClick);
+  // Which model Root comes as. Sonnet by default: far cheaper per token than Opus, and the same Root.
+  const sel = document.createElement('select');
+  sel.id = 'rootModel'; sel.title = 'Which model Root visits on';
+  [['sonnet', 'Sonnet'], ['opus', 'Opus'], ['haiku', 'Haiku']].forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); });
+  try { sel.value = localStorage.getItem('wb.rootModel') || 'sonnet'; } catch { sel.value = 'sonnet'; }
+  sel.addEventListener('change', () => { try { localStorage.setItem('wb.rootModel', sel.value); } catch { /* fine */ } });
+  b.after(sel);
   return b;
 }
 
@@ -396,8 +526,10 @@ export function bootVisit(hooks) {
     panel();
     callButton(() => {
       if (V.phase === 'idle') {
-        post('/page/summon').then(r => { if (r) { V.departed = false; paint('coming'); showPanel(); logLine('s', 'You call Root.'); } })
+        const model = (document.getElementById('rootModel') || {}).value || 'sonnet';
+        post('/page/summon', { model }).then(r => { if (r) { V.departed = false; paint('coming'); showPanel(); } })
           .catch(() => logLine('s', 'The relay is not running.'));
+        logLine('s', 'Calling Root (' + model + ').');
       } else if (V.phase === 'coming' || V.phase === 'here') {
         post('/page/home').then(() => { paint('leaving'); logLine('s', 'You ask Root to head home.'); }).catch(() => {});
       }
@@ -469,7 +601,7 @@ async function loadState(key) {
 function standOnGround() {
   const st = V.st;
   if (inb(st.x, st.y) && !blockedAt(st.x, st.y)) return true;
-  const t = inb(st.x, st.y) ? arrivalTile(st.x, st.y) : arrivalTile();
+  const t = inb(st.x, st.y) ? arrivalTile(st.x, st.y) : arrivalTile(W >> 1, H >> 1, true);
   if (!t) return false;
   st.x = t.x; st.y = t.y;
   return true;
@@ -513,6 +645,17 @@ function tally(n) {
   if (m > (V.million || 0)) { V.million = m; logLine('s', m + 'M tokens so far'); }
 }
 
+// Called by the page loop after every sim step while the game runs.
+export function visitTick() {
+  if (!V || !V.here) return;
+  if (companionTick(V.st) === 'gone') { V.friendNews = '"' + V.st.companion.name + '" is gone (t' + tick + ')'; logLine('s', 'Root\'s friend ' + V.st.companion.name + ' is gone.'); saveState(); }
+}
+
+function friendNews() {
+  if (!V.friendNews) return '';
+  const n = '\n' + V.friendNews; V.friendNews = null; return n;
+}
+
 function heardPoints() {
   if (!V.points.length) return '';
   const now = Date.now();
@@ -536,7 +679,7 @@ async function pump(hooks) {
     } catch { await sleep(3000); continue; }
     if (!act || !act.id) continue;
     const a = act.args || {};
-    let text;
+    let text, sighted = null;
     try {
       if (act.verb === 'arrive') {
         text = await arriveHere();
@@ -553,8 +696,9 @@ async function pump(hooks) {
         standOnGround();
         const st = V.st;
         switch (act.verb) {
-          case 'look': text = perceive(st) + heardPoints(); break;
-          case 'walk': text = walkFrom(st, a.direction, a.steps) + '\n\n' + perceive(st) + heardPoints(); break;
+          case 'look': text = perceive(st) + heardPoints() + friendNews(); sighted = sightings(st); break;
+          case 'walk': text = (a.path ? walkPath(st, a.path) : walkFrom(st, a.direction, a.steps)) + '\n\n' + perceive(st) + heardPoints() + friendNews(); sighted = sightings(st); break;
+          case 'befriend': text = befriend(st, a.name); logLine('s', text.startsWith('befriended') ? 'Root ' + text + '.' : 'Root reaches for a friend: ' + text); await saveState(); break;
           case 'plant': text = plantAt(st); await saveState(); text += heardPoints(); break;
           case 'name_place': text = namePlace(st, a.name); logLine('s', 'Root named a place: ' + String(a.name || '')); await saveState();
             text += heardPoints(); break;
@@ -571,6 +715,6 @@ async function pump(hooks) {
       logLine('s', 'Error handling ' + act.verb + ': ' + (e && e.message || e));
     }
     hooks.draw();
-    await post('/page/result', { id: act.id, text }).catch(() => {});
+    await post('/page/result', { id: act.id, text, sighted, world: V.key, tick }).catch(() => {});
   }
 }

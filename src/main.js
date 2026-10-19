@@ -21,7 +21,7 @@ import {
   speciesRegistry, step, sunlight, tempField, tick, worldPermalink, worldPostcard,
 } from './sim.js';
 import { drawWorld } from './render.js';
-import { bootVisit, visitDraw } from './visit.js';
+import { bootVisit, visitDraw, visitTick } from './visit.js';
 
 // ===== Panel collapse =====
 window.togglePanel = function(id){
@@ -1083,7 +1083,7 @@ function init(){
   if(seedEl&&!seedVal)seedEl.value='';
   resize();buildSliders();draw();refreshUndoBtn();
 }
-function loop(){try{if(running){step();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+function loop(){try{if(running){step();visitTick();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){

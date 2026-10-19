@@ -14,6 +14,9 @@ in `visit/`. Root's record (notes, visit logs, session transcripts, per-world me
 The public Pages build never shows the toggle. Also fixed: the intro key listener ate Space/Enter page-wide.
 No time limit (owner ruling 2026-10-17); a faint token counter and a quiet line per million instead. Perception is a
 terse code keyed once in Root's brief (~60% smaller per look).
+2026-10-18: Root can befriend one creature (it follows, lives and dies by the sim) and keeps a field guide of named
+species across worlds. Cost cut: slim launch (standing context 12.5k -> ~4k), say-with-any-action, route walks, and a
+model picker (Sonnet default).
 **Always on (owner ruling 2026-10-17):** `visit/start-worldbuilder.ps1` keeps the dev server (127.0.0.1:5173) and relay
 running; `worldbuilder.vbs` in the Startup folder starts it at logon. Logs in `.local/` (gitignored).
 **Next:** the owner calls Root in for a first real visit; what Root does with no goal decides the next step.

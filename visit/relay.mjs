@@ -27,6 +27,7 @@ const ROOT_DIR = process.env.VISIT_ROOT || path.join(os.homedir(), 'root');
 const HOME = path.join(ROOT_DIR, 'visits');
 const WORLDS = path.join(HOME, 'worlds');   // what Root left in each world, keyed by seed + size
 const NOTES = path.join(HOME, 'notes.jsonl');
+const GUIDE = path.join(HOME, 'field-guide.json');   // every named species Root has seen, across all worlds
 const FIELD_NOTES = path.join(ROOT_DIR, 'field-notes', 'field-notes.md');
 fs.mkdirSync(WORLDS, { recursive: true });
 fs.mkdirSync(path.dirname(FIELD_NOTES), { recursive: true });
@@ -192,7 +193,11 @@ async function act(verb, args) {
   if (closing && !['leave', 'say', 'note'].includes(verb)) {
     return 'The world has gone still around you; it is time to go. Leave with your field note.';
   }
-  if (verb === 'note') {
+  // Any action may carry words for Kevin: spoken first, in the same step, so talking costs no extra reply.
+  if (args.say && verb !== 'say' && verb !== 'leave') await ask('say', { text: String(args.say) });
+  if (verb === 'guide') {
+    text = guideAct(args);
+  } else if (verb === 'note') {
     const t = String(args.text || '').trim();
     if (!t) return 'empty note' + footer();
     fs.appendFileSync(NOTES, JSON.stringify({ t: stamp(), visit: visit && visit.id, text: t }) + '\n');
@@ -228,6 +233,47 @@ async function act(verb, args) {
   return text + footer();
 }
 
+// ---- Root's field guide ----
+function readGuide() {
+  try { return JSON.parse(fs.readFileSync(GUIDE, 'utf8')); } catch { return { entries: {} }; }
+}
+function writeGuide(g) { fs.writeFileSync(GUIDE + '.tmp', JSON.stringify(g, null, 1)); fs.renameSync(GUIDE + '.tmp', GUIDE); }
+
+// Merge one look's sightings; returns the names that are new to the guide.
+function recordSightings(list, world, tick) {
+  if (!Array.isArray(list) || !list.length) return [];
+  const g = readGuide(), fresh = [];
+  for (const x of list.slice(0, 40)) {
+    const key = String(x.key || '').slice(0, 64), name = String(x.name || '').slice(0, 60);
+    if (!key || !name) continue;
+    const e = g.entries[key];
+    if (e) { e.seen++; e.last = { t: stamp(), world }; continue; }
+    g.entries[key] = { name, type: String(x.type || ''), first: { t: stamp(), world, tick, biome: String(x.biome || '') }, seen: 1, last: { t: stamp(), world }, note: '' };
+    fresh.push(name + ' (' + String(x.type || '?').slice(0, 1).toUpperCase() + ')');
+  }
+  writeGuide(g);
+  return fresh;
+}
+
+function guideAct(args) {
+  const g = readGuide(), list = Object.values(g.entries);
+  if (args.species) {
+    const want = String(args.species).toLowerCase().trim();
+    const e = list.find(x => x.name.toLowerCase() === want);
+    if (!e) return 'no "' + args.species + '" in your guide';
+    if (args.note == null) return guideLine(e);
+    e.note = String(args.note).replace(/\s+/g, ' ').trim().slice(0, 200);
+    writeGuide(g);
+    return 'noted under ' + e.name;
+  }
+  if (!list.length) return 'your guide is empty: species get names once a lineage is a few generations old';
+  return list.length + ' species\n' + list.map(guideLine).join('\n');
+}
+function guideLine(e) {
+  return e.name + ' ' + (e.type || '?').slice(0, 1).toUpperCase() + ' x' + e.seen + ' first ' + e.first.biome + ' ' + String(e.first.t).slice(0, 10) +
+    (e.note ? ': ' + e.note : '');
+}
+
 function wakeListeners() { for (const w of [...wakers]) w(); }
 
 // Launch Root: a headless Claude session whose only tools are the door's. --setting-sources user keeps Root's
@@ -247,14 +293,21 @@ function countTokens(line) {
   tokens += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
 }
 
-function summon() {
+// Which model Root visits on, chosen per visit from the page. Tokens are tokens on any model; the cheaper models
+// make each one cost less. Sonnet is the default (owner ask 2026-10-18: "far cheaper").
+const MODELS = { opus: 'opus', sonnet: 'sonnet', haiku: 'haiku' };
+
+function summon(model) {
   if (child) return false;
   const cfg = path.join(os.tmpdir(), 'root-door-mcp.json');
   fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { door: { command: process.execPath, args: [path.join(DIR, 'door.mjs')] } } }));
-  const args = ['-p', '--allowedTools', 'mcp__door', '--tools=', '--setting-sources', 'user',
-    '--mcp-config', cfg, '--strict-mcp-config', '--append-system-prompt-file', path.join(DIR, 'visit-prompt.md'),
-    '--output-format', 'stream-json', '--verbose'];
-  if (process.env.VISIT_MODEL) args.push('--model', process.env.VISIT_MODEL);
+  // The slim launch: the visit brief REPLACES the default system prompt and only local settings load, so no
+  // CLAUDE.md or coding rules ride along. Measured 2026-10-18: standing context 13.4k -> 3.2k tokens, and the
+  // standing context was half of the first real visit's 1.5M (it is re-read on every reply).
+  const args = ['-p', '--allowedTools', 'mcp__door', '--tools=', '--setting-sources', 'local',
+    '--mcp-config', cfg, '--strict-mcp-config', '--system-prompt-file', path.join(DIR, 'visit-prompt.md'),
+    '--output-format', 'stream-json', '--verbose',
+    '--model', process.env.VISIT_MODEL || MODELS[model] || MODELS.sonnet];
   args.push('Kevin has called you in. The door is in front of you.');   // after a single-value flag: never eaten by a variadic one
   const out = fs.openSync(path.join(HOME, stamp().slice(0, 16).replace(':', '') + '.session.jsonl'), 'a');
   const env = { ...process.env }; delete env.CLAUDECODE;   // a fresh session, not a nested one
@@ -329,7 +382,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url === '/page/summon') {
       if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
-      return sendJSON(res, 200, { started: summon() });
+      const b = await body(req);
+      return sendJSON(res, 200, { started: summon(String(b.model || '')) });
     }
     if (req.method === 'POST' && url === '/page/home') {
       if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
@@ -347,7 +401,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url === '/page/result') {
       const b = await body(req);
       const w = waiting.get(b.id);
-      if (w) { waiting.delete(b.id); w.resolve(String(b.text || '')); }
+      if (w) {
+        waiting.delete(b.id);
+        let text = String(b.text || '');
+        const fresh = recordSightings(b.sighted, String(b.world || ''), Number(b.tick) || 0);
+        if (fresh.length) text += '\nnew in your guide: ' + fresh.join(', ');
+        w.resolve(text);
+      }
       return sendJSON(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url === '/page/kevin') {
