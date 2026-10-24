@@ -12,8 +12,13 @@ the whole world, a zoom, and the Hand anywhere, plus weather and the sea). Each 
 serves one mode's tools and the relay refuses any verb outside it. Every Root power is one act in the Hand's undo.
 Field notes from Shaper/Sky are headed "(as Shaper)" / "(as Sky)". Rehearsed scripted (all three modes) and with a
 real haiku session (Sky lowered an ocean world and seeded it; Shaper built a causeway). 35 visit tests.
-**Next:** the owner calls Root in as Sky on Opus with no brief beyond the mode's, and watches what it builds. Open
-question for him: in Sky, does he keep the Hand (two gods) or only watch; both are a setting away.
+**Next: build Ketch'em chunk one** (owner ruling 2026-10-24 after a full design day). Design record:
+`docs/01 Design/Ketch'em.md`; the numbers: `docs/01 Design/Ketch'em Mechanics.md` (22 sections, all tables). Chunk
+one = height axis in the sim (measured on the harness), board generation (full board, 60-95% land, headless genesis
+in a Worker), fog, stores one per quadrant, roads with bridges and signposts, boats, saves (IndexedDB + relay
+mirror), both characters moving (Kevin on keys, Root through the door), different start stores. Mode roadmap after
+Ketch'em: Castaway, then Possess. Still open (not blocking chunk one): widen the species key with light and height
+so every type can evolve; pre-baked boards vs a progress bar.
 
 ## Session 2026-10-17 - Root visits the world - DONE (gate: see commit)
 Newest handoff: **`docs/04 Handoffs/2026-10-17 Root visits the world.md`** - read it first.
