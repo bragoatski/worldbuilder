@@ -2,8 +2,17 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-24 (c) - Ketch'em step 2: the pure rules - DONE, GATE GREEN
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 3, `src/ketchem/board.js` + `fog.js`** and the render of fog / roads / stores / signposts (acceptance in the handoff's step table; the critic's step-1 note about flora on road tiles applies there).
+
+`src/ketchem/rules.js` is every number of the game as a pure function, no sim import, no RNG: a creature's elemental type (Dune, Marsh, Ember, Frost, Sun, Shade, Peak, Vale, Plain) and type points, its level 1-10, its one or two abilities, its sell price, the catch odds per stone, and both rarities. `cardOf(creature, N)` returns the whole card a look, a sell card or the Almanac will show. All six worked creatures of mechanics sections 4 and 10 reproduce end to end from the genome (38 tests); the odds table and the stone prices are pinned.
+
+**Two spec corrections made while reproducing the tables (recorded in the mechanics file, overturnable):** (1) row 6 of the price table said 10,267; the formula gives 10,274. (2) The second-ability hash was specified over the individual's exact prefs and hue, which would have made siblings of one species disagree on whether the second ability is on, against 5.2's own promise that every member of a species at the same level agrees. The hash now runs over the species-key buckets, so it is a species property per level; individuals differ only through size, vivid and tolerance. Also added: growl is a -10 odds modifier in the sec. 8 table (sec. 6 already said so).
+
+Gate: typecheck clean, lint 0 errors (29 warnings, baseline), 133/133 full suite (430s) plus the rules file rerun at 38/38 after the critic fixes, build green. Critic (Sonnet): 2 risks (growl, species hash) and 2 nits, all taken; no blocker. No sim change in this step, so the harness was not rerun.
+
 ## Session 2026-10-24 (b) - Ketch'em step 1: the sim's height axis, road layer, widened species key - DONE, GATE GREEN
-Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (its Progress section has the per-step log). Next: **step 2, `src/ketchem/rules.js`** (elementalType, levelOf, abilitiesOf, priceOf, oddsOf, rarity; every worked example in mechanics 4, 5, 10 as a test fixture).
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (its Progress section has the per-step log).
 
 What the sim can now do for Ketch'em: every creature carries a height preference (`prefElev`, born near its tile, inherited with drift), so Peak / Vale types, levels and height-bucket evolution have a real gene behind them; the species key and the binomial include light and height, so every elemental type can evolve into a new named species; a `road` layer sits beside `grid` and the ecology honours it (no roots on a road, plants hop a road half the time, non-grazers avoid road tiles). `CFG.maxLandCap` and `CFG.ecoActive` already serve as the board builder's land cap and ecology-off switch; `seedFaunaGroup` is exported for the full-board seed.
 

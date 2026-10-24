@@ -183,7 +183,12 @@ member of a species at the same level. Nothing random at catch time.
 5. second  = pool[1] if pool has one AND hash(genome) mod 100 < 10 x L   (L = level, sec. 4)
 ```
 The hash is over the stable genome fields (type, prefs rounded to 0.1, tolerance, size, vivid, hue), so it is the
-same number every time it is computed. A creature with one entry in its pool never gets a second ability even at
+same number every time it is computed. Built 2026-10-24 (`rules.js` `genomeHash`), with one correction: hashing the
+individual's exact prefs and hue would have made siblings of one species disagree on the second ability, against the
+promise two sentences up. The hash therefore runs over the SPECIES fields, the sim's own `speciesKey` buckets (type,
+hue in 20 degree steps, the four prefs in 2.5 steps): FNV-1a 32-bit over `type|hueB|aB|pB|sB|eB`, roll = hash mod 100.
+Every member of a species rolls the same number; individuals differ only through size, vivid and tolerance (the pool)
+and level; an evolution (bucket change, 20.3) re-rolls. A creature without `prefElev` reads E as 5. A creature with one entry in its pool never gets a second ability even at
 level 10; the 10% x L chance decides only whether a qualified second is switched on.
 
 | L | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
@@ -338,6 +343,7 @@ Base by stone and level, then modifiers, clamped 1-99; master is always 100.
 | plant bait | +20 | feeding on plant bait |
 | meat bait | +25 | feeding on meat bait |
 | alert | -10 | aw alert |
+| growl | -10 | aw growl (an alert with a skull, sec. 6; Dread III zeroes it like alert) |
 | wary | -30 | aw wary |
 | Lure III | +10 | in party |
 | corral | +10 | the other player adjacent on the opposite side |
@@ -429,7 +435,10 @@ price = base(T) x levelF x rarityF x sizeF x abilityF x conditionF x elderF, rou
 | young Frost scavenger L3 (N 8) | 20 | 1.3 | 1.5 | 2.5 | 1.0 | 1.4 | 0.8 | 1.0 | 109 |
 | prime omnivore L7, two abilities (Plain, N 3) | 30 | 2.2 | 2.5 | 1.0 | 1.7 | 1.96 | 1.0 | 1.0 | 550 |
 | prime Shade carnivore L7 (N 15) | 60 | 1.6 | 1.0 | 1.5 | 1.0 | 1.4 | 1.0 | 1.0 | 202 |
-| old apex Ember L10, two abilities, gen 9 (N 2) | 150 | 1.6 | 4.0 | 4.0 | 1.3 | 1.96 | 0.7 | 1.5 | 10,267 |
+| old apex Ember L10, two abilities, gen 9 (N 2) | 150 | 1.6 | 4.0 | 4.0 | 1.3 | 1.96 | 0.7 | 1.5 | 10,274 |
+
+(Row 6 read 10,267 in the proposal; the product is 10,273.5, corrected 2026-10-24 when `rules.js` reproduced the table.
+All six rows are fixtures in `src/ketchem/rules.test.js`, end to end: level and abilities derived from the genome.)
 
 Plants: common 1-3 coins (by health: < 0.5 is 1, < 0.8 is 2, else 3); rare 15-40: a plant with gen >= 10 or a
 preference within 1 of an extreme. Forager multiplies. Pack holds 10 plants (Pack adds).
