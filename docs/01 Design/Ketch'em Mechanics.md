@@ -664,3 +664,32 @@ balance-neutral change, names only) so every type can evolve.
 | battles for XP | no: there is no combat in this world and inventing one is a different game |
 | evolution stones as items | folded into exposure (20.1) and the item pass |
 | forms by biome (a Frost coat in arctic) | cosmetic variant, cheap, could ride on exposure; parked |
+
+## 21. Potions (owner ruling 2026-10-24: in the market, for speed, sight, sleep, and others)
+
+Sold at stores under BUY, beside the holding devices. A potion is one use. Durations in ticks; "self" potions act on
+the player who drinks, "thrown" potions act on a creature within 2 tiles, "area" potions act around the player.
+Root uses `drink <potion>` or `throw <potion> <target>`; Kevin clicks the potion then the target.
+
+| potion | kind | effect | duration | price | level resistance | notes |
+|---|---|---|---|---|---|---|
+| Fleetfoot | self | stride +1 on every terrain (road 5, land 3, mountain still stops) | 300 | 12 | | the cheap one; what you buy first |
+| Hawkeye | self | sight +2 (9x9 to 11x11), fog clears to match; stacks with Farsight to a cap of 15 | 300 | 15 | | |
+| Slumber | thrown | the creature sleeps: calm, cannot bolt or attack, odds +30; each throw at it has a 25% chance to wake it | 40 - 3 x L (min 10) | 30 | sleeps shorter the higher its level | a sleeping predator's pulses stop |
+| Hush | area | every creature within 4 tiles drops to calm (alert and wary cleared); fled creatures are not affected | instant | 20 | | the reset after a bad throw |
+| Musk | area | creatures of ONE trophic type (chosen on use) within 8 tiles walk toward you for 100 ticks | 100 | 25 | predators of level >= 8 ignore it | the hunter's lure; carnivore musk is how you find them, and the danger comes with it |
+| Smoke | area | predators within 5 tiles move away; no attacks on you for 200 ticks; stalkers lose you | 200 | 35 | | the defence item |
+| Decoy | thrown (on ground) | a scent on a tile that stalkers and alert predators chase instead of you, 60 ticks | 60 | 20 | | |
+| Homeward | self | after a 6-tick cast you reappear at the nearest discovered store (interrupted by an attack) | instant | 40 | | the escape; also the fast way back to sell |
+| Tonic | on a party creature | +10 XP (sec. 20) | instant | 30 | | rare plants are the cheaper route; Tonic is the fast one |
+| Survey | self | clears fog in a 25x25 square around you | instant | 50 | | the map item; one store stocks it |
+| Spice | on bait | doubles a bait's draw range and feeding window | per bait | 8 | | |
+| Mirror | self | the next attack is reflected: the predator goes wary and loses 30 energy | until used, max 500 | 60 | | rare; one store stocks it |
+
+Stock: each store carries the first six always; the rest are spread so that each store has two of the last six,
+restocked every 2,000 ticks (3 of each). Potions sit in the pack (10 slots shared with plants; Pack ability adds).
+Potions do not stack in effect: drinking a second Fleetfoot refreshes the timer. A potion in effect shows as a
+small icon beside the player's dot with a shrinking arc for time left; Root reads `fleetfoot 180` in its party line.
+
+Economy check: a first hour's 100-150 coins buys one Slumber and a few Fleetfoot, not a Survey; Smoke and Homeward
+are what a player with a valuable party saves for before hunting predators.
