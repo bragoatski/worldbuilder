@@ -73,6 +73,57 @@ Type points tp = round(2c): pref within 1.25 of the extreme gives 2, within 3.75
 
 (Mirror for the low side: 0-1.25 gives 2, 1.26-3.0 gives 1.)
 
+## 3b. Rarity, in detail
+
+Two different things are both called rarity. They are separate terms with separate tables.
+
+**Population rarity (N).** How many of this exact species are alive in this world right now. The sim already
+defines a species as a bucket of the genome: `speciesKey = type | hue bucket (20 degree steps) | dryness bucket
+(2.5 steps) | warmth bucket (2.5 steps)` (`src/sim.js:1296`). N is the count of living creatures with the same key,
+computed at the moment of the look or the throw. It changes as the world runs: a species can be rare today because
+a drought thinned it, and common next season.
+
+| N (alive, this species, this world) | reading | level bonus | price multiplier |
+|---|---|---|---|
+| 1-2 | last of its kind | +3 | x4.0 |
+| 3-5 | endangered | +2 | x2.5 |
+| 6-12 | scarce | +1 | x1.5 |
+| 13-30 | established | 0 | x1.0 |
+| 31+ | abundant | 0 | x0.8 |
+
+Example: a grazer species with 40 alive is abundant: a level 1-3 animal worth 8-10 coins. Its sibling species with 4
+alive is endangered: the same animal is two levels higher and worth two and a half times more. Catching one of the
+4 makes the remaining 3 rarer still (N drops to 3, then to 2 and "last of its kind"), so hunting a species out
+raises its price as you go, and a player who sells the last two has ended that line in this world. Releasing one
+back lowers it again.
+
+Before a lineage is old enough for a scientific name (gen < 3, the sim's `SPECIES_MIN_GEN`), N is still computed
+from the key, so a young line is counted the same way; it just has no name yet.
+
+**Type rarity (habitat).** How much of the world could ever hold this elemental type. Winter and mountain animals
+are rare because little ground is frozen or high; plain animals are common because any ground suits them. This is a
+fixed class per type (legible, the same on every board) and a price effect, not a level effect.
+
+| typ | class | price multiplier | why |
+|---|---|---|---|
+| Plain | common | x1.0 | lives anywhere |
+| Sun | common | x1.0 | most land is lit |
+| Dune | uncommon | x1.5 | deserts are a minority of land |
+| Marsh | uncommon | x1.5 | wetlands and shores |
+| Shade | uncommon | x1.5 | deep forest and jungle |
+| Vale | uncommon | x1.5 | river valleys and lowland |
+| Frost | rare | x2.5 | arctic, tundra, glacier edges |
+| Peak | rare | x2.5 | high ground, which also blocks most fauna |
+| Ember | very rare | x4.0 | volcanic ground, which is briefly habitable and deadly |
+
+Alternative, if you would rather the board decide: type rarity computed per world as the share of land tiles whose
+climate is within 2 of the type's ideal (fewer suitable tiles, rarer), bucketed into the same four classes. A frozen
+board would then make Frost common. My recommendation is the fixed table: a player learns it once.
+
+**How the two combine.** Level uses population rarity only (it is about this animal, today). Price uses both:
+`rarityF = populationF x typeF`. A last-of-its-kind Ember apex multiplies x4 x x4 = x16 on top of base, level, size
+and abilities, which is the jackpot of the game. A common abundant Plain grazer multiplies x0.8.
+
 ## 4. Level
 
 L = clamp(1, 10, low(T) + tp + size(sz) + rarity(N) + age(ag))
@@ -105,40 +156,126 @@ Worked examples:
 
 ## 5. Abilities
 
-Every creature has exactly one primary ability. A second comes with chance 10% x L, decided by the genome (hash of
-the genome against the threshold), so same-species, same-level creatures agree.
+### 5.1 What an ability is
+A standing effect on the PLAYER whose party holds the creature. Abilities never change the creature itself in the
+wild: a Furcoat grazer survives winter no better than its siblings. That keeps the tuned ecology untouched and makes
+the party a tool belt. (Decision point: if you want abilities to also help the animal in the wild, that is a sim
+balance change and gets measured like the height axis.)
+
+Sixteen abilities in three families: eight elemental (one per type), five trophic (one per trophic type), three
+trait (from genes the sim already breeds).
+
+### 5.2 How many, and which: the assignment algorithm
+Run once per creature, from its genome alone, so the result is stable for its whole life and the same for every
+member of a species at the same level. Nothing random at catch time.
+
+```
+1. typed  = elemental type != Plain                       (sec. 3)
+2. tp     = type points 0 / 1 / 2                          (sec. 3)
+3. pool   = []                                             abilities this creature qualifies for, in priority order:
+     if typed:           pool += elemental ability of its type         (strength from tp)
+     if tp == 2:         pool += trophic ability of T                  (strength III)
+     if sz >= 1.25:      pool += Pack                                   (strength from sz)
+     if vivid:           pool += Lure                                   (strength from tp, Plain = I)
+     if tol >= 5:        pool += Hardy                                  (strength from tol)
+     if pool is empty:   pool += trophic ability of T                  (strength I)   <- every creature gets one
+4. primary = pool[0]
+5. second  = pool[1] if pool has one AND hash(genome) mod 100 < 10 x L   (L = level, sec. 4)
+```
+The hash is over the stable genome fields (type, prefs rounded to 0.1, tolerance, size, vivid, hue), so it is the
+same number every time it is computed. A creature with one entry in its pool never gets a second ability even at
+level 10; the 10% x L chance decides only whether a qualified second is switched on.
 
 | L | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| P(second ability) | 10% | 20% | 30% | 40% | 50% | 60% | 70% | 80% | 90% | 100% |
+| P(second ability, if the pool has two or more) | 10% | 20% | 30% | 40% | 50% | 60% | 70% | 80% | 90% | 100% |
 
-Primary: the elemental ability if typed; a Plain creature's primary is its trophic ability if tp would allow (it
-cannot, tp is 0), so a Plain creature's primary is a trait ability if it qualifies, else the trophic one at strength
-I. Second: drawn from the trophic and trait pool the creature qualifies for, highest in the table first.
+Consequences worth knowing:
+- A Plain, small, dull, low-tolerance creature has pool = [trophic at I]: one ability, never two.
+- A typed creature with tp 2 always has at least two in its pool (elemental III, trophic III).
+- Trophic abilities at II or III exist only on tp 2 creatures; the fallback trophic ability is always I.
+- Two creatures of one species differ in abilities only through size, vivid and tolerance (which the sim mutates),
+  and through level (which moves with N and age). The Pokedex records the species' usual set and marks variants.
 
-Strength from tp: 0 = I, 1 = II, 2 = III. Trait abilities use the trait's own magnitude for strength.
+### 5.3 Strength
+| source | I | II | III |
+|---|---|---|---|
+| elemental (by tp) | tp 0 (cannot occur: typed means tp >= 1 on a 2-deviation... see note) | tp 1 | tp 2 |
+| trophic | fallback | never | tp 2 |
+| Pack (by sz) | 1.25-1.59 | 1.6-1.99 | 2.0+ |
+| Lure (by tp of its type) | Plain or tp 0 | tp 1 | tp 2 |
+| Hardy (by tol) | 5.0-5.4 | 5.5-5.9 | 6.0 |
 
-| ability | source | qualifies when | I | II | III | price mult |
-|---|---|---|---|---|---|---|
-| Waterless | Dune | typed Dune | desert/steppe/mesa cost 1 stride (not 2) | + mesa cliffs never stop a leg | + road speed (4) on those biomes | 1.4 |
-| Wader | Marsh | typed Marsh | wetland costs 1 stride | + coast shallows walkable (no boat) | + lakes walkable | 1.4 |
-| Firewalk | Ember | typed Ember | volcanic biome walkable | + warm ground (temp > 8) costs 1 | + active vents walkable | 1.4 |
-| Furcoat | Frost | typed Frost | arctic/tundra cost 1 stride | + glacier never stops a leg | + glacier walkable at road speed | 1.4 |
-| Farsight | Sun | typed Sun | sight 11x11 | 13x13 | 15x15 | 1.4 |
-| Stalk | Shade | typed Shade | no alert within 3 tiles | + wary lasts 100 ticks (not 200) | + a failed throw does not bolt | 1.4 |
-| Climber | Peak | typed Peak | hills/mountain never stop a leg | + mountain walkable | + mountain at normal stride | 1.4 |
-| Rivergait | Vale | typed Vale | river tiles cost 1 stride | + river tiles at road speed | + lakes walkable | 1.4 |
-| Forager | grazer | T grazer | picks pay x1.5 | x2 | x2 and a pick yields two | 1.4 |
-| Scrounge | scavenger | T scavenger | 1-3 coins on each carrion passed | 2-6 | + old creatures sell at full price | 1.4 |
-| Nose | omnivore | T omnivore | odds visible at 3 tiles | 4 tiles | 5 tiles + calm creatures marked | 1.4 |
-| Guard | carnivore | T carnivore | hungry carnivores do not attack | + apex do not attack | + carnivores flee you | 1.4 |
-| Dread | apex | T apex | nothing attacks | + nothing bolts | + nothing goes wary | 1.4 |
-| Pack | trait | sz >= 1.25 | +5 pack slots | +10 (sz >= 1.6) | +15 (sz >= 2.0) | 1.4 |
-| Lure | trait | viv | calm creatures within 3 drift to you 1 tile / 10 ticks | within 5 | + odds +10 | 1.4 |
-| Hardy | trait | tol >= 5 | absorbs 1 attack / 500 ticks | / 300 | / 150 | 1.4 |
+Note on elemental I: a typed creature has |d| >= 2 on its axis, which gives c >= 0.4 and tp >= 1, so elemental
+abilities are II or III only. The table keeps I for completeness; it is reachable only if the type threshold is ever
+lowered to 1.
 
-Trait strength: Pack by sz; Lure by tp of its type (Plain = I); Hardy by tol (5-5.4 I, 5.5-5.9 II, 6 III).
-Only the party's abilities are active; the strongest copy of each counts; nothing stacks.
+### 5.4 Stacking and activation
+- Only creatures in the party (three) are active. The box and the store do nothing.
+- Same ability from two party members: the strongest counts, nothing adds.
+- Different abilities all apply at once (Furcoat + Climber + Farsight is a mountain explorer's party).
+- Both players have their own party; abilities are per player. Root's Nose does not show Kevin the odds.
+- Swapping party and box at a store changes the active set immediately. No cooldown.
+
+### 5.5 The sixteen, in full
+Each entry: what it does in play, the exact rule per strength, and which system reads it.
+
+**Movement family** (read by the stride table, sec. 12; "costs 1" means the tile counts as road for stride purposes
+so a step covers 4 of them instead of 2; "never stops a leg" removes the steep stop; "walkable" removes a block).
+
+| ability | type | I | II | III |
+|---|---|---|---|---|
+| Waterless | Dune | desert, steppe, mesa cost 1 | + mesa never stops a leg | + desert, steppe, mesa at road stride (4) |
+| Wader | Marsh | wetland costs 1 | + coast shallows walkable on foot, no boat | + lakes walkable |
+| Firewalk | Ember | volcanic biome walkable | + any tile with temperature > 8 costs 1 | + active vents walkable |
+| Furcoat | Frost | arctic and tundra cost 1 | + glacier never stops a leg | + glacier at road stride |
+| Climber | Peak | hills cost 1, mountain never stops a leg | + mountain walkable | + mountain at normal stride (2) |
+| Rivergait | Vale | river tiles cost 1 | + river tiles at road stride | + lakes walkable |
+
+**Sense family** (read by the look / fog / odds display).
+
+| ability | type | I | II | III |
+|---|---|---|---|---|
+| Farsight | Sun | sight 11x11 (fog clears the same) | 13x13 | 15x15 |
+| Nose | omnivore | odds shown at 3 tiles (base 2) | 4 tiles | 5 tiles, and calm creatures carry a mark in the look and a dot on the map |
+
+**Awareness family** (read by the awareness machine, sec. 6).
+
+| ability | type | I | II | III |
+|---|---|---|---|---|
+| Stalk | Shade | no alert when you come within 3 (creatures stay calm) | + wary lasts 100 ticks, not 200 | + a failed throw does not bolt the creature (it still goes wary) |
+| Lure | trait (vivid) | calm creatures within 3 tiles drift toward you 1 tile per 10 ticks | within 5 tiles | + odds +10 on every throw |
+| Dread | apex | nothing attacks you (danger off) | + nothing bolts (alert never steps away) | + nothing goes wary (failed throws are free of penalty) |
+
+**Danger family** (read by sec. 11).
+
+| ability | type | I | II | III |
+|---|---|---|---|---|
+| Guard | carnivore | hungry carnivores do not attack | + apex do not attack | + carnivores and apex within 3 tiles move away from you (you can still throw at them before they go) |
+| Hardy | trait (tol >= 5) | one attack per 500 ticks is absorbed: nothing taken, nothing lost | per 300 | per 150 |
+
+**Economy family** (read by pick, sell, carrion).
+
+| ability | type | I | II | III |
+|---|---|---|---|---|
+| Forager | grazer | picked plants sell x1.5 | x2 | x2 and every pick yields two plants (pack space allowing) |
+| Scrounge | scavenger | walking onto a carrion tile pays 1-3 coins (once per carrion) | 2-6 | + old creatures sell at condition 1.0 instead of 0.7 |
+| Pack | trait (sz >= 1.25) | +5 pack slots (base 10) | +10 | +15 |
+
+### 5.6 How the player sees them
+- Panel: each party card shows up to two ability icons with a I / II / III pip. Hover: the rule in one line.
+- Root's look: a party line at the top of every look, `party: "Tam" H L3 Furcoat II; "Ash" C L6 Guard III Hardy I`,
+  and a creature in sight shows its abilities only once caught or once the species is in the Pokedex with that
+  variant: `H 2N1E L4 Dune (Waterless III)`. An unknown creature shows only its type and level.
+- Pokedex entry: the species' usual pool and the variants seen (with the gene that caused the variant: big, vivid,
+  tolerant).
+- Store SELL card: abilities with strength, and the x1.4 per ability shown in the price breakdown.
+
+### 5.7 Price
+Each ability multiplies the price by 1.4 regardless of strength (two abilities: x1.96). Strength shows in the level
+instead (tp is already in L). Decision point: a per-strength multiplier (1.3 / 1.4 / 1.5) is one line if you want
+III to pay more.
+
 Elder (gen >= 8) is a price tag (x1.5), not an ability.
 
 ## 6. Awareness
@@ -206,20 +343,20 @@ price = base(T) x levelF x rarityF x sizeF x abilityF x conditionF x elderF, rou
 |---|---|
 | base(T) | grazer 10, scavenger 20, omnivore 30, carnivore 60, apex 150 |
 | levelF | 1 + 0.3 x (L - low(T)), minimum 1 |
-| rarityF | N <= 2: 4.0; 3-5: 2.5; 6-12: 1.5; else 1.0 |
+| rarityF | populationF (N <= 2: 4.0; 3-5: 2.5; 6-12: 1.5; 13-30: 1.0; 31+: 0.8) x typeF (common 1.0, uncommon 1.5, rare 2.5, very rare 4.0; sec. 3b) |
 | sizeF | max(0.7, sz) |
 | abilityF | 1.4 per ability (1.4 or 1.96) |
 | conditionF | starving 0.6; hungry 0.85; old 0.7; young 0.8; prime and fed 1.0 (multiply if two apply) |
 | elderF | gen >= 8: 1.5 |
 
-| creature (from sec. 4) | base | levelF | rarityF | sizeF | abilityF | condF | elderF | price |
-|---|---|---|---|---|---|---|---|---|
-| common prime grazer L1 | 10 | 1.0 | 1.0 | 1.0 | 1.4 | 1.0 | 1.0 | 14 |
-| prime Dune grazer L4 | 10 | 1.9 | 1.0 | 1.3 | 1.4 | 1.0 | 1.0 | 35 |
-| young Frost scavenger L3 | 20 | 1.3 | 1.5 | 1.0 | 1.4 | 0.8 | 1.0 | 44 |
-| prime omnivore L7, two abilities | 30 | 2.2 | 2.5 | 1.7 | 1.96 | 1.0 | 1.0 | 550 |
-| prime Shade carnivore L7 | 60 | 1.6 | 1.0 | 1.0 | 1.4 | 1.0 | 1.0 | 134 |
-| old apex Ember L10, two abilities, gen 9 | 150 | 1.6 | 4.0 | 1.3 | 1.96 | 0.7 | 1.5 | 2,567 |
+| creature (from sec. 4) | base | levelF | populationF | typeF | sizeF | abilityF | condF | elderF | price |
+|---|---|---|---|---|---|---|---|---|---|
+| common prime grazer L1 (Plain, N 40) | 10 | 1.0 | 0.8 | 1.0 | 1.0 | 1.4 | 1.0 | 1.0 | 11 |
+| prime Dune grazer L4 (N 20) | 10 | 1.9 | 1.0 | 1.5 | 1.3 | 1.4 | 1.0 | 1.0 | 52 |
+| young Frost scavenger L3 (N 8) | 20 | 1.3 | 1.5 | 2.5 | 1.0 | 1.4 | 0.8 | 1.0 | 109 |
+| prime omnivore L7, two abilities (Plain, N 3) | 30 | 2.2 | 2.5 | 1.0 | 1.7 | 1.96 | 1.0 | 1.0 | 550 |
+| prime Shade carnivore L7 (N 15) | 60 | 1.6 | 1.0 | 1.5 | 1.0 | 1.4 | 1.0 | 1.0 | 202 |
+| old apex Ember L10, two abilities, gen 9 (N 2) | 150 | 1.6 | 4.0 | 4.0 | 1.3 | 1.96 | 0.7 | 1.5 | 10,267 |
 
 Plants: common 1-3 coins (by health: < 0.5 is 1, < 0.8 is 2, else 3); rare 15-40: a plant with gen >= 10 or a
 preference within 1 of an extreme. Forager multiplies. Pack holds 10 plants (Pack adds).
