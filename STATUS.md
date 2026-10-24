@@ -12,7 +12,7 @@ the whole world, a zoom, and the Hand anywhere, plus weather and the sea). Each 
 serves one mode's tools and the relay refuses any verb outside it. Every Root power is one act in the Hand's undo.
 Field notes from Shaper/Sky are headed "(as Shaper)" / "(as Sky)". Rehearsed scripted (all three modes) and with a
 real haiku session (Sky lowered an ocean world and seeded it; Shaper built a causeway). 35 visit tests.
-**Next: build Ketch'em chunk one** (owner ruling 2026-10-24 after a full design day). Design record:
+**Next: build Ketch'em, all of it, in one campaign** (owner ruling 2026-10-24). Handoff: `docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md` (order of work, architecture, gates, defaults). Chunk one of that campaign Design record:
 `docs/01 Design/Ketch'em.md`; the numbers: `docs/01 Design/Ketch'em Mechanics.md` (22 sections, all tables). Chunk
 one = height axis in the sim (measured on the harness), board generation (full board, 60-95% land, headless genesis
 in a Worker), fog, stores one per quadrant, roads with bridges and signposts, boats, saves (IndexedDB + relay
