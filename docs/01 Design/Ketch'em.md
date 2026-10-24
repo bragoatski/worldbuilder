@@ -7,8 +7,8 @@ the same day: Ketch'em (with Breeder inside it), then Castaway, then Possess.
 - Catch creatures and name them. A level system for how hard they are to catch. Bait. An indicator when there is a
   catch (what the indicator is: to be discussed).
 - The map is greyed or clouded out and slowly discovered.
-- Four stores, randomly placed but spread out. Buy balls there. Collect money by catching species: sell animals
-  back to the store; value from high stats, abilities, adaptation, level, other ways to be thought of. Buy more balls
+- Four stores, randomly placed but spread out. Buy stones there. Collect money by catching species: sell animals
+  back to the store; value from high stats, abilities, adaptation, level, other ways to be thought of. Buy more stones
   and, later, other items.
 - Certain animals come with abilities that affect the player; the player can hold up to five.
 - The player can pick plants and sell them; generally much less money than animals unless really rare.
@@ -22,7 +22,7 @@ the same day: Ketch'em (with Breeder inside it), then Castaway, then Possess.
   within it. Creatures have stats already, so assign them a TYPE from those stats, Pokemon-style, and the closer a
   creature is to the ideal of its type, the higher its level. "Possibly."
 - List all possible abilities, why, and how they are assigned.
-- Ball tiers: liked. Boosting (abilities) and baiting: liked. Economy still to be worked out. Separate wallets.
+- Stone tiers: liked. Boosting (abilities) and baiting: liked. Economy still to be worked out. Separate wallets.
 - Roads: not always a loop or straight. Meandering at times, straight at others. Sometimes a loop, sometimes a
   line, but every store must be on the road. Sometimes just the three links, sometimes ten roads Y-ing off or a
   different connection to a different store.
@@ -74,7 +74,7 @@ L = range low (grazer 1, scavenger 2, omnivore 3, carnivore 5, apex 8)
   + rarity: N <= 2 +3, N <= 5 +2, N <= 12 +1    (the biggest single term)
   + age: young -1, old -1, prime 0
 A common prime grazer is 1-3; a rare huge ideal grazer reaches 8; apex is 8-10 and anything rare or big pins at 10.
-The level is what the catcher reads to decide which ball to risk.
+The level is what the catcher reads to decide which stone to risk.
 
 ### Abilities (one per creature; a second one sometimes, more often at high level)
 A pure function of the genome; strength I / II / III from type points 0 / 1 / 2. Every creature carries exactly one
@@ -112,22 +112,22 @@ Only the party's abilities are active; duplicates do not stack; the strongest co
 3. Bait (optional). `bait` drops a picked plant on your tile or an adjacent one; grazers and omnivores within 4
    tiles walk to it and feed for 20 ticks: calm, +20, no bolting. Carnivores, apex and scavengers take meat: a
    creature from your party, placed as bait; it is eaten, the hunter feeds for 30 ticks, +25. Bait rots in 60.
-4. Throw. `throw ball target` from 1 tile. Each throw spends the ball. Odds = table(ball, L) + modifiers, clamped
-   to 1-99; a master ball is 100.
-   Basic:  L1-3 85 / 65 / 45,  L4-6 30 / 20 / 12,  L7-9 6 / 3 / 1,  L10 0.
-   Strong: L1-3 95,            L4-6 80 / 65 / 50,  L7-9 40 / 30 / 20, L10 10.
-   Master: 100.
+4. Throw. `throw stone target` from 1 tile. Each throw spends the stone. Odds = table(stone, L) + modifiers, clamped
+   to 1-99; a Obsidian is 100.
+   Amber:  L1-3 85 / 65 / 45,  L4-6 30 / 20 / 12,  L7-9 6 / 3 / 1,  L10 0.
+   Geode:  L1-3 95,            L4-6 80 / 65 / 50,  L7-9 40 / 30 / 20, L10 10.
+   Obsidian: 100.
    Modifiers: calm +15, baited +20 (meat +25), alert -10, wary -30, Lure +10; Dread zeroes wary and alert.
 5. Resolve. Success: the creature leaves the world into the thrower's party (three), or if full, into the box at the
    nearest store. The thrower names the individual; if the species has no nickname yet, the thrower names the
    species too. Fail: the creature bolts 3-4 tiles, wary for 200 ticks; after three failed throws in one encounter
    it flees out of sight for the visit. A hungry carnivore or apex you fail on attacks at once (see Danger).
-6. Record. The Pokedex entry gains: seen, caught, best level, nickname, abilities, both names.
+6. Record. The Almanac entry gains: seen, caught, best level, nickname, abilities, both names.
 
 ### The market
 Four stores on the map: a small grey building with a sign, roads leading in. Step onto the store tile and the store
 panel opens (Kevin: a panel; Root: `shop` returns the same lists as text). Tabs:
-- BUY: balls (basic 5, strong 25, master 150), later items. A price list, a quantity, a Buy button.
+- BUY: stones (Amber 5, Geode 25, Obsidian 150), later items. A price list, a quantity, a Buy button.
 - SELL: a card per creature in your party and box: its rendering, individual name, "Nickname (Genus species)",
   type badge, level, abilities with strength, condition, and the offer. Click Sell: coins to your wallet, the
   creature to the store's stock. Plants sell from the pack the same way, one line each.
@@ -145,8 +145,8 @@ Price = trophic base (grazer 10, scavenger 20, omnivore 30, carnivore 60, apex 1
 Worked examples: a common prime grazer L2, no ability: 13. A big Dune grazer L4 with Waterless: 35. A carnivore L6
 with Guard, 4 alive: 273. A rare huge apex L10 with two abilities: about 3,000.
 Plants: common 1-3; rare (gen >= 10 or an extreme preference) 15-40. Forager doubles.
-Starting kit: ten basic balls, no coins, an empty pack. A first hour on grazers nets roughly 100-150 coins, enough
-for a few strong balls, which open omnivores and carnivores, whose sales buy the master ball for an apex.
+Starting kit: ten Amber, no coins, an empty pack. A first hour on grazers nets roughly 100-150 coins, enough
+for a few Geodes, which open omnivores and carnivores, whose sales buy the Obsidian for an apex.
 
 ### The party row
 Feasible: the renderer already draws each creature as a shape in its own colour and size. The panel gets a row of
@@ -175,12 +175,12 @@ continent, archipelago (boats matter), highlands. Fog, stores, roads (random tre
 and spurs), boats and saves as in round 2. The Hand is off.
 
 ### Root's tools in Ketch'em
-look, walk, pick, bait, throw, name, shop, buy, sell, box, give, guide (the Pokedex), say, listen, note, leave.
+look, walk, pick, bait, throw, name, shop, buy, sell, box, give, guide (the Almanac), say, listen, note, leave.
 Kevin plays the same verbs with keys and clicks.
 
 ### Build order
 1. Height axis in the sim, measured. Board generation, fog, stores, roads, boats, saves, both characters moving.
-2. Types, levels, Pokedex with nicknames; balls, throw, bait, sell, wallets, the party row.
+2. Types, levels, Almanac with nicknames; stones, throw, bait, sell, wallets, the party row.
 3. Abilities, party effects, danger.
 4. Plants and rarity.
 5. Growth and evolution (Mechanics sec. 20).
@@ -189,7 +189,7 @@ Kevin plays the same verbs with keys and clicks.
 
 ## Owner rulings, round 4 (2026-10-24)
 - An attack with no grazer to take: wake at the nearest store with half the money AND lose everything else carried
-  (balls, plants, animals). Mechanics sec. 11.6 (the animals are released wild at the spot, not destroyed).
+  (stones, plants, animals). Mechanics sec. 11.6 (the animals are released wild at the spot, not destroyed).
 - A follower like Pikachu in Pokemon Yellow: choose one animal to walk beside you. Mechanics sec. 11.5.
 - An attack is signalled by a noise and a small red ripple (expanding circle that fades), pulsing 1 to 5 times
   before the attack. The player must leave the area, catch it, or feed it. Most predators do not follow; a small
@@ -200,7 +200,9 @@ Kevin plays the same verbs with keys and clicks.
 - Confirmed: animals released wild at the spot when a player is beaten (Mechanics sec. 11.6).
 - Confirmed: the growth and evolution system (Mechanics sec. 20) is IN. Growth moves the real genome; evolution is
   the species key changing. Open: widen the species key with light and height so every type can evolve.
-- Not Pokeballs: another holding device, and another name than Pokedex. Root offered amber (Resin / Amber / Deep
+- Not Pokestones: another holding device, and another name than Almanac. Root offered amber (Resin / Amber / Deep
   Amber; a held creature is an inclusion; the store box is the Cabinet) with the Bestiary as the book, plus geodes,
   seed pods, Field Guide and Almanac as alternatives. Owner choice pending.
 - Potions in the market: speed, sight, putting animals to sleep for easy catching, and others. Mechanics sec. 21.
+- Owner ruling 2026-10-24: the holding devices are stones: Amber (basic), Geode (strong), Obsidian (top). The book
+  is the Almanac. Renamed throughout both files; "stone" is the generic word.

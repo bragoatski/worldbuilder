@@ -195,7 +195,7 @@ Consequences worth knowing:
 - A typed creature with tp 2 always has at least two in its pool (elemental III, trophic III).
 - Trophic abilities at II or III exist only on tp 2 creatures; the fallback trophic ability is always I.
 - Two creatures of one species differ in abilities only through size, vivid and tolerance (which the sim mutates),
-  and through level (which moves with N and age). The Pokedex records the species' usual set and marks variants.
+  and through level (which moves with N and age). The Almanac records the species' usual set and marks variants.
 
 ### 5.3 Strength
 | source | I | II | III |
@@ -265,9 +265,9 @@ so a step covers 4 of them instead of 2; "never stops a leg" removes the steep s
 ### 5.6 How the player sees them
 - Panel: each party card shows up to two ability icons with a I / II / III pip. Hover: the rule in one line.
 - Root's look: a party line at the top of every look, `party: "Tam" H L3 Furcoat II; "Ash" C L6 Guard III Hardy I`,
-  and a creature in sight shows its abilities only once caught or once the species is in the Pokedex with that
+  and a creature in sight shows its abilities only once caught or once the species is in the Almanac with that
   variant: `H 2N1E L4 Dune (Waterless III)`. An unknown creature shows only its type and level.
-- Pokedex entry: the species' usual pool and the variants seen (with the gene that caused the variant: big, vivid,
+- Almanac entry: the species' usual pool and the variants seen (with the gene that caused the variant: big, vivid,
   tolerant).
 - Store SELL card: abilities with strength, and the x1.4 per ability shown in the price breakdown.
 
@@ -319,18 +319,18 @@ feeds, the clock is the feeding window.
 Who takes what: scavengers refuse plants; grazers refuse meat; omnivores take either; a fed creature (en >= 0.8)
 ignores bait altogether (it is not hungry, and the look says `fed` so the player can tell).
 
-Stake is the gamble the mode is built around: a live party member on a rope and a strong ball in hand. Scatter is
+Stake is the gamble the mode is built around: a live party member on a rope and a Geode in hand. Scatter is
 how you pull a herd to you instead of chasing it. Corral is the reason to play with a partner.
 
 ## 8. Catch odds
 
-Base by ball and level, then modifiers, clamped 1-99; master is always 100.
+Base by stone and level, then modifiers, clamped 1-99; master is always 100.
 
-| ball | price | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9 | L10 |
+| stone | price | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9 | L10 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| basic | 5 | 85 | 65 | 45 | 30 | 20 | 12 | 6 | 3 | 1 | 0 |
-| strong | 25 | 95 | 95 | 95 | 80 | 65 | 50 | 40 | 30 | 20 | 10 |
-| master | 150 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
+| Amber | 5 | 85 | 65 | 45 | 30 | 20 | 12 | 6 | 3 | 1 | 0 |
+| Geode | 25 | 95 | 95 | 95 | 80 | 65 | 50 | 40 | 30 | 20 | 10 |
+| Obsidian | 150 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
 
 | modifier | value | condition |
 |---|---|---|
@@ -342,10 +342,10 @@ Base by ball and level, then modifiers, clamped 1-99; master is always 100.
 | Lure III | +10 | in party |
 | corral | +10 | the other player adjacent on the opposite side |
 | Dread III | wary and alert count 0 | in party |
-| basic ball on L10 | stays 0 | no modifier lifts it |
+| Amber on L10 | stays 0 | no modifier lifts it |
 
-Expected balls per catch (basic, no modifiers): L1 1.2, L2 1.5, L3 2.2, L4 3.3, L5 5, L6 8.3. The fled rule caps
-any encounter at 3 throws, so above L5 a basic ball is a gamble, which is the point of the strong tier.
+Expected stones per catch (basic, no modifiers): L1 1.2, L2 1.5, L3 2.2, L4 3.3, L5 5, L6 8.3. The fled rule caps
+any encounter at 3 throws, so above L5 a Amber is a gamble, which is the point of the strong tier.
 
 ## 9. Catching an animal, start to finish
 
@@ -354,18 +354,18 @@ The whole encounter as it plays, with what each player sees and the tick clock. 
 
 | phase | what happens | Kevin sees | Root reads |
 |---|---|---|---|
-| 1. sight | a creature enters the sight square; the Pokedex marks it seen | the creature with a small level tag `L4` above it; a type badge colour on the tag (Dune sand, Frost white, Ember orange, ...) | `H 2N1E L4 Dune fed` |
+| 1. sight | a creature enters the sight square; the Almanac marks it seen | the creature with a small level tag `L4` above it; a type badge colour on the tag (Dune sand, Frost white, Ember orange, ...) | `H 2N1E L4 Dune fed` |
 | 2. approach | the player steps toward it; at 3 or 2 tiles it goes alert (unless Stalk) | a `!` pops over the creature for 10 ticks; it may step away | `H 1N1E L4 Dune alert` |
 | 3. read | within 2 tiles (Nose: further) the odds appear | a ring around the creature: green 60+, amber 25-59, red < 25; a skull replaces the ring on a growling predator | `H 1N1E L4 Dune alert 55%` |
 | 4. bait (optional) | a bait is placed; the creature walks to it and feeds | a leaf (plant) or a bone (meat) icon on the tile; the creature's path dotted; a chewing bob while it feeds; the ring turns a shade greener | `bait set 1E`, then on the next look `H 1E L4 Dune feeding 75%` |
-| 5. throw | `throw strong` at the adjacent target; the ball is spent; the roll happens now, before any animation | the ball arcs from the player to the creature (sec. 9b); the creature is pulled in; the ball wobbles | the result line arrives after the animation's length in ticks so both players learn it at the same beat: `caught! name it` or `broke free (wary)` |
-| 6a. caught | creature leaves `fauna`; joins the party (or the box); naming prompt; Pokedex caught++ | the ball clicks shut with a flash; a card slides into the party row; a naming field focuses | `caught H L4 Dune. name: ` then `name <name>` (and `name species <nick>` if new) |
-| 6b. broke free | aw = wary; bolt 3-4 tiles; fails++ (3 = fled) | the ball bursts; the creature runs with dust puffs; `~` marks over it while wary | `broke free; H bolts 3N, wary` |
+| 5. throw | `throw strong` at the adjacent target; the stone is spent; the roll happens now, before any animation | the stone arcs from the player to the creature (sec. 9b); the creature is pulled in; the stone wobbles | the result line arrives after the animation's length in ticks so both players learn it at the same beat: `caught! name it` or `broke free (wary)` |
+| 6a. caught | creature leaves `fauna`; joins the party (or the box); naming prompt; Almanac caught++ | the stone clicks shut with a flash; a card slides into the party row; a naming field focuses | `caught H L4 Dune. name: ` then `name <name>` (and `name species <nick>` if new) |
+| 6b. broke free | aw = wary; bolt 3-4 tiles; fails++ (3 = fled) | the stone bursts; the creature runs with dust puffs; `~` marks over it while wary | `broke free; H bolts 3N, wary` |
 | 6c. attack | a hungry predator that was growling, or that you failed on, attacks | lunge, red flash on the party card taken, the card cracks and empties; or the player fades and reappears at the store with a coin-loss line | `C attacks: "Tam" is taken` or `C attacks: you wake at the North Store, 120 coins lost` |
-| 7. record | Pokedex and save updated | the Pokedex badge pulses once | `new in your Pokedex: ...` on first catch of a species |
+| 7. record | Almanac and save updated | the Almanac badge pulses once | `new in your Almanac: ...` on first catch of a species |
 
 Preconditions for a throw: target within 1 tile (8 neighbours), in sight, both on land (no throws from a boat or
-at a swimming creature), a ball of that tier in the pack. Names: individual <= 24 characters, species nickname <= 16,
+at a swimming creature), a stone of that tier in the pack. Names: individual <= 24 characters, species nickname <= 16,
 letters, digits, spaces and apostrophes.
 
 The roll is decided at the throw, not at the end of the animation; the animation is a reveal. The wobble count is
@@ -388,11 +388,11 @@ results are delayed to match them (sec. 9) so the two players are in step. All d
 | bait drop | 6 | the icon drops from the player's hand (0.5 tile up) to the tile with a small bounce |
 | bait walk | 1 per tile | a dotted line from creature to bait, erased as it walks |
 | feeding | 20 or 30 | the creature bobs 1px up and down every 3 ticks; the ring turns a shade greener |
-| throw | 8 | the ball (a two-tone circle, 0.5 tile) travels a parabola from the player's centre to the creature's, apex 1.5 tiles up, with a 3-frame spin |
-| pull-in | 4 | the creature's shape shrinks into the ball with a white streak; the ball drops to the tile |
-| wobble | 3 x 10 | the ball rocks 15 degrees left, right, centre, pausing 4 ticks between wobbles; 1, 2 or 3 wobbles per the roll |
-| click | 6 | the ball flashes white, two sparkles, a small ring expands and fades; the party card slides in from the right over 6 ticks |
-| burst | 6 | the ball splits into two halves that fly apart and fade; the creature reappears at full size |
+| throw | 8 | the stone (a two-tone circle, 0.5 tile) travels a parabola from the player's centre to the creature's, apex 1.5 tiles up, with a 3-frame spin |
+| pull-in | 4 | the creature's shape shrinks into the stone with a white streak; the stone drops to the tile |
+| wobble | 3 x 10 | the stone rocks 15 degrees left, right, centre, pausing 4 ticks between wobbles; 1, 2 or 3 wobbles per the roll |
+| click | 6 | the stone flashes white, two sparkles, a small ring expands and fades; the party card slides in from the right over 6 ticks |
+| burst | 6 | the stone splits into two halves that fly apart and fade; the creature reappears at full size |
 | bolt | 4 | the creature moves 1 tile per tick with a dust puff (3 grey dots) behind each step |
 | wary | 200 | a `~` drifts above the creature every 20 ticks |
 | flee | 6 | the creature runs 10-14 tiles at 2 tiles per tick, trailing dust, and the tag reads `fled` |
@@ -405,7 +405,7 @@ results are delayed to match them (sec. 9) so the two players are in step. All d
 | fog clear | 4 per tile | cloud tiles fade to terrain as the sight square moves |
 
 Root's text keeps the same beats: a throw's result is delivered after throw + pull-in + wobbles + click or burst
-(8 + 4 + 30 + 6 = 48 ticks, 8 seconds at full visit speed), so when Kevin sees the ball click, Root reads `caught`.
+(8 + 4 + 30 + 6 = 48 ticks, 8 seconds at full visit speed), so when Kevin sees the stone click, Root reads `caught`.
 Sound is deferred: a single short click, burst and growl sample would be enough when we add it.
 
 ## 10. Price
@@ -474,10 +474,10 @@ ripple; the level tag turns red.
 Most predators do not pursue: leave their reach and the warning ends. A small share are stalkers: `hash(genome)
 mod 100 < 10` and level >= 7. A stalker follows at its own move speed (one tile every 16 ticks) for up to 60 ticks
 after you leave, pulsing as it comes; it stops at roads unless it is already on one, at the sea, and at a store. The
-Pokedex marks the species variant `stalker` once seen, so the second time you know.
+Almanac marks the species variant `stalker` once seen, so the second time you know.
 
 ### 11.5 The follower (owner ask: like Pikachu in Pokemon Yellow)
-`follow <name>` lets one party creature out of its ball to walk beside you; `recall` puts it back. One follower at a
+`follow <name>` lets one party creature out of its stone to walk beside you; `recall` puts it back. One follower at a
 time, per player.
 
 | rule | value |
@@ -495,7 +495,7 @@ time, per player.
 |---|---|
 | a follower is out and lower level than the attacker | the follower is taken: the predator eats it (+40 energy), the party card cracks and empties |
 | else, the party has a grazer | the lowest-level grazer is taken, as above |
-| else | the player is knocked down: wakes at the nearest store with half the wallet (floor), and loses everything else carried: all balls, all plants, and every party creature. The creatures are not destroyed: they are RELEASED into the wild at the spot of the attack, as themselves, wary; the plants drop there and rot in 60 ticks; the balls are gone. A player who hurries back can recatch their own animals, which are now wild again (and count toward N once more) |
+| else | the player is knocked down: wakes at the nearest store with half the wallet (floor), and loses everything else carried: all stones, all plants, and every party creature. The creatures are not destroyed: they are RELEASED into the wild at the spot of the attack, as themselves, wary; the plants drop there and rot in 60 ticks; the stones are gone. A player who hurries back can recatch their own animals, which are now wild again (and count toward N once more) |
 | Hardy in party | the first strike per cooldown is absorbed: nothing taken, the predator goes alert |
 
 Attack cooldown 50 ticks per creature. The box at the stores is never touched by an attack.
@@ -580,8 +580,8 @@ One JSON per slot: `~/root/ketchem/<slot>.json` (Root's record) with a copy the 
 | sim | `buildSnapshot()` plus `prefElev` per creature and the `road` array |
 | fog | bit per tile |
 | stores | 4 x {x, y, stock: [creatures], box: [creatures]} (box shared, stored once) |
-| players | 2 x {x, y, boat, wallet, balls {basic, strong, master}, pack [plants], party [creatures], name} |
-| pokedex | per species key: scientific, nickname, seen, caught, bestL, abilities, firstWorld |
+| players | 2 x {x, y, boat, wallet, stones {basic, strong, master}, pack [plants], party [creatures], name} |
+| almanac | per species key: scientific, nickname, seen, caught, bestL, abilities, firstWorld |
 | awareness | per living creature id: state, until tick |
 | bait | active baits |
 | meta | slot name, created, lastSaved (local time with offset), seed, board setting, ticks played |
@@ -597,7 +597,7 @@ sim genes  A P S E tol sz viv gen hue      sim state  en ag N(species living)
  typ, c, tp (sec.3) ----------------> L (sec.4) <---- size(sz), rarity(N), age(ag)
    |                                     |
    v                                     v
- primary ability (sec.5)      P(second) = 10% x L        odds(ball, L) + modifiers(aw, bait, party) (sec.6-8)
+ primary ability (sec.5)      P(second) = 10% x L        odds(stone, L) + modifiers(aw, bait, party) (sec.6-8)
    |                                     |                                  |
    v                                     v                                  v
  party effects (movement, sight, danger, odds)                     throw -> catch / bolt / flee / attack
@@ -605,7 +605,7 @@ sim genes  A P S E tol sz viv gen hue      sim state  en ag N(species living)
  price = base(T) x levelF(L) x rarityF(N) x sizeF(sz) x abilityF x conditionF(en, ag) x elderF(gen)  (sec.10)
                                                                             |
                                                                             v
-                                      wallet -> balls -> harder catches -> rarer stock -> master ball -> apex
+                                      wallet -> stones -> harder catches -> rarer stock -> Obsidian -> apex
 ```
 
 ## 20. Growth and evolution (owner ruling 2026-10-24: in)
@@ -645,7 +645,7 @@ table; it all comes from the genome moving.
 The sim's species key buckets dryness and warmth in steps of 2.5. When growth pushes a preference across a bucket
 edge, the species KEY changes: the creature is now a different species by the sim's own definition. That is the
 evolution:
-- the Pokedex opens a new entry, linked `evolved from <old species>`; the first evolver names the new species;
+- the Almanac opens a new entry, linked `evolved from <old species>`; the first evolver names the new species;
 - the creature keeps its individual name and its nickname lineage; its scientific name changes (the sim generates
   it from the new bucket);
 - N for the new species is probably 1 in this world (rare: price x4 and level +3 until others exist), which is the
@@ -667,7 +667,7 @@ balance-neutral change, names only) so every type can evolve.
 
 ## 21. Potions (owner ruling 2026-10-24: in the market, for speed, sight, sleep, and others)
 
-Sold at stores under BUY, beside the holding devices. A potion is one use. Durations in ticks; "self" potions act on
+Sold at stores under BUY, beside the stones. A potion is one use. Durations in ticks; "self" potions act on
 the player who drinks, "thrown" potions act on a creature within 2 tiles, "area" potions act around the player.
 Root uses `drink <potion>` or `throw <potion> <target>`; Kevin clicks the potion then the target.
 
