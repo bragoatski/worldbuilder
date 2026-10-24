@@ -528,15 +528,15 @@ Root's walk tool takes the same path grammar; its stride per leg is the table ab
 
 ## 14. Road generation, in detail
 
-### 14.1 Store placement
+### 14.1 Store placement (owner ruling 2026-10-24: one per quadrant, random)
 | step | rule |
 |---|---|
-| landmasses | flood-fill land (everything not ocean) into components; take the largest |
-| candidates | 400 random tiles on that mass that are not mountain, glacier, volcanic, lake or river, and have at least 6 of 8 neighbours walkable |
-| first store | the candidate nearest the mass's centroid |
-| next three | greedy farthest-point: each new store is the candidate that maximises its minimum distance to the stores placed, subject to distance >= W/3 to each (relax to W/4, then W/5 if no candidate qualifies) |
+| quadrants | the map split in four by its centre lines |
+| candidates per quadrant | 200 random tiles in that quadrant that are land, not mountain / glacier / volcanic / lake / river, with at least 6 of 8 neighbours walkable, and at least 6 tiles from the quadrant's edges (so two stores cannot sit back to back across a centre line) |
+| pick | one candidate per quadrant, uniformly at random |
+| islands | a store may land on an island; the road reaches it by bridge (14.3). If no land-or-bridge route exists at all (14.3 fails after bridges), re-pick that quadrant's store; after 3 failures, re-roll the board |
 | store tile | the tile itself becomes a store: 1 tile, walkable, safe; the 8 neighbours are cleared of plants once |
-| name | from the biome under it: `<Biome> <Post>` where Post rotates Post / Depot / Trading / Outfitters, so e.g. Savanna Post, Tundra Depot. Root and Kevin see the same names; the Almanac lists them with coordinates once discovered |
+| name | from the biome under it: `<Biome> <Post>` where Post rotates Post / Depot / Trading / Outfitters, so e.g. Savanna Post, Tundra Depot. The Almanac lists a store with its coordinates once discovered |
 
 ### 14.2 The spine
 | step | rule |
@@ -553,16 +553,18 @@ A* from store to store over land. Cost per tile entered:
 |---|---|---|
 | grassland, savanna, steppe, desert, tundra, arctic | 1.0 | open |
 | forest, jungle, wetland, mesa | 1.6 | roads prefer to skirt them |
-| hills | 2.2 | |
+| hills | 1.8 | roads may climb hills (owner: hills are ok) |
 | river | 4.0 | the road crosses as a bridge tile (drawn as planks); rivers do not stop a road, they cost |
-| mountain, glacier, volcanic, lake, coast, ocean | impassable | |
+| mountain, glacier, volcanic | impassable | never over mountains (owner ruling) |
+| coast, ocean, lake | 6.0 per tile, as a BRIDGE, only in a straight run of at most 12 water tiles between two land tiles; a bridge run cannot turn | the island store's road; a long causeway is expensive so A* takes land when land exists |
 | existing road | 0.3 | links share roads where it is cheap, which makes junctions |
 | diagonal step | x1.41 | |
 | meander | + m x noise(x, y) | m per link uniform 0-3; noise is value noise, period 8 tiles, range 0-1; m 0 is a straight road, m 3 wanders |
 | doubling penalty | +2 | a tile with a road tile beside it that is not the one being extended, so a road does not run parallel to itself one tile over |
 
-Result: a 1-tile, 8-connected path. Every store is on the network by construction. If A* fails (a store cut off by
-a lake ring), re-place that store (14.1) and retry; after 3 failures, re-roll the board.
+Result: a 1-tile, 8-connected path over land, hills and bridges. Every store is on the network by construction. If A*
+fails even with bridges (an island farther than 12 tiles from any land the network can reach), re-pick that store
+(14.1) and retry; after 3 failures, re-roll the board.
 
 ### 14.4 Spurs
 | step | rule |
@@ -583,7 +585,7 @@ a map.
 | element | draw |
 |---|---|
 | road | concrete grey #8a8f94, the full tile, 1px darker edge; above terrain, below plants and life |
-| bridge | the road colour with 3 plank lines in #6b5a45 |
+| bridge | over a river: the road colour with 3 plank lines in #6b5a45; over water: the same planks on 2px posts, drawn above the sea |
 | junction | no special mark; the signpost is a 2px post with a tiny board |
 | store | a 1-tile building: dark roof #3a3f47, a lit door #f3d9a4, the name as a label on hover; Root sees `S` in the ground row |
 | landmark | its own tiny glyph |
@@ -612,14 +614,18 @@ first and no further growth, so the mode runs a headless genesis and then freeze
 | 5 | seed life as the sim does for a full world: flora clusters, then grazer groups, then predators, apex and omnivores per the sim's rescue rules | |
 | 6 | run 300 ticks with ecology on so life settles; then assign `prefElev` to every creature from its tile | |
 | 7 | place stores, build roads and spurs, place signposts and landmarks (sec. 14) | |
-| 8 | fog on everywhere; both players placed on the doorstep of store 1 (the centroid store), one tile apart; store 1 and its doorstep revealed | |
+| 8 | fog on everywhere; Kevin and Root placed on the doorsteps of two different stores (15.3); those two stores and doorsteps revealed | |
 | 9 | the first autosave, slot named by the player (default: the seed) | |
 
 Root is called in from the launch card after the board exists; its first look is the store doorstep.
 
-### 15.3 Why both start at one store
-Co-op begins with a meeting, the first road is a shared choice, and a lost player can always say "back to the first
-store". Decision point: start at different stores to force the map to be uncovered from two sides.
+### 15.3 Start (owner ruling 2026-10-24: different stores; the others must be discovered)
+Kevin starts on the doorstep of one store, Root on the doorstep of another, chosen so they are not in adjacent
+quadrants when the spine allows (diagonal quadrants first, else any two). Each player's own start store and its
+doorstep are revealed to that player; since fog is shared, both players see both starts on the map from the first
+tick, which tells each where the other is. The remaining two stores are hidden until a road leading to one is
+revealed within 12 tiles, or the store itself enters a sight square. Signposts at the start doorsteps name the
+stores down each road, so the first decision is which way to walk.
 
 ## 16. Sight and fog
 

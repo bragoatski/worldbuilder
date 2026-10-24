@@ -206,3 +206,7 @@ Kevin plays the same verbs with keys and clicks.
 - Potions in the market: speed, sight, putting animals to sleep for easy catching, and others. Mechanics sec. 21.
 - Owner ruling 2026-10-24: the holding devices are stones: Amber (basic), Geode (strong), Obsidian (top). The book
   is the Almanac. Renamed throughout both files; "stone" is the generic word.
+- Owner rulings 2026-10-24 (round 5): stores are not placed farthest-apart; one is placed at random in each
+  quadrant of the map. A store on an island is reached by a bridge. Roads never go over mountains; hills are fine.
+  Players start at different stores, and the other stores must be discovered. "I'll have to see it." Everything
+  else in the spec as written is agreed.
