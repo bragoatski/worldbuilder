@@ -434,15 +434,71 @@ price = base(T) x levelF x rarityF x sizeF x abilityF x conditionF x elderF, rou
 Plants: common 1-3 coins (by health: < 0.5 is 1, < 0.8 is 2, else 3); rare 15-40: a plant with gen >= 10 or a
 preference within 1 of an extreme. Forager multiplies. Pack holds 10 plants (Pack adds).
 
-## 11. Danger
+## 11. Danger: the attack, the warning, and the defences
 
-| trigger | attacker | effect | counters |
-|---|---|---|---|
-| a hungry (en < 0.5) carnivore or apex has growled (sec. 6) and is still adjacent when the player's NEXT action ends | that creature | takes the lowest-level grazer in the party (the creature eats it: +40 energy); with no grazer, the player wakes at the nearest store with floor(wallet / 2) | Guard I (carnivore), Guard II (apex), Hardy (absorbs), Dread I |
-| a failed throw on a hungry carnivore or apex | same | same, at once | same |
-| a creature feeding on meat bait | none | no attack while feeding | |
+### 11.1 Who attacks
+A wild carnivore or apex that is hungry (en < 0.5), alert, and adjacent to a player. Fed predators never attack.
+Scavengers and omnivores never attack.
 
-A player at a store tile cannot be attacked. Attack cooldown 50 ticks per creature.
+### 11.2 The warning (owner ruling 2026-10-24)
+Before it strikes, the predator signals: a sound plus a small red ripple, an expanding circle from the creature that
+fades over 10 ticks. It pulses 1 to 5 times, 10 ticks apart, then attacks if the player is still within reach.
+Fewer pulses the higher the level, so an apex gives almost no notice:
+
+| predator level | pulses | warning window |
+|---|---|---|
+| 5 | 4-5 | 40-50 ticks |
+| 6 | 3-4 | 30-40 |
+| 7 | 2-3 | 20-30 |
+| 8-9 | 1-2 | 10-20 |
+| 10 | 1 | 10 |
+
+Root reads `C 1E growls (3)`, the number counting down on each later result. Kevin hears the sound and sees the
+ripple; the level tag turns red.
+
+### 11.3 Ending the warning: what the player can do
+| defence | how | works against |
+|---|---|---|
+| leave | step out of the creature's reach (more than 3 tiles away) before the pulses end | every non-stalker; a stalker pursues (11.4) |
+| catch it | a successful throw ends the threat and the predator is yours | all; a failed throw triggers the attack at once |
+| feed it | meat bait or a stake adjacent: it turns to the bait and feeds (30 ticks, calm) | all; the bait rules apply (stake can be recovered by a catch) |
+| take the road | predators avoid roads and will not step onto one to pursue; a stalker will, but your stride is 4 to its 1 | stalkers can be outrun on road |
+| a store | a player standing on a store tile cannot be attacked | all |
+| Guard | hungry carnivores (I), apex too (II), they move away from you (III) | by strength |
+| Dread | nothing attacks | all |
+| Hardy | one attack absorbed per cooldown | one strike |
+| a higher follower | a follower (11.5) of higher level than the predator makes it back down: the pulses stop and it goes alert instead | predators below the follower's level |
+| items (later) | smoke, repel, a decoy | to be designed with the item pass |
+
+### 11.4 Stalkers
+Most predators do not pursue: leave their reach and the warning ends. A small share are stalkers: `hash(genome)
+mod 100 < 10` and level >= 7. A stalker follows at its own move speed (one tile every 16 ticks) for up to 60 ticks
+after you leave, pulsing as it comes; it stops at roads unless it is already on one, at the sea, and at a store. The
+Pokedex marks the species variant `stalker` once seen, so the second time you know.
+
+### 11.5 The follower (owner ask: like Pikachu in Pokemon Yellow)
+`follow <name>` lets one party creature out of its ball to walk beside you; `recall` puts it back. One follower at a
+time, per player.
+
+| rule | value |
+|---|---|
+| position | trails one tile behind the player, stepping when the player steps; on a boat it rides |
+| ability | the follower's abilities count one strength higher (max III) while it follows |
+| corral | a follower adjacent to a target on the side opposite the player gives +5 (a solo corral; a real partner gives +10) |
+| intimidate | a predator of lower level than the follower will not attack; its pulses stop |
+| exposure | the follower is the FIRST thing an attack takes, before the weakest party grazer; a follower of higher level than the attacker is not taken (it backs the attacker down instead) |
+| hunger | none; it is yours and the sim does not run it |
+| view | drawn as itself (shape, colour, size) with a small amber collar; Root reads `"Tam" follows` in the party line |
+
+### 11.6 The attack itself (owner ruling 2026-10-24: lose half the money and everything else)
+| case | what happens |
+|---|---|
+| a follower is out and lower level than the attacker | the follower is taken: the predator eats it (+40 energy), the party card cracks and empties |
+| else, the party has a grazer | the lowest-level grazer is taken, as above |
+| else | the player is knocked down: wakes at the nearest store with half the wallet (floor), and loses everything else carried: all balls, all plants, and every party creature. The creatures are not destroyed: they are RELEASED into the wild at the spot of the attack, as themselves, wary; the plants drop there and rot in 60 ticks; the balls are gone. A player who hurries back can recatch their own animals, which are now wild again (and count toward N once more) |
+| Hardy in party | the first strike per cooldown is absorbed: nothing taken, the predator goes alert |
+
+Attack cooldown 50 ticks per creature. The box at the stores is never touched by an attack.
 
 ## 12. Movement
 
@@ -551,3 +607,60 @@ sim genes  A P S E tol sz viv gen hue      sim state  en ag N(species living)
                                                                             v
                                       wallet -> balls -> harder catches -> rarer stock -> master ball -> apex
 ```
+
+## 20. Growth and evolution (proposal; owner: "we do not need to include this, but if we were to")
+
+The sim already has the raw material: a creature's preferences and size are its genome, the species is a bucket of
+that genome, and children inherit it. So growth can be REAL, not a number on a card: training a creature moves its
+genes, and moving its genes far enough changes which species it is. That is evolution with the sim's own rules, and
+it feeds straight into breeding (trained genes are inherited).
+
+### 20.1 Experience
+| source | XP | why |
+|---|---|---|
+| in the party, per 100 ticks | 1 | time together |
+| following, per 100 ticks | 2 | the follower learns faster |
+| present (party or follower) at a catch | the caught creature's level | assisting |
+| fed a plant (grazer, omnivore) | 1 common, 5 rare | plants gain a second use beyond selling |
+| fed meat (carnivore, apex, scavenger, omnivore) | 3 per level of the creature fed to it | the expensive diet |
+| 500 ticks carried through its own type's biome (Frost in arctic, Dune in desert) | 10 | the exposure analogue of an evolution stone |
+
+### 20.2 Growth level
+Growth level G from 0 upward; XP to reach G is 10 x G^2 (10, 40, 90, 160, 250 ...). Each growth level applies to
+the creature's real genome:
+
+| effect per growth level | value | cap |
+|---|---|---|
+| its type axis preference moves toward the ideal | 0.5 | the extreme (0 or 10) |
+| a Plain creature picks the axis it already leans most on; after two growth levels it is typed | | |
+| size | +0.04 | 2.2 |
+| tolerance | +0.1 | 6.0 |
+
+Consequences that fall out for free: type points rise (so L rises and elemental strength rises), Pack and Hardy can
+be gained by growth, abilities can appear (a creature grown to tp 2 gains its trophic ability; the second-ability
+roll is re-run against the new level), and price rises through levelF, sizeF and abilityF. Nothing is granted by a
+table; it all comes from the genome moving.
+
+### 20.3 Evolution
+The sim's species key buckets dryness and warmth in steps of 2.5. When growth pushes a preference across a bucket
+edge, the species KEY changes: the creature is now a different species by the sim's own definition. That is the
+evolution:
+- the Pokedex opens a new entry, linked `evolved from <old species>`; the first evolver names the new species;
+- the creature keeps its individual name and its nickname lineage; its scientific name changes (the sim generates
+  it from the new bucket);
+- N for the new species is probably 1 in this world (rare: price x4 and level +3 until others exist), which is the
+  reward for growing it;
+- bred offspring of the evolved creature are born in the new bucket.
+Visual: a long white flash, the shape re-drawn in its new colour band, the new name typed out above it.
+Only Sun / Shade / Peak / Vale types cannot evolve this way (their axes are not in the species key); growth still
+raises their level, size and abilities. Decision point: add light and height to the species key in the sim (a
+balance-neutral change, names only) so every type can evolve.
+
+### 20.4 Alternatives considered
+| idea | verdict |
+|---|---|
+| card-only levels (a number that raises odds and price, genome untouched) | simplest; cheap; but nothing in the world changes and breeding ignores it. Fallback if 20.2 measures badly |
+| trophic evolution (grazer becomes omnivore) | no: it changes the food web and the tuned balance |
+| battles for XP | no: there is no combat in this world and inventing one is a different game |
+| evolution stones as items | folded into exposure (20.1) and the item pass |
+| forms by biome (a Frost coat in arctic) | cosmetic variant, cheap, could ride on exposure; parked |

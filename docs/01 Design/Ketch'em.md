@@ -185,3 +185,14 @@ Kevin plays the same verbs with keys and clicks.
 4. Plants and rarity.
 5. Pens (Breeder).
 6. Items.
+
+## Owner rulings, round 4 (2026-10-24)
+- An attack with no grazer to take: wake at the nearest store with half the money AND lose everything else carried
+  (balls, plants, animals). Mechanics sec. 11.6 (the animals are released wild at the spot, not destroyed).
+- A follower like Pikachu in Pokemon Yellow: choose one animal to walk beside you. Mechanics sec. 11.5.
+- An attack is signalled by a noise and a small red ripple (expanding circle that fades), pulsing 1 to 5 times
+  before the attack. The player must leave the area, catch it, or feed it. Most predators do not follow; a small
+  share of high-level ones are followers (stalkers) so leaving does not work. Mechanics sec. 11.2-11.4.
+- Asked how to defend against an attack: sec. 11.3.
+- Collecting, levelling up and evolving were the fun of Pokemon; breeding is cool and this need not be included,
+  but if it were: ideas wanted. Proposal in Mechanics sec. 20.
