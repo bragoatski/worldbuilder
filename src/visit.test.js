@@ -224,3 +224,152 @@ describe('visit: a friend and a field guide', () => {
     expect(v.walkPath(st, 'up')).toContain('no route');
   });
 });
+
+describe('visit: the Hand in Root\'s hands (Shaper and Sky)', () => {
+  let st;
+  beforeEach(() => { st = world(); });
+
+  it('reads a bearing in sight as a tile, and refuses one beyond it', () => {
+    expect(v.tileAtBearing(st, '')).toEqual({ x: 16, y: 16, where: 'here' });
+    expect(v.tileAtBearing(st, '2N1E')).toEqual({ x: 17, y: 14, where: 'at 2N1E' });
+    expect(v.tileAtBearing(st, '5S').error).toMatch(/out of sight/);
+    expect(v.tileAtBearing(st, 'over there').error).toMatch(/no bearing/);
+  });
+
+  it('raises land out of the sea where the brush crosses the coast, and clamps the radius to the mode', () => {
+    st.x = 23;                                                    // the east shore
+    const r = v.shapeAt(24, 16, 'raise', 9, v.SHAPER_RADIUS_MAX, 'at 1E');
+    expect(r).toMatch(/^raised r3 at 1E: \d+ tiles rose from the sea$/);
+    expect(sim.grid[sim.idx(24, 16)]).not.toBe(sim.T.OCEAN);
+    expect(v.shapeAt(16, 16, 'melt', 2, 3, 'here')).toMatch(/^no power/);
+    expect(v.shapeAt(40, 40, 'raise', 2, 3, 'here')).toBe('nothing: beyond the edge');
+  });
+
+  it('sinks the ground under Root into the sea, which the page then walks it off', () => {
+    const r = v.shapeAt(16, 16, 'sink', 3, 3, 'here');
+    expect(r).toMatch(/^sank r3 here: \d+ tiles sank beneath the sea$/);
+    expect(sim.grid[sim.idx(16, 16)]).toBe(sim.T.OCEAN);
+    expect(v.arrivalTile(16, 16)).not.toBeNull();                 // there is still ground to step to
+  });
+
+  it('paints climate without moving the coast', () => {
+    const before = sim.grid[sim.idx(16, 16)];
+    expect(v.shapeAt(16, 16, 'rain', 2, 3, 'here')).toBe('rained r2 here');
+    expect(v.shapeAt(16, 16, 'chill', 1, 3, 'at 0')).toBe('chilled r1 at 0');
+    expect([sim.T.OCEAN, sim.T.COAST]).not.toContain(sim.grid[sim.idx(16, 16)]);
+    expect(before).not.toBe(sim.T.OCEAN);
+  });
+
+  it('fire craters low ground as a meteor and refuses the open sea for springs and seeds', () => {
+    sim.fauna.push(sim.makeFauna(16, 16, 'herbivore'));
+    expect(v.emberAt(16, 16, 'here')).toMatch(/^meteor here: 1 creature killed$/);
+    expect(v.springAt(2, 2, 'at 2,2')).toBe('nothing: open ocean');
+    expect(v.seedAt(2, 2, 'at 2,2')).toBe('nothing at 2,2: open ocean');
+    expect(v.emberAt(99, 99, 'at 99,99')).toBe('nothing: beyond the edge');
+  });
+
+  it('seeds plants on bare ground, in words', () => {
+    sim.flora.length = 0;
+    expect(v.seedAt(20, 20, 'at 2S')).toMatch(/^seeded \d+ plants at 2S$/);
+    expect(sim.flora.length).toBeGreaterThan(0);
+  });
+
+  it('world events answer in counts', () => {
+    expect(v.weatherEvent('bloom')).toMatch(/^bloom: \d+ plants sprang up$/);
+    expect(v.weatherEvent('drought')).toMatch(/^drought: \d+ plants withered$/);
+    expect(v.weatherEvent('fog')).toMatch(/^no weather/);
+    expect(v.seaEvent('raise')).toMatch(/^sea rose: \d+ tiles? drowned$/);
+    expect(v.seaEvent('sideways')).toMatch(/^no direction/);
+  });
+
+  it('marks every power for the Hand\'s undo, and a power that did nothing hands the mark back', () => {
+    expect(sim.godCanUndo()).toBe(false);
+    expect(v.seedAt(2, 2, 'at 2,2')).toMatch(/open ocean/);     // marked, then nothing happened: mark cancelled
+    expect(sim.godCanUndo()).toBe(false);
+    sim.flora.length = 0;
+    expect(v.weatherEvent('drought')).toBe('drought: 0 plants withered');
+    expect(sim.godCanUndo()).toBe(false);
+    v.shapeAt(16, 16, 'warm', 1, 3, 'here');
+    expect(sim.godCanUndo()).toBe(true);
+    v.seedAt(2, 2, 'at 2,2');                                     // a no-op after a real act keeps the real act undoable
+    expect(sim.godCanUndo()).toBe(true);
+  });
+
+  it('reads diagonal bearings and clamps a zero radius to one', () => {
+    expect(v.tileAtBearing(st, '2NE')).toEqual({ x: 18, y: 14, where: 'at 2N2E' });
+    expect(v.shapeAt(16, 16, 'rain', 0, 3, 'here')).toBe('rained r1 here');
+  });
+});
+
+describe('visit: the sky\'s way of seeing', () => {
+  let st;
+  beforeEach(() => { st = world(); });
+
+  it('surveys the whole world as a coarse grid with a census head and a ruler', () => {
+    sim.fauna.push(sim.makeFauna(16, 16, 'carnivore'));
+    const lines = v.survey(st).split('\n');
+    const cell = Math.ceil(32 / v.SKY_CELLS);
+    expect(lines[0]).toMatch(/^t\d+ 32x32 land \d+% plants \d+ H0 C1 O0 S0 A0 species \d+ · cell \d+$/);
+    expect(lines[1]).toMatch(/^\s*x 0 /);
+    const rows = lines.slice(2).filter(l => /^\s*\d+ {2}/.test(l));
+    expect(rows).toHaveLength(Math.ceil(32 / cell));
+    const [, g, l] = rows[0].trim().split(/\s{2}/);
+    expect(g).toHaveLength(Math.ceil(32 / cell)); expect(l).toHaveLength(Math.ceil(32 / cell));
+    expect(g[0]).toBe('O');                                      // the north-west corner is open sea
+    expect(v.survey(st)).toContain('C');                         // the carnivore shows as its letter
+    expect(v.survey(st).length).toBeLessThan(1200);
+  });
+
+  it('lists its names by tile and names a tile it is not standing on', () => {
+    expect(v.namePlace(st, 'The Mountain', 16, 12)).toBe('named "The Mountain"');
+    expect(v.survey(st)).toMatch(/named "The Mountain" 16,12$/);
+    expect(v.namePlace(st, 'Nowhere', 99, 99)).toBe('nothing: beyond the edge');
+  });
+
+  it('zooms to any tile as a 9x9 look, and remembers the gaze', () => {
+    const look = v.gazeAt(st, 10, 10);
+    expect(look.split('\n')[0]).toMatch(/^t\d+ @10,10 /);
+    expect([st.x, st.y]).toEqual([10, 10]);
+    expect(v.gazeAt(st, 40, 2)).toMatch(/^nothing: beyond the edge/);
+    expect(v.pointText(st, 3, 4, 'sky')).toBe('Kevin points at 3,4');
+  });
+
+  it('never lets a missing or garbage coordinate land on tile 0,0', () => {
+    expect(v.tileArg({ x: 5 }).error).toMatch(/whole tile numbers/);
+    expect(v.tileArg({ x: 'abc', y: 2 }).error).toMatch(/whole tile numbers/);
+    expect(v.tileArg({ x: 1.5, y: 2 }).error).toMatch(/whole tile numbers/);
+    expect(v.tileArg({ x: -1, y: 2 }).error).toMatch(/beyond the edge/);
+    expect(v.tileArg({ x: 0, y: 0 })).toEqual({ x: 0, y: 0, where: 'at 0,0' });
+    expect(v.gazeAt(st, undefined, 3)).toMatch(/whole tile numbers/);
+    expect([st.x, st.y]).toEqual([16, 16]);
+  });
+
+  it('tells the sky its names and friend by tile, not by bearing', () => {
+    v.namePlace(st, 'Far Rock', 9, 9);
+    expect(v.arrivalText(st, 'sky')).toContain('"Far Rock" 9,9');
+    expect(v.arrivalText(st)).toMatch(/"Far Rock" ~7 northwest/);
+  });
+
+  it('caps the survey\'s list of names', () => {
+    for (let k = 0; k < v.SURVEY_NAMES + 3; k++) v.namePlace(st, 'P' + k, 8 + (k % 16), 8 + ((k / 16) | 0));
+    const tail = v.survey(st).split('\n').pop();
+    expect(tail).toMatch(/; \+3 older$/);
+    expect(tail).not.toContain('"P0"');
+  });
+});
+
+describe('visit: modes', () => {
+  it('each mode has its own tool set, and the body never has the sky\'s reach', async () => {
+    const m = await import('../visit/modes.mjs');
+    expect(m.MODE_IDS).toEqual(['visitor', 'shaper', 'sky']);
+    expect(m.verbsFor('visitor')).toEqual(['look', 'walk', 'plant', 'name_place', 'befriend', 'guide', 'say', 'listen', 'note', 'leave']);
+    expect(m.verbsFor('shaper')).toEqual(expect.arrayContaining(['walk', 'shape', 'ember', 'spring', 'seed', 'leave']));
+    expect(m.verbsFor('shaper')).not.toContain('weather');
+    expect(m.verbsFor('sky')).toEqual(expect.arrayContaining(['survey', 'zoom', 'shape', 'weather', 'sea', 'name_place', 'leave']));
+    expect(m.verbsFor('sky')).not.toContain('walk');
+    expect(m.modeOf('god')).toBe('visitor');
+    expect(m.modeOf('constructor')).toBe('visitor');
+    expect(m.modeOf('__proto__')).toBe('visitor');
+    for (const id of m.MODE_IDS) for (const t of m.toolsFor(id)) expect(t.inputSchema.type).toBe('object');
+  });
+});

@@ -8,7 +8,10 @@
 import {
   CFG, T, TNAME, W, H, _seed, chronicleNote, speciesKey, elev, aridity, fauna, flora, getSpeciesName, grid, idx, inb,
   makeFlora, riverData, seasonPhase, seasonWave, tempField, tick, volcActive,
+  addSpring, bloomEvent, brushClimateRaw, brushTerrainRaw, droughtEvent, emberStrike, godCancelMark, godMark, landCoverage,
+  seedLifeAt, settleClimate, settleTerrain, shiftSeaLevel,
 } from './sim.js';
+import { MODES, MODE_IDS, DEFAULT_MODE, modeOf } from '../visit/modes.mjs';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
 export const MAX_STRIDE = 3;       // tiles per walk call
@@ -127,7 +130,7 @@ function creatureCode(f, sx, sy, st) {
 }
 
 // What Root perceives from where it stands: its square and nothing beyond it, in the terse code whose key is in
-// Root's visit brief (visit/visit-prompt.md). Each row is ground, two spaces, life; north up. Kept short on purpose: every
+// Root's visit brief (visit/briefs/common.md). Each row is ground, two spaces, life; north up. Kept short on purpose: every
 // look stays in Root's context for the rest of the visit and is re-read on every later step.
 export function perceive(st) {
   const sx = st.x, sy = st.y, i0 = idx(sx, sy);
@@ -187,11 +190,14 @@ export function perceive(st) {
 
 // Root's sense of its own history on arrival: its named places (roughly where) and how its plantings fared.
 // Bearings, not maps: it has to walk to see them.
-export function arrivalText(st) {
+// The sky reads tiles, not bearings from a body it does not have.
+export function arrivalText(st, mode = 'visitor') {
+  const sky = mode === 'sky';
   const out = [];
   if (st.leftTick != null && tick > st.leftTick) out.push('since you left: ' + (tick - st.leftTick) + ' ticks');
   if (st.places.length) {
     out.push('named: ' + st.places.map(p => {
+      if (sky) return '"' + p.name + '" ' + p.x + ',' + p.y;
       const dx = p.x - st.x, dy = p.y - st.y, d = Math.max(Math.abs(dx), Math.abs(dy));
       return '"' + p.name + '" ' + (d === 0 ? 'here' : '~' + d + ' ' + compass(dx, dy));
     }).join('; '));
@@ -202,9 +208,17 @@ export function arrivalText(st) {
     const f = findCompanion(st);
     if (!f && c.goneTick == null) c.goneTick = tick;
     out.push('friend "' + c.name + '" (' + (CREATURE[c.type] || '?') + (c.species ? ' ' + c.species : '') + '): ' +
-      (f ? 'alive ' + bearing(f.x - st.x, f.y - st.y) : 'gone since t' + c.goneTick) + ', its line ' + lineCount(c.lineageId) + ' living');
+      (f ? 'alive ' + (sky ? 'at ' + f.x + ',' + f.y : bearing(f.x - st.x, f.y - st.y)) : 'gone since t' + c.goneTick) + ', its line ' + lineCount(c.lineageId) + ' living');
   }
   return out.join('\n');
+}
+
+// A sky tool's tile: both coordinates must be given as whole numbers inside the world. Nothing defaults to 0,0.
+export function tileArg(a) {
+  const x = a && a.x, y = a && a.y;
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return { error: 'give x and y as whole tile numbers (the world is ' + W + 'x' + H + ')' };
+  if (!inb(x, y)) return { error: 'nothing: beyond the edge (the world is ' + W + 'x' + H + ')' };
+  return { x, y, where: 'at ' + x + ',' + y };
 }
 
 export function walkFrom(st, dir, steps) {
@@ -312,11 +326,12 @@ export function sightings(st) {
   return [...out.values()];
 }
 
-export function namePlace(st, raw) {
+export function namePlace(st, raw, x = st.x, y = st.y) {
   const name = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 40);
   if (!name) return 'a name needs a word';
-  st.places = st.places.filter(p => !(p.x === st.x && p.y === st.y));
-  st.places.push({ name, x: st.x, y: st.y, tick });
+  if (!inb(x, y)) return 'nothing: beyond the edge';
+  st.places = st.places.filter(p => !(p.x === x && p.y === y));
+  st.places.push({ name, x, y, tick });
   chronicleNote('terrain', 'Root names a place: ' + name + '.', '#e8a838');
   return 'named "' + name + '"';
 }
@@ -331,11 +346,162 @@ export function adoptWorldState(saved, nowTick) {
   return { st, restarted };
 }
 
-// Kevin pointing at a tile, as Root would perceive it: exact if in sight, a bearing if not.
-export function pointText(st, px, py) {
+// Kevin pointing at a tile, as Root would perceive it: exact if in sight, a bearing if not. From the sky, a tile.
+export function pointText(st, px, py, mode = 'visitor') {
+  if (mode === 'sky') return 'Kevin points at ' + px + ',' + py;
   const dx = px - st.x, dy = py - st.y;
   if (Math.abs(dx) <= SIGHT && Math.abs(dy) <= SIGHT) return 'Kevin points ' + (dx || dy ? bearing(dx, dy) : 'at you');
   return 'Kevin points far ' + compass(dx, dy) + ' ~' + Math.max(Math.abs(dx), Math.abs(dy));
+}
+
+// ===================== The Hand in Root's hands (Shaper and Sky modes) =====================
+// Every power is the sim's own god power (the same code Kevin's Hand runs), marked for undo so Kevin can take it
+// back with one click. Results are a few words; the caller adds a look where the mode gets one.
+export const SHAPER_RADIUS_MAX = 3;   // a body shapes what it can see
+export const SKY_RADIUS_MAX = 8;      // the sky shapes a region
+
+// A bearing like "2N1E" within sight, as a tile. Empty or "here" is where Root stands.
+export function tileAtBearing(st, at) {
+  const s = String(at || '').trim().toUpperCase();
+  if (!s || s === 'HERE') return { x: st.x, y: st.y, where: 'here' };
+  const re = /(\d+)\s*(NE|NW|SE|SW|N|S|E|W)/g;
+  let m, dx = 0, dy = 0, any = false;
+  while ((m = re.exec(s))) {
+    any = true;
+    const n = parseInt(m[1], 10), d = DIRS[m[2]];
+    dx += d[0] * n; dy += d[1] * n;
+  }
+  if (!any) return { error: 'no bearing in "' + at + '" (like 2N1E, or leave it out for here)' };
+  if (Math.abs(dx) > SIGHT || Math.abs(dy) > SIGHT) return { error: 'out of sight: ' + at + ' (you see ' + SIGHT + ' tiles each way)' };
+  return { x: st.x + dx, y: st.y + dy, where: 'at ' + bearing(dx, dy) };
+}
+
+const POWER = { raise: ['earth', 1, 'raised'], sink: ['earth', -1, 'sank'], rain: ['moist', 1, 'rained'], parch: ['moist', -1, 'parched'],
+  warm: ['temp', 1, 'warmed'], chill: ['temp', -1, 'chilled'] };
+
+// The brush: a soft disc of land or climate change. Terrain re-settles (climate, biomes) after every act, so the
+// world Root sees next is already the consequence.
+export function shapeAt(x, y, power, radius, maxR, where) {
+  const p = POWER[String(power || '').toLowerCase()];
+  if (!p) return 'no power "' + power + '" (raise sink rain parch warm chill)';
+  if (!inb(x, y)) return 'nothing: beyond the edge';
+  const R = Math.max(1, Math.min(maxR, radius == null ? 2 : radius | 0));
+  godMark();
+  if (p[0] === 'earth') {
+    const r = brushTerrainRaw(x, y, p[1], R);
+    settleTerrain();
+    chronicleNote('god', 'Root ' + p[2] + ' the land.', '#e8a838');
+    const tail = r.crossed ? ': ' + r.crossed + ' tile' + (r.crossed === 1 ? '' : 's') + (p[1] > 0 ? ' rose from the sea' : ' sank beneath the sea') : '';
+    return p[2] + ' r' + R + ' ' + where + tail;
+  }
+  brushClimateRaw(x, y, p[1], R, undefined, p[0]);
+  settleClimate();
+  return p[2] + ' r' + R + ' ' + where;
+}
+
+export function emberAt(x, y, where) {
+  if (!inb(x, y)) return 'nothing: beyond the edge';
+  const prev = godMark();
+  const r = emberStrike(x, y);
+  if (!r) { godCancelMark(prev); return 'nothing ' + where; }
+  if (r.kind === 'volcano') return 'volcano opened ' + where;
+  return 'meteor ' + where + (r.killed ? ': ' + r.killed + ' creature' + (r.killed === 1 ? '' : 's') + ' killed' : '');
+}
+
+export function springAt(x, y, where) {
+  if (!inb(x, y)) return 'nothing: beyond the edge';
+  if (grid[idx(x, y)] === T.OCEAN) return 'nothing: open ocean';
+  const prev = godMark();
+  if (addSpring(x, y)) return 'spring opened ' + where;
+  godCancelMark(prev);
+  return 'nothing ' + where + ': a spring is already here';
+}
+
+export function seedAt(x, y, where) {
+  if (!inb(x, y)) return 'nothing: beyond the edge';
+  const prev = godMark();
+  const r = seedLifeAt(x, y);
+  if (!r) { godCancelMark(prev); return 'nothing ' + where + ': ' + (grid[idx(x, y)] === T.OCEAN ? 'open ocean' : 'ground too steep'); }
+  const what = r.kind === 'flora' ? 'plant' : r.kind === 'herbivore' ? 'grazer' : 'predator';
+  return 'seeded ' + r.count + ' ' + what + (r.count === 1 ? '' : 's') + ' ' + where;
+}
+
+export function weatherEvent(kind) {
+  kind = String(kind || '').toLowerCase();
+  if (kind !== 'drought' && kind !== 'bloom') return 'no weather "' + kind + '" (drought, bloom)';
+  const prev = godMark();
+  const n = kind === 'drought' ? droughtEvent() : bloomEvent();
+  if (!n) godCancelMark(prev);   // nothing withered or sprang: Kevin's own last act stays undoable
+  return kind === 'drought' ? 'drought: ' + n + ' plants withered' : 'bloom: ' + n + ' plants sprang up';
+}
+
+export function seaEvent(direction) {
+  const dir = direction === 'raise' ? 1 : direction === 'lower' ? -1 : 0;
+  if (!dir) return 'no direction "' + direction + '" (raise, lower)';
+  godMark();
+  const n = shiftSeaLevel(dir);
+  return dir > 0 ? 'sea rose: ' + n + ' tile' + (n === 1 ? '' : 's') + ' drowned' : 'sea fell: ' + n + ' tile' + (n === 1 ? '' : 's') + ' uncovered';
+}
+
+// ===================== The sky's way of seeing =====================
+export const SKY_CELLS = 16;   // the world is summarised as at most this many cells across
+
+// The whole world at once, coarse: one glyph per cell for the commonest ground, one for how much lives there.
+// Kept to about a thousand characters: the sky looks often and every survey stays in Root's context.
+export function survey(st) {
+  const cell = Math.ceil(Math.max(W, H) / SKY_CELLS);
+  const cols = Math.ceil(W / cell), rows = Math.ceil(H / cell);
+  const ground = [], river = new Uint8Array(cols * rows), plants = new Uint32Array(cols * rows);
+  const beasts = new Uint32Array(cols * rows), top = new Int8Array(cols * rows).fill(-1);
+  for (let c = 0; c < cols * rows; c++) ground.push(new Uint16Array(GLYPH.length));
+  const cellOf = (x, y) => ((x / cell) | 0) + ((y / cell) | 0) * cols;
+  for (let i = 0; i < W * H; i++) {
+    const c = cellOf(i % W, (i / W) | 0);
+    ground[c][grid[i]]++;
+    if (riverData && riverData[i]) river[c] = 1;
+  }
+  let alive = 0;
+  for (let k = 0; k < flora.length; k++) { const f = flora[k]; if (f) { alive++; plants[cellOf(f.x, f.y)]++; } }
+  const census = { herbivore: 0, carnivore: 0, omnivore: 0, scavenger: 0, apex: 0 }, species = new Set();
+  for (let k = 0; k < fauna.length; k++) {
+    const f = fauna[k]; if (!f) continue;
+    const c = cellOf(f.x, f.y), rank = CREATURE_RANK.indexOf(f.type);
+    beasts[c]++;
+    if (top[c] < 0 || rank < top[c]) top[c] = rank;
+    if (f.type in census) census[f.type]++;
+    const sp = getSpeciesName(f); if (sp) species.add(sp);
+  }
+  const head = ['t' + tick, seasonCode(), W + 'x' + H, 'land ' + Math.round(landCoverage() * 100) + '%', 'plants ' + alive,
+    'H' + census.herbivore, 'C' + census.carnivore, 'O' + census.omnivore, 'S' + census.scavenger, 'A' + census.apex,
+    'species ' + species.size, '· cell ' + cell].filter(Boolean).join(' ');
+  const pad = String(H).length;
+  const out = [head, ' '.repeat(pad) + '  x ' + Array.from({ length: cols }, (_, c) => c * cell).join(' ')];
+  for (let r = 0; r < rows; r++) {
+    let g = '', l = '';
+    for (let c = 0; c < cols; c++) {
+      const k = r * cols + c, counts = ground[k];
+      let best = 0;
+      for (let b = 1; b < counts.length; b++) if (counts[b] > counts[best]) best = b;
+      g += river[k] && best !== T.OCEAN ? '~' : GLYPH[best];
+      if (top[k] >= 0) l += CREATURE[CREATURE_RANK[top[k]]];
+      else { const n = plants[k] + beasts[k] * 3; l += n ? String(Math.min(9, 1 + Math.floor(Math.log2(n)))) : '0'; }
+    }
+    out.push(String(r * cell).padStart(pad) + '  ' + g + '  ' + l);
+  }
+  if (st.places.length) {   // the newest few: this line rides in every survey, so it must not grow without bound
+    const recent = st.places.slice(-SURVEY_NAMES);
+    out.push('named ' + recent.map(p => '"' + p.name + '" ' + p.x + ',' + p.y).join('; ') + (st.places.length > recent.length ? '; +' + (st.places.length - recent.length) + ' older' : ''));
+  }
+  return out.join('\n');
+}
+export const SURVEY_NAMES = 12;
+
+// A 9x9 look centred on any tile, for the sky. The gaze is kept so Kevin sees where Root is looking.
+export function gazeAt(st, x, y) {
+  const t = tileArg({ x, y });
+  if (t.error) return t.error;
+  st.x = t.x; st.y = t.y;
+  return perceive(st);
 }
 
 // ===================== Browser shell (gate-blind) =====================
@@ -345,15 +511,18 @@ let V = null;             // the page's side of a visit: { st, key, here, phase,
 
 export function visitDraw(ctx, PIX) {
   if (!V || !V.here) return;
-  const st = V.st, now = Date.now();
+  const st = V.st, now = Date.now(), sky = V.mode === 'sky';
   ctx.save();
-  const tr = st.trail || [];
+  const tr = sky ? [] : (st.trail || []);
   for (let k = 0; k < tr.length; k++) {           // footsteps fade with age
     ctx.fillStyle = 'rgba(232,168,56,' + (0.08 + 0.32 * k / tr.length).toFixed(3) + ')';
     ctx.fillRect(tr[k][0] * PIX + PIX * 0.35, tr[k][1] * PIX + PIX * 0.35, PIX * 0.3, PIX * 0.3);
   }
+  // A body's sight is a solid square; the sky's gaze (where it last zoomed) is a dashed one.
   ctx.strokeStyle = 'rgba(232,168,56,0.55)'; ctx.lineWidth = Math.max(1, PIX / 4);
+  if (sky) ctx.setLineDash([PIX, PIX]);
   ctx.strokeRect((st.x - SIGHT) * PIX, (st.y - SIGHT) * PIX, (2 * SIGHT + 1) * PIX, (2 * SIGHT + 1) * PIX);
+  ctx.setLineDash([]);
   const font = Math.max(9, PIX * 1.6);
   ctx.font = font + 'px "JetBrains Mono",monospace'; ctx.textBaseline = 'bottom';
   for (const p of st.places) {
@@ -363,15 +532,17 @@ export function visitDraw(ctx, PIX) {
     ctx.fillStyle = '#f3d9a4'; ctx.fillText(p.name, p.x * PIX + PIX + 3, p.y * PIX + 1);
   }
   const cx = (st.x + 0.5) * PIX, cy = (st.y + 0.5) * PIX, r = Math.max(3, PIX * 0.9);
-  const friend = findCompanion(st);
+  const friend = sky ? null : findCompanion(st);
   if (friend) {   // Kevin sees the companion: an amber ring and its name
     const fx = (friend.x + 0.5) * PIX, fy = (friend.y + 0.5) * PIX;
     ctx.beginPath(); ctx.arc(fx, fy, Math.max(3, PIX * 0.85), 0, Math.PI * 2);
     ctx.lineWidth = Math.max(1.2, PIX / 4); ctx.strokeStyle = '#e8a838'; ctx.stroke();
     ctx.fillStyle = '#f3d9a4'; ctx.fillText(st.companion.name, fx + PIX, fy - PIX * 0.4);
   }
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = '#e8a838'; ctx.fill(); ctx.lineWidth = Math.max(1.5, PIX / 3); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+  if (!sky) {   // the body: an amber dot. The sky has none; its words float at its gaze.
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8a838'; ctx.fill(); ctx.lineWidth = Math.max(1.5, PIX / 3); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+  }
   if (V.said && V.said.until > now) {
     const text = V.said.text.length > 60 ? V.said.text.slice(0, 57) + '...' : V.said.text;
     const w = ctx.measureText(text).width;
@@ -391,11 +562,13 @@ function panel() {
     '<form id="vpForm"><input id="vpInput" autocomplete="off" placeholder="Say something to Root"/></form>' +
     '<div class="vp-hint"><span>Shift+click the map to point</span><button type="button" id="vpHelpBtn">how this works</button></div>' +
     '<div id="vpHelp" hidden><ul>' +
-    '<li><b>Talk.</b> Type above. Root hears you the next time it moves or stops to listen.</li>' +
-    '<li><b>Point.</b> Shift+click the map. Inside the amber square Root sees exactly where; outside it, only a direction and a distance.</li>' +
-    '<li><b>The square</b> is everything Root can see. Your Hand powers work as always, but Root only notices what happens inside it.</li>' +
+    '<li><b>Modes.</b> Each is its own game. <i>Visitor</i>: a body with nine tiles of sight. <i>Shaper</i>: the same body, plus the Hand where it stands. <i>Sky</i>: no body, the whole world coarsely, the Hand anywhere. Pick one when you press Call Root.</li>' +
+    '<li><b>Talk.</b> Type above. Root hears you the next time it acts or stops to listen.</li>' +
+    '<li><b>Point.</b> Shift+click the map. Inside the amber square Root sees exactly where; outside it, only a direction and a distance. The Sky hears the tile.</li>' +
+    '<li><b>The square</b> is everything a body can see. Your Hand powers work as always, but a body only notices what happens inside it. The Sky&rsquo;s dashed square is where it last zoomed.</li>' +
     '<li><b>On the map,</b> faint amber dots are Root&rsquo;s footsteps and amber flags are places it has named. Root remembers them in this world, even if you start it over from the same seed.</li>' +
-    '<li><b>Model.</b> The small menu beside the button picks what Root runs on: Sonnet (default, much cheaper), Opus, or Haiku (cheapest).</li>' +
+    '<li><b>Undo.</b> Anything Root shapes is one act in the Hand&rsquo;s undo, like your own strokes.</li>' +
+    '<li><b>Model.</b> The launch card picks what Root runs on: Sonnet (default, much cheaper), Opus, or Haiku (cheapest).</li>' +
     '<li><b>Speed</b> drops while Root is here so the world is calm between its moves, and comes back when it leaves.</li>' +
     '<li><b>A visit</b> has no time limit. Root leaves when it wants to and writes a field note, or press <i>Send Root home</i> and it says goodbye first.</li>' +
     '<li><b>Cost.</b> The faint number up top is tokens this visit has used; a quiet line marks each million.</li>' +
@@ -431,9 +604,25 @@ function panel() {
     '#rootCall:hover{background:rgba(255,255,255,.05);color:var(--fg);}' +
     '#rootCall.root-here{border-color:#e8a83866;color:#f3d9a4;}' +
     '#rootCall:disabled{cursor:default;opacity:.7;}' +
-    '#rootModel{margin-right:8px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--fg-faint);' +
-    'font:11px/1 inherit;padding:5px 4px;cursor:pointer;} #rootModel:hover{color:var(--fg-dim);}' +
-    '#rootModel option{background:var(--bg-panel);color:var(--fg);}';
+    '#rootModel{background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--fg);' +
+    'font:12px/1 inherit;padding:5px 6px;cursor:pointer;}' +
+    '#rootModel option{background:var(--bg-panel);color:var(--fg);}' +
+    // The launch card: which Root comes, on which model.
+    '#rootLaunch{position:fixed;z-index:60;width:min(360px,calc(100vw - 32px));background:var(--bg-panel);border:1px solid var(--border-hi);' +
+    'border-radius:10px;padding:12px;color:var(--fg);font:12px/1.45 "JetBrains Mono",monospace;box-shadow:0 12px 32px rgba(0,0,0,.45);}' +
+    '#rootLaunch[hidden]{display:none;}' +
+    '#rootLaunch .rl-title{color:var(--fg-dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px 2px;}' +
+    '#rootLaunch .rl-card{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:start;padding:8px 10px;margin-bottom:6px;' +
+    'border:1px solid var(--border);border-radius:8px;cursor:pointer;}' +
+    '#rootLaunch .rl-card:hover{border-color:var(--border-hi);background:rgba(255,255,255,.03);}' +
+    '#rootLaunch .rl-card.on{border-color:#e8a83899;background:rgba(232,168,56,.07);}' +
+    '#rootLaunch .rl-card input{margin:3px 0 0;accent-color:#e8a838;grid-row:span 2;}' +
+    '#rootLaunch .rl-card b{font-weight:600;color:var(--fg);} #rootLaunch .rl-card span{color:var(--fg-dim);font-size:11px;}' +
+    '#rootLaunch .rl-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;color:var(--fg-dim);}' +
+    '#rootLaunch .rl-actions{justify-content:flex-end;}' +
+    '#rootLaunch button{border-radius:7px;padding:7px 12px;font:600 12px/1 inherit;cursor:pointer;border:1px solid var(--border-hi);background:transparent;color:var(--fg-dim);}' +
+    '#rootLaunch button:hover{color:var(--fg);background:rgba(255,255,255,.05);}' +
+    '#rootLaunch #rlBegin{background:#e8a838;border-color:#e8a838;color:#10141c;} #rootLaunch #rlBegin:hover{background:#f3c35c;}';
   document.head.appendChild(css);
   document.body.appendChild(el);
   const btn = el.querySelector('#vpHelpBtn'), help = el.querySelector('#vpHelp');
@@ -459,14 +648,49 @@ function callButton(onClick) {
   if (mode && mode.parentNode) { mode.parentNode.insertBefore(b, mode); mode.style.marginLeft = '0'; }
   else { b.style.cssText = 'position:fixed;top:12px;right:16px;z-index:50;'; document.body.appendChild(b); }
   b.addEventListener('click', onClick);
-  // Which model Root comes as. Sonnet by default: far cheaper per token than Opus, and the same Root.
-  const sel = document.createElement('select');
-  sel.id = 'rootModel'; sel.title = 'Which model Root visits on';
-  [['sonnet', 'Sonnet'], ['opus', 'Opus'], ['haiku', 'Haiku']].forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); });
-  try { sel.value = localStorage.getItem('wb.rootModel') || 'sonnet'; } catch { sel.value = 'sonnet'; }
-  sel.addEventListener('change', () => { try { localStorage.setItem('wb.rootModel', sel.value); } catch { /* fine */ } });
-  b.after(sel);
   return b;
+}
+
+function remember(key, value) { try { localStorage.setItem(key, value); } catch { /* storage blocked: still works */ } }
+function recall(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
+
+// The launch card under the button: which Root comes (its mode) and on which model. Each mode is its own game,
+// so the choice is made in the open, every time, and the last choice is remembered.
+function launchCard(onBegin) {
+  const el = document.createElement('div');
+  el.id = 'rootLaunch'; el.hidden = true;
+  el.innerHTML = '<div class="rl-title">Call Root as</div>' +
+    MODE_IDS.map(id => '<label class="rl-card" data-mode="' + id + '"><input type="radio" name="rootMode" value="' + id + '"><b>' +
+      MODES[id].label + '</b><span>' + MODES[id].blurb + '</span></label>').join('') +
+    '<div class="rl-row"><span>Model</span><select id="rootModel" title="Which model Root visits on"></select></div>' +
+    '<div class="rl-row rl-actions"><button type="button" id="rlCancel">Cancel</button><button type="button" id="rlBegin">Begin</button></div>';
+  document.body.appendChild(el);
+  const sel = el.querySelector('#rootModel');   // Sonnet by default: far cheaper per token than Opus, and the same Root
+  [['sonnet', 'Sonnet'], ['opus', 'Opus'], ['haiku', 'Haiku']].forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); });
+  sel.value = recall('wb.rootModel', 'sonnet');
+  sel.addEventListener('change', () => remember('wb.rootModel', sel.value));
+  const cards = [...el.querySelectorAll('.rl-card')];
+  const pick = id => { cards.forEach(c => { const on = c.dataset.mode === id; c.classList.toggle('on', on); c.querySelector('input').checked = on; }); remember('wb.rootMode', id); };
+  pick(modeOf(recall('wb.rootMode', DEFAULT_MODE)));
+  cards.forEach(c => { c.addEventListener('click', () => pick(c.dataset.mode)); c.querySelector('input').addEventListener('change', () => pick(c.dataset.mode)); });
+  const close = () => { el.hidden = true; };
+  el.querySelector('#rlCancel').addEventListener('click', close);
+  el.querySelector('#rlBegin').addEventListener('click', () => {
+    const on = el.querySelector('input:checked');
+    close(); onBegin(on ? on.value : DEFAULT_MODE, sel.value);
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !el.hidden) { close(); e.stopPropagation(); } });
+  document.addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target) && !e.target.closest('#rootCall')) close(); });
+  return {
+    toggle(anchor) {
+      if (!el.hidden) return close();
+      const r = anchor.getBoundingClientRect();
+      el.style.top = Math.round(r.bottom + 8) + 'px';
+      el.style.right = Math.max(16, Math.round(window.innerWidth - r.right)) + 'px';
+      el.hidden = false;
+    },
+    close,
+  };
 }
 
 function logLine(cls, text) {
@@ -491,7 +715,8 @@ function paint(phase, extra) {
   if (lab) lab.textContent = p.label;
   const panelEl = document.getElementById('visitPanel');
   if (panelEl) panelEl.className = p.cls;
-  const s = document.getElementById('vpStatus'); if (s) s.textContent = p.status + (extra ? ', ' + extra : '');
+  const as = V.mode && phase !== 'idle' && phase !== 'resting' ? ' as ' + MODES[V.mode].label : '';
+  const s = document.getElementById('vpStatus'); if (s) s.textContent = p.status + as + (extra ? ', ' + extra : '');
 }
 
 export const NO_GROUND = '\u0000no-ground';
@@ -511,10 +736,10 @@ function retire() { if (!V.retired) { V.retired = true; paint('resting'); } }
 
 function worldKey() { return 's' + _seed + '-' + W + 'x' + H; }
 
-// hooks: { draw, screenToTile, canvas, getSpeed, setSpeed }
+// hooks: { draw, screenToTile, canvas, getSpeed, setSpeed, onGodMark }
 export function bootVisit(hooks) {
   if (!LOCAL) return;
-  V = { st: newVisitState(), key: null, here: false, phase: 'idle', said: null, retired: false, points: [], speedBefore: null };
+  V = { st: newVisitState(), key: null, here: false, phase: 'idle', said: null, retired: false, points: [], speedBefore: null, mode: null };
   V.hooks = hooks;
   (async function start() {
     // The dev server starts the relay alongside itself, so give it a moment. No relay: the game is just the game.
@@ -524,13 +749,19 @@ export function bootVisit(hooks) {
     }
     if (!ok) return;
     panel();
-    callButton(() => {
+    const card = launchCard((mode, model) => {
+      V.mode = mode;
+      logLine('s', 'Calling Root as ' + MODES[mode].label + ' (' + model + ').');
+      post('/page/summon', { model, mode }).then(r => {
+        if (r && r.started) { V.departed = false; paint('coming'); showPanel(); }
+        else logLine('s', r ? 'Root is already here or on the way.' : 'The relay did not answer.');
+      }).catch(() => logLine('s', 'The relay is not running.'));
+    });
+    const btn = callButton(() => {
       if (V.phase === 'idle') {
-        const model = (document.getElementById('rootModel') || {}).value || 'sonnet';
-        post('/page/summon', { model }).then(r => { if (r) { V.departed = false; paint('coming'); showPanel(); } })
-          .catch(() => logLine('s', 'The relay is not running.'));
-        logLine('s', 'Calling Root (' + model + ').');
+        card.toggle(btn);
       } else if (V.phase === 'coming' || V.phase === 'here') {
+        card.close();
         post('/page/home').then(() => { paint('leaving'); logLine('s', 'You ask Root to head home.'); }).catch(() => {});
       }
     });
@@ -574,6 +805,7 @@ async function watchStatus() {
     try { s = await (await fetch(RELAY + '/page/status?page=' + PAGE_ID)).json(); } catch { continue; }
     if (!s.mine) { retire(); return; }
     if (V.here && !s.present) depart('Root has gone.');            // the session ended without leaving
+    if (s.mode && s.running) V.mode = modeOf(s.mode);               // a session another tab started: follow its mode
     tally(s.tokens || 0);
     if (s.present && s.leaving) paint('leaving');
     else if (s.present) paint('here', s.left != null ? s.left + ' min left' : '');
@@ -585,9 +817,12 @@ async function watchStatus() {
   }
 }
 
+// The sky's st.x/st.y is a gaze, not a body: the saved position stays where the body last stood, so the next
+// visitor does not wake on whatever tile the sky last looked at.
 async function saveState() {
   if (V.retired || !V.key) return false;
-  try { return !!(await post('/page/state?key=' + V.key, { ...V.st, lastTick: tick })); } catch { return false; }
+  const pos = V.mode === 'sky' && V.body ? V.body : {};
+  try { return !!(await post('/page/state?key=' + V.key, { ...V.st, ...pos, lastTick: tick })); } catch { return false; }
 }
 
 // Root's memory of one world (seed + size). A world run again from the same seed keeps the names Root gave its
@@ -607,22 +842,32 @@ function standOnGround() {
   return true;
 }
 
-async function arriveHere() {
+async function arriveHere(mode) {
+  V.mode = modeOf(mode);
+  // The world itself must exist before anything is loaded under its key: a page still building its first world has no
+  // grid yet (a survey of nothing threw on the first real Sky rehearsal), and its seed is not yet the world's.
+  for (let k = 0; k < 160 && !grid; k++) { if (k === 0) logLine('s', 'Root is waiting for the world to form.'); await sleep(500); }
+  if (!grid) return null;
   V.key = worldKey();
   const loaded = await loadState(V.key);
   V.st = loaded.st;
   V.st.plantsThisVisit = 0;
-  // A world still rising from the sea: wait for ground (the relay gives arrival 90 seconds).
-  for (let k = 0; k < 160 && !standOnGround(); k++) { if (k === 0) logLine('s', 'Root is waiting for ground to rise.'); await sleep(500); }
-  if (!standOnGround()) return null;
+  if (V.mode === 'sky') {
+    V.body = inb(V.st.x, V.st.y) ? { x: V.st.x, y: V.st.y } : null;   // where the body last stood, kept for the next visitor
+    V.st.x = W >> 1; V.st.y = H >> 1;    // the sky's gaze starts at the centre; it has no feet to find ground for
+  } else {
+    // A world still rising from the sea: wait for ground (the relay gives arrival 90 seconds).
+    for (let k = 0; k < 160 && !standOnGround(); k++) { if (k === 0) logLine('s', 'Root is waiting for ground to rise.'); await sleep(500); }
+    if (!standOnGround()) return null;
+  }
   V.here = true;
   V.speedBefore = V.hooks.getSpeed();
   V.hooks.setSpeed(Math.min(V.speedBefore, VISIT_SPEED));
   paint('here'); showPanel();
-  logLine('s', 'Root steps through the door.');
+  logLine('s', V.mode === 'sky' ? 'Root opens the sky.' : 'Root steps through the door' + (V.mode === 'shaper' ? ' with the Hand.' : '.'));
   await saveState();
   return (loaded.restarted ? 'You have been in this world before, but it has started over since. The names you gave its ground remain.\n' : '') +
-    arrivalText(V.st);
+    arrivalText(V.st, V.mode);
 }
 
 function depart(line) {
@@ -647,7 +892,7 @@ function tally(n) {
 
 // Called by the page loop after every sim step while the game runs.
 export function visitTick() {
-  if (!V || !V.here) return;
+  if (!V || !V.here || V.mode === 'sky') return;   // a friend follows a body, never the sky's gaze
   if (companionTick(V.st) === 'gone') { V.friendNews = '"' + V.st.companion.name + '" is gone (t' + tick + ')'; logLine('s', 'Root\'s friend ' + V.st.companion.name + ' is gone.'); saveState(); }
 }
 
@@ -661,7 +906,7 @@ function heardPoints() {
   const now = Date.now();
   const lines = V.points.map(p => {
     const s = Math.round((now - p.t) / 1000);
-    return pointText(V.st, p.x, p.y) + (s >= 20 ? ' (' + (s < 90 ? s + ' seconds' : Math.round(s / 60) + ' minutes') + ' ago)' : '');
+    return pointText(V.st, p.x, p.y, V.mode) + (s >= 20 ? ' (' + (s < 90 ? s + ' seconds' : Math.round(s / 60) + ' minutes') + ' ago)' : '');
   });
   V.points = [];
   return '\n' + lines.join('\n');
@@ -682,7 +927,7 @@ async function pump(hooks) {
     let text, sighted = null;
     try {
       if (act.verb === 'arrive') {
-        text = await arriveHere();
+        text = await arriveHere(a.mode);
         if (text === null) text = NO_GROUND;   // the relay turns this into "the world is not ready" and stays outside
       } else {
         let prefix = '';
@@ -693,18 +938,44 @@ async function pump(hooks) {
           V.st = Object.assign(loaded.st, { plantsThisVisit: V.st.plantsThisVisit });
           prefix = 'the world dissolves and re-forms: a different world\n';
         }
-        standOnGround();
+        const sky = V.mode === 'sky', body = !sky;
+        if (body) standOnGround();
         const st = V.st;
+        // What a look is depends on the mode: a body sees its square, the sky sees the whole world coarsely.
+        const look = () => (sky ? survey(st) : perceive(st)) + heardPoints() + friendNews();
+        // A power's target: the sky names a tile, a body a bearing in sight (or where it stands).
+        const target = () => sky ? tileArg(a) : tileAtBearing(st, a.at);
+        // A body's power returns a look (it stands inside the change); the sky's returns the words alone.
+        const did = fn => {
+          const t = target();
+          if (t.error) return t.error;
+          const r = fn(t.x, t.y, t.where);
+          logLine('s', 'Root: ' + r + '.');
+          if (V.hooks.onGodMark) V.hooks.onGodMark();
+          if (body) { standOnGround(); return r + '\n\n' + look(); }
+          return r + heardPoints();
+        };
         switch (act.verb) {
-          case 'look': text = perceive(st) + heardPoints() + friendNews(); sighted = sightings(st); break;
+          case 'look': case 'survey': text = look(); sighted = sky ? null : sightings(st); break;
+          case 'zoom': text = gazeAt(st, a.x, a.y) + heardPoints(); sighted = sightings(st); break;
           case 'walk': text = (a.path ? walkPath(st, a.path) : walkFrom(st, a.direction, a.steps)) + '\n\n' + perceive(st) + heardPoints() + friendNews(); sighted = sightings(st); break;
           case 'befriend': text = befriend(st, a.name); logLine('s', text.startsWith('befriended') ? 'Root ' + text + '.' : 'Root reaches for a friend: ' + text); await saveState(); break;
           case 'plant': text = plantAt(st); await saveState(); text += heardPoints(); break;
-          case 'name_place': text = namePlace(st, a.name); logLine('s', 'Root named a place: ' + String(a.name || '')); await saveState();
+          case 'name_place': {
+            const t = sky ? target() : { x: st.x, y: st.y };
+            text = t.error || namePlace(st, a.name, t.x, t.y);
+            if (!t.error) { logLine('s', 'Root named a place: ' + String(a.name || '')); await saveState(); }
             text += heardPoints(); break;
+          }
+          case 'shape': text = did((x, y, where) => shapeAt(x, y, a.power, a.radius, sky ? SKY_RADIUS_MAX : SHAPER_RADIUS_MAX, where)); await saveState(); break;
+          case 'ember': text = did(emberAt); await saveState(); break;
+          case 'spring': text = did(springAt); break;
+          case 'seed': text = did(seedAt); break;
+          case 'weather': text = weatherEvent(a.event); logLine('s', 'Root: ' + text + '.'); V.hooks.onGodMark && V.hooks.onGodMark(); text += heardPoints(); break;
+          case 'sea': text = seaEvent(a.direction); logLine('s', 'Root: ' + text + '.'); V.hooks.onGodMark && V.hooks.onGodMark(); text += heardPoints(); break;
           case 'say': V.said = { text: String(a.text || ''), until: Date.now() + 15000 };
             logLine('r', 'Root: ' + String(a.text || '')); text = 'said' + heardPoints(); break;
-          case 'leave': text = (await depart('Root leaves through the door.')) ? 'What you left in this world is kept.' : 'You leave.'; break;
+          case 'leave': text = (await depart(sky ? 'Root closes the sky.' : 'Root leaves through the door.')) ? 'What you left in this world is kept.' : 'You leave.'; break;
           default: text = 'nothing happens ("' + act.verb + '" is not a thing you can do)';
         }
         text = prefix + text;

@@ -1117,7 +1117,8 @@ function dismissIntro(){
 // Root's visit: on a locally served page with the relay running, a "Call Root" toggle joins the top bar.
 // Inert on the public site and when no relay answers; the game is unchanged until Root is called in.
 bootVisit({draw:draw,screenToTile:screenToTile,canvas:canvas,getSpeed:function(){return speed;},
-  setSpeed:function(s){speed=s;var sp=document.getElementById('speed');if(sp)sp.value=s;}});
+  setSpeed:function(s){speed=s;var sp=document.getElementById('speed');if(sp)sp.value=s;},
+  onGodMark:refreshUndoBtn});   // Root's shaping is one act in the Hand's undo, so the button must wake for it
 
 // Verification handle, active ONLY with ?debug in the URL (inert for normal users). Lets the
 // gate-blind river visual verify drive load->rivers->draw from one script call, no file dialog.

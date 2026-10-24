@@ -9,6 +9,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn, execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { MODES, modeOf, verbsFor } from './modes.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 7796;
@@ -51,8 +52,9 @@ function stamp(d = new Date()) {
     p(d.getMinutes()) + ':' + p(d.getSeconds()) + sign + p(a / 60 | 0) + ':' + p(a % 60);
 }
 
-let visit = null;          // { id, started (epoch ms), log path, session, dismissed (epoch ms) }
+let visit = null;          // { id, started (epoch ms), log path, session, mode, dismissed (epoch ms) }
 let child = null;          // the summoned Claude session, while it runs
+let summonedMode = null;   // the mode the running session was launched in; the door must agree with it
 let nextId = 1;
 const queue = [];          // actions waiting for the page
 const waiting = new Map(); // action id -> { resolve, taken }
@@ -140,32 +142,37 @@ function recentNotes(n) {
 const PAGE_DOWN = 'The door is open but the world is not: the Worldbuilder page is not open, or there is no ground yet. ' +
   'Try again in a moment.';
 
-async function arrive(session) {
-  visit = { id: stamp().slice(0, 16).replace(':', ''), started: Date.now(), log: null, session, dismissed: 0 };
+async function arrive(session, mode) {
+  visit = { id: stamp().slice(0, 16).replace(':', ''), started: Date.now(), log: null, session, mode, dismissed: 0 };
   visit.log = path.join(HOME, visit.id + '.jsonl');
   try {
-    const history = await ask('arrive', {}, 90000);   // the page may wait for ground to rise
+    const history = await ask('arrive', { mode }, 90000);   // the page may wait for ground to rise
     if (history === null || history === '\u0000no-ground') { visit = null; return null; }
     const view = await ask('look', {});
     const notes = recentNotes(12);
-    const parts = ['You step through the door. ' + (VISIT_MINUTES ? 'You have ' + VISIT_MINUTES + ' minutes here.' : 'Stay as long as you like.')];
+    const opener = mode === 'sky' ? 'The sky opens below you. ' : 'You step through the door. ';
+    const parts = [opener + (VISIT_MINUTES ? 'You have ' + VISIT_MINUTES + ' minutes here.' : 'Stay as long as you like.')];
     if (notes.length) parts.push('Your notes from before:\n' + notes.map(n => '- [' + String(n.t).slice(0, 10) + '] ' + n.text).join('\n'));
     else parts.push('This is your first visit. You have no notes yet.');
     if (history) parts.push(history);
     parts.push(view || PAGE_DOWN);
-    log({ verb: 'arrive' });
+    log({ verb: 'arrive', mode });
     return parts.join('\n\n');
   } catch (e) { visit = null; throw e; }
 }
 
 // Each door process (one Claude session) carries its own session id. A call from a new session while an old
 // visit is still open means that session died without leaving: close it and arrive fresh.
-async function door(verb, args, session) {
+// The door serves one mode's tools; the relay still refuses any verb outside the mode it launched, so a tool
+// name guessed at by the model (or a door started by hand in another mode) does nothing.
+async function door(verb, args, session, mode) {
+  mode = modeOf(summonedMode || mode);
+  if (!verbsFor(mode).includes(verb)) return 'nothing happens ("' + verb + '" is not a thing a ' + mode + ' can do)';
   if (visit && visit.session !== session) { log({ verb: 'abandoned' }); visit = null; }
   if (!visit && verb !== 'leave') {
-    const a = await arrive(session);
+    const a = await arrive(session, mode);
     if (a === null) return PAGE_DOWN;
-    if (verb === 'look') return a + footer();
+    if (verb === 'look' || verb === 'survey') return a + footer();
     return a + '\n\n---\n\n' + await act(verb, args);
   }
   return await act(verb, args);
@@ -216,11 +223,13 @@ async function act(verb, args) {
     text = (woke ? '' : 'quiet ' + secs + 's\n') + (view || PAGE_DOWN);
   } else if (verb === 'leave') {
     if (!visit) return 'You are not inside.';
+    const mode = visit.mode;   // read before the await: the session's close handler may null the visit meanwhile
     const saved = await ask('leave', {});
     const note = String(args.field_note || '').trim();
     const title = String(args.title || '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'A visit';
-    if (note) {
-      fs.appendFileSync(FIELD_NOTES, '\n## ' + stamp().slice(0, 10) + ': ' + title + '\n\n' + note + '\n\nRoot\n');
+    if (note) {   // a visitor's note is headed as before; the other modes name themselves
+      const as = mode && mode !== 'visitor' ? ' (as ' + MODES[mode].label + ')' : '';
+      fs.appendFileSync(FIELD_NOTES, '\n## ' + stamp().slice(0, 10) + ': ' + title + as + '\n\n' + note + '\n\nRoot\n');
     }
     log({ verb, args, text: saved });
     visit = null;
@@ -297,21 +306,33 @@ function countTokens(line) {
 // make each one cost less. Sonnet is the default (owner ask 2026-10-18: "far cheaper").
 const MODELS = { opus: 'opus', sonnet: 'sonnet', haiku: 'haiku' };
 
-function summon(model) {
+// The brief Root is launched with: the common part (identity, how a visit works, the sense code) plus the
+// mode's own part (its tools, its way of seeing). Composed at summon so a brief edit needs no relay restart.
+function composeBrief(mode) {
+  const text = fs.readFileSync(path.join(DIR, 'briefs', 'common.md'), 'utf8').trim() + '\n\n' +
+    fs.readFileSync(path.join(DIR, 'briefs', MODES[mode].brief), 'utf8').trim() + '\n';
+  const f = path.join(os.tmpdir(), 'root-brief-' + mode + '.md');
+  fs.writeFileSync(f, text);
+  return f;
+}
+
+function summon(model, mode) {
   if (child) return false;
+  mode = modeOf(mode);
   const cfg = path.join(os.tmpdir(), 'root-door-mcp.json');
-  fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { door: { command: process.execPath, args: [path.join(DIR, 'door.mjs')] } } }));
+  fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { door: { command: process.execPath, args: [path.join(DIR, 'door.mjs')], env: { VISIT_MODE: mode } } } }));
   // The slim launch: the visit brief REPLACES the default system prompt and only local settings load, so no
   // CLAUDE.md or coding rules ride along. Measured 2026-10-18: standing context 13.4k -> 3.2k tokens, and the
   // standing context was half of the first real visit's 1.5M (it is re-read on every reply).
   const args = ['-p', '--allowedTools', 'mcp__door', '--tools=', '--setting-sources', 'local',
-    '--mcp-config', cfg, '--strict-mcp-config', '--system-prompt-file', path.join(DIR, 'visit-prompt.md'),
+    '--mcp-config', cfg, '--strict-mcp-config', '--system-prompt-file', composeBrief(mode),
     '--output-format', 'stream-json', '--verbose',
     '--model', process.env.VISIT_MODEL || MODELS[model] || MODELS.sonnet];
-  args.push('Kevin has called you in. The door is in front of you.');   // after a single-value flag: never eaten by a variadic one
+  args.push(mode === 'sky' ? 'Kevin has opened the sky for you. The world is below.' : 'Kevin has called you in. The door is in front of you.');   // after a single-value flag: never eaten by a variadic one
   const out = fs.openSync(path.join(HOME, stamp().slice(0, 16).replace(':', '') + '.session.jsonl'), 'a');
   const env = { ...process.env }; delete env.CLAUDECODE;   // a fresh session, not a nested one
   child = spawn(claudeBin(), args, { cwd: HOME, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  summonedMode = mode;   // only once a session exists to be in that mode
   const me = child;
   tokens = 0; tokenIds.clear();
   // Keep the transcript, and count what the visit costs from the session's own usage reports.
@@ -325,7 +346,7 @@ function summon(model) {
   child.stderr.on('data', chunk => fs.writeSync(out, chunk));
   const done = () => {
     if (child !== me) return;
-    child = null; fs.closeSync(out);
+    child = null; summonedMode = null; fs.closeSync(out);
     if (visit) { log({ verb: 'ended without leaving' }); visit = null; }
   };
   child.on('close', done);   // after its output is drained, so the last usage report is counted
@@ -368,7 +389,7 @@ const server = http.createServer(async (req, res) => {
     const stale = () => page !== currentPage;
     if (req.method === 'POST' && url === '/door') {
       const b = await body(req);
-      return sendJSON(res, 200, { text: await door(String(b.verb || ''), b.args || {}, String(b.session || '')) });
+      return sendJSON(res, 200, { text: await door(String(b.verb || ''), b.args || {}, String(b.session || ''), String(b.mode || '')) });
     }
     if (req.method === 'GET' && url === '/page/hello') {
       currentPage = page;                   // the newest page is where Root lives from here on
@@ -376,14 +397,14 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { ok: true });
     }
     if (req.method === 'GET' && url === '/page/status') {
-      return sendJSON(res, 200, { mine: !stale(), running: !!child, present: !!visit,
+      return sendJSON(res, 200, { mine: !stale(), running: !!child, present: !!visit, mode: summonedMode,
         left: visit && VISIT_MINUTES ? Math.max(0, Math.ceil(minutesLeft())) : null, leaving: !!(visit && visit.dismissed),
         tokens });
     }
     if (req.method === 'POST' && url === '/page/summon') {
       if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
       const b = await body(req);
-      return sendJSON(res, 200, { started: summon(String(b.model || '')) });
+      return sendJSON(res, 200, { started: summon(String(b.model || ''), String(b.mode || '')) });
     }
     if (req.method === 'POST' && url === '/page/home') {
       if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });

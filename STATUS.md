@@ -2,6 +2,19 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-23 - Root modes: Visitor, Shaper, Sky - DONE (gate: see commit)
+Newest handoff: **`docs/04 Handoffs/2026-10-23 Root modes - Visitor, Shaper, Sky.md`** - read it first.
+
+Call Root now opens a launch card: **Visitor** (the body as before), **Shaper** (the same body plus the Hand where it
+stands: shape land and climate, fire, springs, life, each returning a look) and **Sky** (no body; a coarse survey of
+the whole world, a zoom, and the Hand anywhere, plus weather and the sea). Each mode is its own brief
+(`visit/briefs/common.md` + `<mode>.md`), tool set and way of seeing, registered once in `visit/modes.mjs`; the door
+serves one mode's tools and the relay refuses any verb outside it. Every Root power is one act in the Hand's undo.
+Field notes from Shaper/Sky are headed "(as Shaper)" / "(as Sky)". Rehearsed scripted (all three modes) and with a
+real haiku session (Sky lowered an ocean world and seeded it; Shaper built a causeway). 35 visit tests.
+**Next:** the owner calls Root in as Sky on Opus with no brief beyond the mode's, and watches what it builds. Open
+question for him: in Sky, does he keep the Hand (two gods) or only watch; both are a setting away.
+
 ## Session 2026-10-17 - Root visits the world - DONE (gate: see commit)
 Newest handoff: **`docs/04 Handoffs/2026-10-17 Root visits the world.md`** - read it first.
 
