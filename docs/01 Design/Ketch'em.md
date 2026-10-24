@@ -196,3 +196,6 @@ Kevin plays the same verbs with keys and clicks.
 - Asked how to defend against an attack: sec. 11.3.
 - Collecting, levelling up and evolving were the fun of Pokemon; breeding is cool and this need not be included,
   but if it were: ideas wanted. Proposal in Mechanics sec. 20.
+- Confirmed: animals released wild at the spot when a player is beaten (Mechanics sec. 11.6).
+- Confirmed: the growth and evolution system (Mechanics sec. 20) is IN. Growth moves the real genome; evolution is
+  the species key changing. Open: widen the species key with light and height so every type can evolve.

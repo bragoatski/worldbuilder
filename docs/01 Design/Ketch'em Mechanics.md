@@ -608,7 +608,7 @@ sim genes  A P S E tol sz viv gen hue      sim state  en ag N(species living)
                                       wallet -> balls -> harder catches -> rarer stock -> master ball -> apex
 ```
 
-## 20. Growth and evolution (proposal; owner: "we do not need to include this, but if we were to")
+## 20. Growth and evolution (owner ruling 2026-10-24: in)
 
 The sim already has the raw material: a creature's preferences and size are its genome, the species is a bucket of
 that genome, and children inherit it. So growth can be REAL, not a number on a card: training a creature moves its
