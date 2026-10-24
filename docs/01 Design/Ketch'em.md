@@ -183,8 +183,9 @@ Kevin plays the same verbs with keys and clicks.
 2. Types, levels, Pokedex with nicknames; balls, throw, bait, sell, wallets, the party row.
 3. Abilities, party effects, danger.
 4. Plants and rarity.
-5. Pens (Breeder).
-6. Items.
+5. Growth and evolution (Mechanics sec. 20).
+6. Pens (Breeder).
+7. Items.
 
 ## Owner rulings, round 4 (2026-10-24)
 - An attack with no grazer to take: wake at the nearest store with half the money AND lose everything else carried
