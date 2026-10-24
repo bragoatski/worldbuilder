@@ -526,30 +526,100 @@ Root's walk tool takes the same path grammar; its stride per leg is the table ab
 | animals may stand on roads | pathing | road is passable land |
 | the road flag | new `Uint8Array road` beside `grid` | 1 = road; saved with the game |
 
-## 14. Road generation
+## 14. Road generation, in detail
 
-| parameter | value |
+### 14.1 Store placement
+| step | rule |
 |---|---|
-| stores | 4, on land, pairwise distance >= W/3, all on one landmass (else re-place) |
-| spine | random spanning tree over the stores (random edge order, union-find) |
-| link routing | A* over land; cost 1 per tile + meander noise m x noise(x, y) where m per link is uniform 0-3 (0 straight, 3 wandering) |
-| extra links | with 35%: one more store pair (makes a loop); with 15%: two |
-| spurs | count uniform 0-10; each starts at a random road tile and routes toward a random target: lake, peak, coast or a random land tile; length capped 25; dead end |
-| width | 1 tile, 8-connected |
-| render | concrete grey #8a8f94 overlay, drawn above terrain, below life |
+| landmasses | flood-fill land (everything not ocean) into components; take the largest |
+| candidates | 400 random tiles on that mass that are not mountain, glacier, volcanic, lake or river, and have at least 6 of 8 neighbours walkable |
+| first store | the candidate nearest the mass's centroid |
+| next three | greedy farthest-point: each new store is the candidate that maximises its minimum distance to the stores placed, subject to distance >= W/3 to each (relax to W/4, then W/5 if no candidate qualifies) |
+| store tile | the tile itself becomes a store: 1 tile, walkable, safe; the 8 neighbours are cleared of plants once |
+| name | from the biome under it: `<Biome> <Post>` where Post rotates Post / Depot / Trading / Outfitters, so e.g. Savanna Post, Tundra Depot. Root and Kevin see the same names; the Almanac lists them with coordinates once discovered |
 
-## 15. Board generation
+### 14.2 The spine
+| step | rule |
+|---|---|
+| edges | all 6 store pairs, weighted by straight-line distance |
+| tree | Kruskal with a shuffled tie-break: a random spanning tree biased to short links (3 links) |
+| extra links | 35%: one more pair (a loop); 15%: two more (two loops or a loop and a chord) |
+| variant pairing | 20%: ignore the shortest-link bias entirely and take a random spanning tree, so sometimes two far stores join directly |
 
-| setting | land target | genesis | notes |
-|---|---|---|---|
-| continent | 60 + 35 x sqrt(r) % | one seed, clumped | default |
-| archipelago | 60-75% | several seeds | boats matter |
-| highlands | 70-95% | continent plus raised peaks | Climber matters |
+### 14.3 Routing one link
+A* from store to store over land. Cost per tile entered:
 
-The board runs genesis forward until land >= target, then freezes land growth (erosion continues), seeds flora and
-fauna as a full world, runs 300 ticks so life settles, then play begins. Species have no names yet at tick 300
-(sim gate `SPECIES_MIN_GEN`), so early catches are nicknamed before they have a scientific name; the scientific name
-attaches once the line is old enough.
+| terrain | cost | note |
+|---|---|---|
+| grassland, savanna, steppe, desert, tundra, arctic | 1.0 | open |
+| forest, jungle, wetland, mesa | 1.6 | roads prefer to skirt them |
+| hills | 2.2 | |
+| river | 4.0 | the road crosses as a bridge tile (drawn as planks); rivers do not stop a road, they cost |
+| mountain, glacier, volcanic, lake, coast, ocean | impassable | |
+| existing road | 0.3 | links share roads where it is cheap, which makes junctions |
+| diagonal step | x1.41 | |
+| meander | + m x noise(x, y) | m per link uniform 0-3; noise is value noise, period 8 tiles, range 0-1; m 0 is a straight road, m 3 wanders |
+| doubling penalty | +2 | a tile with a road tile beside it that is not the one being extended, so a road does not run parallel to itself one tile over |
+
+Result: a 1-tile, 8-connected path. Every store is on the network by construction. If A* fails (a store cut off by
+a lake ring), re-place that store (14.1) and retry; after 3 failures, re-roll the board.
+
+### 14.4 Spurs
+| step | rule |
+|---|---|
+| count | uniform 0-10 |
+| start | a random road tile at least 6 tiles from any store |
+| target | one of: nearest lake shore, nearest peak foot (tile adjacent to mountain), nearest coast, a random land tile 10-25 tiles away; weights 3 / 2 / 2 / 3 |
+| route | same A*, m uniform 1-3 (spurs wander more), length cap 25 |
+| end | a dead end; 30% of spurs end at a small landmark tile (a cairn, a dead tree, a pool) that the Almanac names |
+
+### 14.5 Signposts
+Every junction (a road tile with 3+ road neighbours) and every store doorstep gets a signpost: standing on it reads
+the stores reachable along each branch with the road distance, e.g. `N: Tundra Depot 41 - E: Savanna Post 17`.
+Kevin hovers it; Root's look lists `signpost: ...` when it is in sight. This is how you find the next store without
+a map.
+
+### 14.6 Rendering
+| element | draw |
+|---|---|
+| road | concrete grey #8a8f94, the full tile, 1px darker edge; above terrain, below plants and life |
+| bridge | the road colour with 3 plank lines in #6b5a45 |
+| junction | no special mark; the signpost is a 2px post with a tiny board |
+| store | a 1-tile building: dark roof #3a3f47, a lit door #f3d9a4, the name as a label on hover; Root sees `S` in the ground row |
+| landmark | its own tiny glyph |
+| undiscovered | hidden under fog until a road tile is inside sight; then the road is revealed tile by tile as sight moves, and a store is revealed when a road leading to it is revealed within 12 tiles, so the road hints at where to go |
+
+## 15. Board generation, in detail
+
+The sim normally grows land over thousands of ticks and caps it at `maxLandCap` 0.55. Ketch'em needs a full board
+first and no further growth, so the mode runs a headless genesis and then freezes land.
+
+### 15.1 Settings
+| setting | land target | genesis knobs | peaks | rivers | boats matter |
+|---|---|---|---|---|---|
+| Continent (default) | 60 + 35 x sqrt(r) %, r uniform (median ~85%) | one volcanic origin at the centre, coastal spread high (clumped) | normal | normal | little |
+| Archipelago | 60-75% uniform | 4-7 origins spread out, coastal spread low | normal | fewer | yes |
+| Highlands | 70-95% uniform | one origin, elevation intensity x1.4 | many (Climber matters) | many springs | little |
+| Custom (dev) | any | the sim's own controls | | | |
+
+### 15.2 The build
+| step | what | time budget |
+|---|---|---|
+| 1 | seed the RNG, set world size (96 default; 128 as an option), set `maxLandCap` = target | |
+| 2 | run `step()` with ecology off until land >= target (volcanic genesis + coastal spread); progress bar reads land % | the long part: measured before shipping; a 96x96 continent to 85% is thousands of ticks, so this runs in a Worker |
+| 3 | freeze: `maxLandCap` = current land; erosion continues as normal | |
+| 4 | `generateRivers()`; add 2-6 springs on high ground for Highlands | |
+| 5 | seed life as the sim does for a full world: flora clusters, then grazer groups, then predators, apex and omnivores per the sim's rescue rules | |
+| 6 | run 300 ticks with ecology on so life settles; then assign `prefElev` to every creature from its tile | |
+| 7 | place stores, build roads and spurs, place signposts and landmarks (sec. 14) | |
+| 8 | fog on everywhere; both players placed on the doorstep of store 1 (the centroid store), one tile apart; store 1 and its doorstep revealed | |
+| 9 | the first autosave, slot named by the player (default: the seed) | |
+
+Root is called in from the launch card after the board exists; its first look is the store doorstep.
+
+### 15.3 Why both start at one store
+Co-op begins with a meeting, the first road is a shared choice, and a lost player can always say "back to the first
+store". Decision point: start at different stores to force the map to be uncovered from two sides.
 
 ## 16. Sight and fog
 
@@ -571,22 +641,62 @@ attaches once the line is old enough.
 | worst case | a creature 10 elevation units from its preference keeps 75% + 25% x e^-1 = 84% of its fit |
 | acceptance | 1000-tick harness protocol: extinction rate and carnivore persistence within 3 points of the C2 baseline, else weight drops to 0.15 |
 
-## 18. Save file
+## 18. Save file, in detail
 
-One JSON per slot: `~/root/ketchem/<slot>.json` (Root's record) with a copy the page can load.
+### 18.1 Where
+| where | holds | why |
+|---|---|---|
+| IndexedDB in the browser (`ketchem` store, one record per slot) | the whole game | works on the public Pages build too; no server; survives reloads |
+| the relay, `~/root/ketchem/slots/<slot>.json` | a mirror of every local save, written through `/page/save` | Root's record of the game, readable from the file tree; a backup outside the browser |
+| export / import | the same JSON as a download / file picker | moving a game between browsers; sharing a board |
 
-| key | contents |
+Write order on save: build the JSON in memory, write IndexedDB, then POST the mirror. A failed mirror never fails
+the save (the panel shows a faint "not mirrored"). Relay side writes `<slot>.json.tmp` then renames.
+
+### 18.2 Slots
+| rule | value |
 |---|---|
-| sim | `buildSnapshot()` plus `prefElev` per creature and the `road` array |
-| fog | bit per tile |
-| stores | 4 x {x, y, stock: [creatures], box: [creatures]} (box shared, stored once) |
-| players | 2 x {x, y, boat, wallet, stones {basic, strong, master}, pack [plants], party [creatures], name} |
-| almanac | per species key: scientific, nickname, seen, caught, bestL, abilities, firstWorld |
-| awareness | per living creature id: state, until tick |
-| bait | active baits |
-| meta | slot name, created, lastSaved (local time with offset), seed, board setting, ticks played |
+| count | unlimited; the launch card lists them newest first with name, seed, setting, ticks played, both wallets, last saved (local time with offset) |
+| name | typed by the player at the first save; default the seed |
+| autosave | on entering a store, every 2,000 ticks, and when Root leaves or the page is closed (`beforeunload`, best effort) |
+| manual | F5 (Kevin) or `save` (Root) writes the current slot; `save as` makes a new one |
+| load | from the launch card (Root is not in the world during a load; if present it is told "the world dissolves" and gets the loaded one, as today) |
+| delete | from the launch card, with a confirm |
 
-Autosave on entering a store and every 2,000 ticks; manual save from the panel; load from the launch card.
+### 18.3 Schema (version 1)
+```
+{
+  version: 1,
+  meta:    { slot, seed, setting, size: [W, H], created, lastSaved, ticksPlayed, worldKey },
+  sim:     buildSnapshot()           // grid, elev, aridity, temp, flora, fauna, remnants, rivers, springs, sea,
+                                     // god climate; PLUS per creature: prefElev, growthXP, growthLevel, awareness
+  road:    Uint8Array as base64      // 0 none, 1 road, 2 bridge, 3 store, 4 signpost, 5 landmark
+  fog:     Uint8Array as base64      // 1 bit per tile, packed
+  stores:  [{ x, y, name, stock: { amber, geode, obsidian, potions: {...} }, restockAt, held: [creature] }]
+  cabinet: [creature]                // shared storage (the owner's "box"); creatures are full sim records
+  players: [{ id: "kevin" | "root", name, x, y, boat, wallet,
+              stones: { amber, geode, obsidian }, pack: [plant | potion], party: [creature], follower: id | null,
+              effects: [{ potion, until }], knockedDown: { at, until } | null }]
+  almanac: { species: { [key]: { scientific, nickname, namedBy, seen, caught, bestLevel, abilities: [...],
+                                 variants: [...], evolvedFrom, firstSeen: { tick, x, y } } },
+             places: { stores: [...], landmarks: [...] } }
+  baits:   [{ x, y, kind, by, until, creatureId }]
+  encounters: { [creatureId]: { player, fails, since } }
+  pulses:  { [creatureId]: { left, next } }
+}
+```
+A creature record is the sim's own object (so a released creature re-enters the world as itself) plus the mode's
+fields: `growthXP`, `growthLevel`, `caughtAt`, `name`, `by`.
+
+### 18.4 Rules
+| rule | why |
+|---|---|
+| the species key is recomputed on load, never trusted from the file | evolution can change it; the sim is the truth |
+| N (population rarity) is never saved | it is recounted on every look |
+| fled creatures are reset to calm on load | the owner reads a save as a fresh start on that moment |
+| a save made on a newer version than the page refuses to load, with a message | no silent corruption |
+| migrations are a list of functions by version | the usual |
+| size budget | a 96x96 world with 400 fauna and 4,000 flora is ~600 KB of JSON; IndexedDB and the relay take that without trouble; 128x128 is ~1 MB |
 
 ## 19. Relationships, in one view
 
@@ -693,3 +803,52 @@ small icon beside the player's dot with a shrinking arc for time left; Root read
 
 Economy check: a first hour's 100-150 coins buys one Slumber and a few Fleetfoot, not a Survey; Smoke and Homeward
 are what a player with a valuable party saves for before hunting predators.
+
+## 22. Co-op controls on the keyboard (Kevin's character)
+
+Root plays the same verbs through the door. Kevin plays on the page.
+
+### 22.1 Movement
+| key | action |
+|---|---|
+| W A S D or arrows | move one tile; diagonals by two keys together (W+D) |
+| hold | repeats; the stride table (sec. 12) is a budget: at most 2 tiles per 6-tick window on land, 4 on road, 1 on steep ground, so holding a key on a road is visibly faster than on grass |
+| Shift + direction | a full stride in one press (2 on land, 4 on road), the keyboard twin of Root's path walk |
+| into water | the boat appears; same keys |
+
+### 22.2 Acting
+| key | action |
+|---|---|
+| Tab | cycle the target among creatures within 2 tiles (nearest first); the ring brightens on the target |
+| click a creature | target it (within 2 tiles) |
+| Space | throw the selected stone at the target (must be adjacent) |
+| 1 / 2 / 3 | select Amber / Geode / Obsidian; the HUD shows the count |
+| B | bait menu: plant, scatter, meat, stake; then a direction key for the tile |
+| E | interact: pick the plant on your tile; open the store when on its tile; read a signpost |
+| F | follower: let the selected party creature out, or recall it |
+| P | potions: a row appears; 1-9 drinks or arms one; a thrown potion then wants a target (Tab or click) |
+| I | pack (plants, potions, stones) |
+| M | the Almanac |
+| C | party and cabinet (at a store); drag between them |
+| Enter | chat to Root; Shift+click still points |
+| Esc | close any panel |
+| F5 / F9 | save / load menu |
+
+### 22.3 Camera and HUD
+| element | rule |
+|---|---|
+| camera | follows Kevin's character; `V` toggles following Root; the mouse wheel zooms as today; the undiscovered map is cloud |
+| HUD (top) | wallet, stones 1/2/3 with counts, pack count, active potion icons with arcs |
+| party row (bottom left) | three cards: drawing, name, level, type badge, ability icons, follower collar on the one out |
+| Root's panel (bottom right) | as today: chat, status, tokens; plus Root's party row under its status |
+| target | the ring and the level tag; odds number appears under the tag within 2 tiles |
+
+### 22.4 Two players, one world
+| rule | value |
+|---|---|
+| turns | none; both act in real time; Root's actions resolve as its door calls arrive |
+| collision | the two characters may stand on one tile |
+| giving | `give` while adjacent: coins, a stone, a plant or potion, or a party creature; Kevin: G then a choice |
+| corral | automatic when both are adjacent to one creature on opposite sides |
+| speech | Root hears Kevin's typed lines as today; Root's says float at its dot and go to the panel |
+| who can act on whom | nothing; a player cannot be targeted by the other |
