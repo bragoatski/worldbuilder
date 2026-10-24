@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 
 
 const sim = await import('./sim.js');
@@ -1002,4 +1002,149 @@ describe('rare volcano birth (in-run elev-10 emergence)', () => {
       expect(b.centers).toEqual(a.centers);                  // same seed -> same volcanoes (deterministic)
     } finally { sim.CFG.volcanoBirthRate = wasRate; sim.CFG.volcanoBirthCheckEvery = wasEvery; }
   }, 30000);
+});
+
+// Ketch'em step 1 (2026-10-24): the height axis, the road layer and the widened species key. The sim changes are
+// built so that with CFG.faunaElevWeight 0 and no road tile set the ecology is byte-identical to the C2 baseline
+// (proved by the harness, not here); these tests pin the behaviour that IS new. Hand-built 32x32 world: ocean,
+// one plains rectangle x 4..27 / y 4..27 at elevation 2, its south band y 20..27 lifted to elevation 6.
+describe("Ketch'em step 1: height axis, roads, widened species key", () => {
+  function world(seed) {
+    sim.setWorldSize(32);
+    sim.initWorld(seed);
+    for (let i = 0; i < 32 * 32; i++) {
+      const x = i % 32, y = (i / 32) | 0;
+      const land = x >= 4 && x <= 27 && y >= 4 && y <= 27;
+      sim.grid[i] = land ? sim.T.PLAINS : sim.T.OCEAN;
+      sim.elev[i] = land ? (y >= 20 ? 6 : 2) : 0;
+      sim.road[i] = 0;
+    }
+    sim.flora.length = 0; sim.fauna.length = 0;
+  }
+  afterAll(() => { sim.setWorldSize(96); sim.initWorld(1); });
+
+  it('a creature is born with a height preference within 1.5 of its tile, clamped to 0..10', () => {
+    world(11);
+    for (let k = 0; k < 40; k++) {
+      const low = sim.makeFauna(10, 10, 'herbivore'), high = sim.makeFauna(10, 24, 'carnivore');
+      expect(Math.abs(low.prefElev - 2)).toBeLessThanOrEqual(1.5);
+      expect(Math.abs(high.prefElev - 6)).toBeLessThanOrEqual(1.5);
+    }
+    sim.elev[sim.idx(12, 12)] = 10;
+    for (let k = 0; k < 40; k++) {
+      const top = sim.makeFauna(12, 12, 'apex');
+      expect(top.prefElev).toBeLessThanOrEqual(10);
+      expect(top.prefElev).toBeGreaterThanOrEqual(8.5);
+    }
+  });
+
+  it('the height term is a broad quarter-weight multiplier: 10 units off keeps 84% of fit; weight 0 is the old fit', () => {
+    world(12);
+    const wasW = sim.CFG.faunaElevWeight;
+    try {
+      const f = sim.makeFauna(10, 10, 'herbivore');
+      sim.CFG.faunaElevWeight = 0;
+      const old = sim.computeFaunaClimateFit(f);
+      expect(old).toBeGreaterThan(0);
+      sim.CFG.faunaElevWeight = 0.25;
+      f.prefElev = 2; // exactly its tile
+      expect(sim.computeFaunaClimateFit(f)).toBeCloseTo(old, 10);
+      f.prefElev = 12; // 10 units off
+      expect(sim.computeFaunaClimateFit(f) / old).toBeCloseTo(0.75 + 0.25 * Math.exp(-1), 6);
+      sim.CFG.faunaElevWeight = 0;
+      expect(sim.computeFaunaClimateFit(f)).toBeCloseTo(old, 10); // off = the three-axis fit, whatever prefElev says
+    } finally { sim.CFG.faunaElevWeight = wasW; }
+  });
+
+  it('children inherit the height preference with drift; clones copy it; a parent without one gets the tile', () => {
+    world(13);
+    const p = sim.makeFauna(10, 10, 'herbivore');
+    p.prefElev = 5;
+    for (let k = 0; k < 40; k++) {
+      const c = sim.mutateFaunaChild(p, 11, 10);
+      expect(c.prefElev).toBeGreaterThanOrEqual(0);
+      expect(c.prefElev).toBeLessThanOrEqual(10);
+      expect(Math.abs(c.prefElev - 5)).toBeLessThan(4); // sd 0.6: six sigma
+    }
+    expect(sim.cloneFaunaChild(p, 11, 10).prefElev).toBe(5);
+    const legacy = sim.makeFauna(10, 24, 'herbivore'); delete legacy.prefElev;
+    const c2 = sim.mutateFaunaChild(legacy, 10, 25);
+    expect(Math.abs(c2.prefElev - 6)).toBeLessThanOrEqual(1.5); // born from its tile, like a founder
+    expect(Number.isNaN(sim.computeFaunaClimateFit(legacy))).toBe(false); // and the parent itself still has a fit
+  });
+
+  it('the species key and the binomial change at a light or height bucket edge; exactly 10 shares the top bucket', () => {
+    const base = { type: 'herbivore', hue: 40, prefArid: 3.0, prefTemp: 6.0, prefSL: 4.0, prefElev: 2.0, gen: 7, size: 1, vivid: 0 };
+    const lit = { ...base, prefSL: 5.1 };     // crosses 5.0
+    const high = { ...base, prefElev: 2.6 };  // crosses 2.5
+    const same = { ...base, prefSL: 2.6, prefElev: 2.4 }; // same buckets
+    expect(sim.speciesKey(lit)).not.toBe(sim.speciesKey(base));
+    expect(sim.speciesKey(high)).not.toBe(sim.speciesKey(base));
+    expect(sim.speciesKey(same)).toBe(sim.speciesKey(base));
+    expect(sim.prefBucket(10)).toBe(sim.prefBucket(9.9));
+    expect(sim.prefBucket(10)).toBe(3);
+    const c = sim.speciesCensus([base, lit, high]);
+    expect(c.length).toBe(3);
+    expect(new Set(c.map((e) => e.name)).size).toBe(3); // one key, one binomial
+  });
+
+  it('flora takes no root on a road, and a spreading plant hops a one-tile road half the time', () => {
+    world(14);
+    for (let y = 0; y < 32; y++) sim.road[sim.idx(16, y)] = 1; // a north-south road splitting the land
+    for (let y = 6; y <= 25; y++) for (let x = 13; x <= 15; x++) sim.flora.push(sim.makeFlora(x, y, null));
+    const wasEco = sim.CFG.ecoActive;
+    try {
+      sim.CFG.ecoActive = true;
+      let east = 0;
+      for (let t = 0; t < 600 && !east; t++) {
+        sim.step();
+        for (const f of sim.flora) if (f && f.x >= 17) east++;
+      }
+      for (const f of sim.flora) if (f) expect(sim.road[sim.idx(f.x, f.y)]).toBe(0);
+      expect(east).toBeGreaterThan(0); // the colony crossed the road by hopping it
+      // placement refuses the road outright: with every land tile flagged, nothing can be seeded
+      for (let i = 0; i < 32 * 32; i++) sim.road[i] = 1;
+      const n = sim.flora.length;
+      sim.seedFloraCluster(10);
+      expect(sim.flora.length).toBe(n);
+    } finally { sim.CFG.ecoActive = wasEco; }
+  }, 30000);
+
+  it('non-grazers score a road tile lower by roadAvoid; grazers do not care', () => {
+    world(15);
+    const carn = sim.makeFauna(10, 10, 'carnivore'), herb = sim.makeFauna(10, 10, 'herbivore');
+    sim.faunaStep(); // builds the spatial index scoreTileForFauna reads for grazers
+    const ti = sim.idx(11, 10);
+    const c0 = sim.scoreTileForFauna(carn, 11, 10, false), h0 = sim.scoreTileForFauna(herb, 11, 10, true);
+    sim.road[ti] = 1;
+    expect(sim.scoreTileForFauna(carn, 11, 10, false)).toBeCloseTo(c0 - sim.CFG.roadAvoid, 10);
+    expect(sim.scoreTileForFauna(herb, 11, 10, true)).toBeCloseTo(h0, 10);
+  });
+
+  it('road and prefElev survive snapshot/restore and the JSON save; a legacy save loads with both backfilled', () => {
+    world(16);
+    sim.road[sim.idx(8, 8)] = 1;
+    sim.fauna.push(sim.makeFauna(10, 24, 'herbivore'));
+    const pe = sim.fauna[0].prefElev;
+    const snap = sim.snapshotState();
+    world(17);
+    sim.restoreState(snap);
+    expect(sim.road[sim.idx(8, 8)]).toBe(1);
+    expect(sim.fauna[0].prefElev).toBe(pe);
+    const json = JSON.parse(JSON.stringify(sim.buildSnapshot()));
+    world(18);
+    sim.applySnapshot(json);
+    expect(sim.road[sim.idx(8, 8)]).toBe(1);
+    expect(sim.fauna[0].prefElev).toBe(pe);
+    delete json.road; delete json.fauna[0].prefElev; // a save from before the height axis
+    world(19);
+    sim.applySnapshot(json);
+    expect(sim.road.length).toBe(32 * 32);
+    expect(Array.from(sim.road).every((v) => v === 0)).toBe(true);
+    expect(sim.fauna[0].prefElev).toBe(sim.elev[sim.idx(10, 24)]); // its own tile, so fitE is 1
+    // an old snapshot without a road layer restores to an empty one
+    delete snap.road;
+    sim.restoreState(snap);
+    expect(sim.road.length).toBe(32 * 32);
+  });
 });

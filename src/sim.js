@@ -7,6 +7,10 @@
 
 var tick=0; var W=96,H=96;
 var grid, elev, aridity, tempField, sunlight, adjCooldown, ringDone, hillDecayCount, peakVolcano, volcanoRing, volcanoCenters;
+// Ketch'em road layer (2026-10-24): a per-tile flag beside grid, 0 = none, 1 = road (2+ reserved for the mode). Read in
+// three places (pickFloraTile, the floraStep spread hop, scoreTileForFauna); with no road tile set, none of them draws RNG or
+// changes a value, so the tuned ecology is byte-identical (harness-proved). Written only by the Ketch'em board builder.
+var road;
 var waterDist; // tiles to nearest water (ocean/coast + rivers/lakes when present); drives flora clustering on water (flora-only, recomputed in computeWaterDist)
 var floraLandVigor=1; // maturity-thinning multiplier on flora spread/spawn (1 at low land, down to 1-floraLandThin at full land); refreshed each floraStep
 var coastTTL;
@@ -106,6 +110,10 @@ var eRng = Math.random; // seeded DYNAMICS stream (ecology/climate-drift); set i
 // predator-prey balance) is byte-identical whether or not these genes exist. This is what makes
 // "cosmetic-first" provably balance-safe (see Engineering Lessons - cosmetic genes on a separate RNG).
 var cRng = Math.random; // seeded in initWorld/restoreState alongside eRng.
+// Seeded HEIGHT stream: the elevation preference (prefElev) at birth and its mutation drift. Its own stream so that
+// eRng's draw count is unchanged by the height axis: at CFG.faunaElevWeight 0 the ecology run is byte-identical to
+// the C2 baseline, so the harness measures the fit term alone (Ketch'em step 1, 2026-10-24).
+var hRng = Math.random;
 // Seeded random helpers for generation pipeline
 function sRandn(){var u=0,v=0;while(u===0)u=sRng();while(v===0)v=sRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function sTruncNorm(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*sRandn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
@@ -209,6 +217,14 @@ var CFG={
   ecotoneFloraBoost:1.6,           // flora spread multiplier at biome edges
   faunaSpawnChance:0.001, faunaMutationChance:0.07, faunaMutationMag:0.6,
   faunaSizeMutationMag:0.09,        // COSMETIC size-gene drift per mutation (sd of the Gaussian step on cRng). Heritable + rendered; never affects energy/eat (balance-safe). Clamped to [0.5,2.2]x.
+  // Height axis (Ketch'em Mechanics sec. 17): fit x ((1-w) + w x exp(-dE^2 / (2 x tol^2 x 2))). SHIPPED AT 0 (owner ruling
+  // pending, 2026-10-24): fit is the per-tick energy tax, so any weight is a survival tax on every creature off its birth
+  // height. Measured (Ecosystem Tuning Log, 2026-10-24): 0.25 -> extinction 33% / carnivores 0/6; 0.15 -> 17% / 3/6;
+  // 0.05 at 12 seeds -> 17% / 9/12 with the phase lag flipped to -83t (C2: 0% / 8/12 / +60t). At 0 the ecology is
+  // byte-identical to C2 (hRng is its own stream); the gene itself (types, levels, evolution) works regardless.
+  faunaElevWeight:0, faunaElevTolerance:5,
+  // Road: non-grazers score a road tile this much lower (mechanics sec. 13); a spreading plant hops a road with this chance.
+  roadAvoid:0.5, roadHopChance:0.5,
   faunaMaxPop:400, faunaBaseMaxAge:500,
   herbivoreSpeed:20, carnivoreSpeed:16,
   herbivoreEatSpeed:20,             // ticks between grazing
@@ -504,6 +520,7 @@ function reclassTerrain(){for(var y=0;y<H;y++)for(var x=0;x<W;x++){var iR=idx(x,
 function randn(){var u=0,v=0;while(u===0)u=eRng();while(v===0)v=eRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 // Gaussian draw on the COSMETIC stream (size-gene drift). Never touches eRng -> balance-neutral.
 function cRandn(){var u=0,v=0;while(u===0)u=cRng();while(v===0)v=cRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
+function hRandn(){var u=0,v=0;while(u===0)u=hRng();while(v===0)v=hRng();return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);}
 function truncatedNormal(mean,sigma,lo,hi){var x;for(var g=0;g<20;g++){x=mean+sigma*randn();if(x>=lo&&x<=hi)return x;}return clamp(x,lo,hi);}
 function betaapprox(a,b){function gK(k){if(k<1){var u=eRng();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=eRng();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}var x=gK(a),y=gK(b);return x/(x+y);}
 function gammaSample(shape,scale){function gK(k){if(k<1){var u=eRng();return gK(1+k)*Math.pow(u,1/k);}var d=k-1/3,c=1/Math.sqrt(9*d);while(true){var x=randn();var v=1+c*x;if(v<=0)continue;v=v*v*v;var u=eRng();if(u<1-0.0331*(x*x)*(x*x))return d*v;if(Math.log(u)<0.5*x*x+d*(1-v+Math.log(v)))return d*v;}}return gK(shape)*scale;}
@@ -857,10 +874,12 @@ function generateSpeciesName(entity,type){
   }
   var genus=speciesNameCache[key];
   // Species epithet from habitat + climate adaptation
-  var aridBucket=Math.floor(entity.prefArid/2.5);
-  var tempBucket=Math.floor(entity.prefTemp/2.5);
+  // Epithet = habitat (dryness x warmth) + suffix (light x height, offset per genus): 16 x 16 combinations over 20-part
+  // lists, so the binomial is 1:1 with speciesKey (the registry and the Almanac rely on that).
+  var aridBucket=prefBucket(entity.prefArid);
+  var tempBucket=prefBucket(entity.prefTemp);
   var hab=HABITAT_PARTS[(aridBucket*4+tempBucket)%HABITAT_PARTS.length];
-  var suf=SPECIES_PARTS[(aridBucket+tempBucket*3+hueBucket)%SPECIES_PARTS.length];
+  var suf=SPECIES_PARTS[(prefBucket(entity.prefSL)*4+prefBucket(entity.prefElev)+hueBucket)%SPECIES_PARTS.length];
   return genus+' '+hab+suf;
 }
 function getSpeciesName(entity,type){
@@ -928,7 +947,7 @@ function floraMoistureSuit(i){var s=1;if(CFG.floraWaterDistK>0)s*=Math.exp(-(wat
 // does NOT shift the RNG stream - tuning A/Bs stay same-world clean. floraWaterWeight=0 => all weights 1
 // => uniform pick among valid candidates (old behavior). Returns a tile index, or -1 if no candidate was land.
 function pickFloraTile(){var K=CFG.floraPlaceSamples||10;var ci=[],cw=[],tw=0;
-  for(var s=0;s<K;s++){var x=(eRng()*W)|0,y=(eRng()*H)|0;var i=idx(x,y),t=grid[i];if(t===T.OCEAN||t===T.MOUNTAIN||t===T.VOLCANIC)continue;var w=floraMoistureSuit(i);ci.push(i);cw.push(w);tw+=w;}
+  for(var s=0;s<K;s++){var x=(eRng()*W)|0,y=(eRng()*H)|0;var i=idx(x,y),t=grid[i];if(t===T.OCEAN||t===T.MOUNTAIN||t===T.VOLCANIC||road[i])continue;var w=floraMoistureSuit(i);ci.push(i);cw.push(w);tw+=w;}
   if(!ci.length)return -1;var rp=eRng()*tw;for(var c=0;c<ci.length;c++){rp-=cw[c];if(rp<=0)return ci[c];}return ci[ci.length-1];}
 function seedFloraCluster(n){var placed=0,guard=n*30;while(placed<n&&guard-->0){var i=pickFloraTile();if(i>=0){flora.push(makeFlora(i%W,(i/W)|0,null));placed++;}}}
 // Dynamic flora pop cap: 0 = map-size based (tiles x per-tile cap), else use configured value
@@ -941,7 +960,7 @@ function floraStep(){if(!CFG.ecoActive)return;
   var _lc=landCoverage();floraLandVigor=1-CFG.floraLandThin*clamp((_lc-CFG.floraLandThinStart)/Math.max(0.01,1-CFG.floraLandThinStart),0,1);
   naturalFloraSpawn();
   // Process regrowth remnants
-  var rKeep=[];for(var ri=0;ri<floraRemnants.length;ri++){var rem=floraRemnants[ri];if(tick>=rem.tickDue){if(flora.length<floraPopCap()){var ti=idx(rem.x,rem.y);if(grid[ti]!==T.OCEAN){flora.push(makeFlora(rem.x,rem.y,rem.prefs));}}}else{rKeep.push(rem);}}floraRemnants=rKeep;
+  var rKeep=[];for(var ri=0;ri<floraRemnants.length;ri++){var rem=floraRemnants[ri];if(tick>=rem.tickDue){if(flora.length<floraPopCap()){var ti=idx(rem.x,rem.y);if(grid[ti]!==T.OCEAN&&!road[ti]){flora.push(makeFlora(rem.x,rem.y,rem.prefs));}}}else{rKeep.push(rem);}}floraRemnants=rKeep;
   // Build per-tile flora index for competition checks
   var _floraTile={};for(var ff=0;ff<flora.length;ff++){if(!flora[ff])continue;var fk=idx(flora[ff].x,flora[ff].y);if(!_floraTile[fk])_floraTile[fk]=[];_floraTile[fk].push(ff);}
   // Adaptive sampling: higher rate at small populations for establishment
@@ -956,6 +975,9 @@ function floraStep(){if(!CFG.ecoActive)return;
     // uniform pick, so draw COUNT is unchanged - clean A/B). floraWaterWeight=0 => all weights 1 => uniform.
     var _tw=0,_cw=[];for(var _ci=0;_ci<cands.length;_ci++){var _w=floraMoistureSuit(idx(cands[_ci][0],cands[_ci][1]));_cw.push(_w);_tw+=_w;}
     var _rp=eRng()*_tw;var dest=cands[cands.length-1];for(var _cj=0;_cj<cands.length;_cj++){_rp-=_cw[_cj];if(_rp<=0){dest=cands[_cj];break;}}
+    // A road takes no roots (mechanics sec. 13): with roadHopChance the seed carries one tile further in the same direction,
+    // onto open land that is not itself road; otherwise it is lost. No road on the map = no draw, byte-identical.
+    if(road[idx(dest[0],dest[1])]){if(eRng()>=CFG.roadHopChance)continue;var hx=2*dest[0]-f.x,hy=2*dest[1]-f.y;if(!inb(hx,hy))continue;var ht=grid[idx(hx,hy)];if(ht===T.OCEAN||ht===T.MOUNTAIN||ht===T.VOLCANIC||road[idx(hx,hy)])continue;dest=[hx,hy];}
     var child=eRng()<CFG.floraMutationChance?mutateFloraChild(f,dest[0],dest[1]):cloneFloraChild(f,dest[0],dest[1]);
     // Competition: check carrying capacity at destination
     var destIdx=idx(dest[0],dest[1]);var existing=_floraTile[destIdx];var cap=CFG.floraPerTileMax||4;
@@ -974,6 +996,9 @@ function floraStep(){if(!CFG.ecoActive)return;
 // Vivid mutation palette: striking colors that stand out against earthy backdrop
 var VIVID_HUES=[210,25,290,50,355,175,320,140]; // blue, orange, purple, gold, crimson, cyan, magenta, lime
 function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tempField[i]||5),tS=(sunlight[i]||5);var isH=(type==='herbivore');var isS=(type==='scavenger');var isA=(type==='apex');var isO=(type==='omnivore');var pA=prefs?prefs.prefArid:clamp(tA+(eRng()*3-1.5),0,10);var pT=prefs?prefs.prefTemp:clamp(tT+(eRng()*3-1.5),0,10);var pS=prefs?prefs.prefSL:clamp(tS+(eRng()*3-1.5),0,10);var tol=prefs?prefs.tolerance:(3.0+eRng()*1.5);
+  // Height preference (mechanics sec. 17): near the birth tile's elevation, on the hRng stream (see hRng). A parent record
+  // without one (a pre-height save) falls through to the tile, like a founder.
+  var pE=(prefs&&prefs.prefElev!==undefined)?prefs.prefElev:clamp((elev[i]||0)+(hRng()*3-1.5),0,10);
   var vivid=prefs?!!prefs.vivid:false;
   var newId=++faunaIdCounter;
   // Cosmetic SIZE gene (heritable, rendered, balance-safe): founders start at 1.0x and the gene only
@@ -1000,8 +1025,10 @@ function makeFauna(x,y,type,prefs){var i=idx(x,y);var tA=(aridity[i]||5),tT=(tem
   var loVal=vivid?0.7:(isH?0.78:(isS?0.42:(isA?0.40:(isO?0.42:0.42)))), hiVal=vivid?0.95:(isH?0.96:(isS?0.62:(isA?0.60:(isO?0.62:0.62))));
   var startE=isH?CFG.herbivoreStartEnergy:(isS?CFG.scavengerStartEnergy:(isA?CFG.apexStartEnergy:(isO?CFG.omnivoreStartEnergy:CFG.carnivoreStartEnergy)));
   var maxE=isH?CFG.herbivoreMaxEnergy:(isS?CFG.scavengerMaxEnergy:(isA?CFG.apexMaxEnergy:(isO?CFG.omnivoreMaxEnergy:CFG.carnivoreMaxEnergy)));
-  return{id:newId,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,loSat,hiSat),val:clamp(val,loVal,hiVal),vivid:vivid,size:size,lineageId:lineageId,energy:startE,maxEnergy:maxE,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:isH?(x*7+y*13)%CFG.herbivoreSpeed:0,eatCD:isH?(x*11+y*5)%CFG.herbivoreEatSpeed:0};}
-function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;return Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));}
+  return{id:newId,x:x,y:y,type:type,prefArid:pA,prefTemp:pT,prefSL:pS,prefElev:pE,tolerance:clamp(tol,1.5,6.0),hue:((hue%360)+360)%360,sat:clamp(sat,loSat,hiSat),val:clamp(val,loVal,hiVal),vivid:vivid,size:size,lineageId:lineageId,energy:startE,maxEnergy:maxE,age:0,maxAge:CFG.faunaBaseMaxAge*(0.7+eRng()*0.6),gen:prefs?(prefs.gen||0):0,moveCD:isH?(x*7+y*13)%CFG.herbivoreSpeed:0,eatCD:isH?(x*11+y*5)%CFG.herbivoreEatSpeed:0};}
+function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]===T.OCEAN)return 0;var dA=(aridity[i]||5)-f.prefArid,dT=(tempField[i]||5)-f.prefTemp,dS=(sunlight[i]||5)-f.prefSL;var fit=Math.exp(-(dA*dA+dT*dT+dS*dS)/(2*f.tolerance*f.tolerance*2));
+  var w=CFG.faunaElevWeight;if(w>0&&f.prefElev!==undefined){var dE=(elev[i]||0)-f.prefElev,tE=CFG.faunaElevTolerance;fit*=(1-w)+w*Math.exp(-(dE*dE)/(2*tE*tE*2));}
+  return fit;}
 function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
 function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
 function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;
@@ -1028,7 +1055,7 @@ var _floraAtTile,_herbAtTile,_carnAtTile,_scavAtTile,_carrionAtTile,_apexAtTile,
 function buildSpatialIndex(){_floraAtTile={};_herbAtTile={};_carnAtTile={};_scavAtTile={};_carrionAtTile={};_apexAtTile={};_omniAtTile={};for(var i=0;i<flora.length;i++){var f=flora[i];if(!f)continue;var k=idx(f.x,f.y);if(!_floraAtTile[k])_floraAtTile[k]=[];_floraAtTile[k].push(i);}for(var j=0;j<fauna.length;j++){var a=fauna[j];if(!a)continue;var k2=idx(a.x,a.y);if(a.type==='herbivore'){if(!_herbAtTile[k2])_herbAtTile[k2]=[];_herbAtTile[k2].push(j);}else if(a.type==='scavenger'){if(!_scavAtTile[k2])_scavAtTile[k2]=[];_scavAtTile[k2].push(j);}else if(a.type==='apex'){if(!_apexAtTile[k2])_apexAtTile[k2]=[];_apexAtTile[k2].push(j);}else if(a.type==='omnivore'){if(!_omniAtTile[k2])_omniAtTile[k2]=[];_omniAtTile[k2].push(j);}else{if(!_carnAtTile[k2])_carnAtTile[k2]=[];_carnAtTile[k2].push(j);}}
   // Carrion index (scavenger food; empty unless scavengers are enabled -> off is byte-identical).
   for(var cj=0;cj<carrion.length;cj++){var cc=carrion[cj];if(!cc)continue;var ck=idx(cc.x,cc.y);if(!_carrionAtTile[ck])_carrionAtTile[ck]=[];_carrionAtTile[ck].push(cj);}}
-function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]||5)-f.prefArid,dT=(tempField[ti]||5)-f.prefTemp,dS=(sunlight[ti]||5)-f.prefSL;var score=(1-Math.sqrt(dA*dA+dT*dT+dS*dS)/15)*2;if(isHerb){var fH=_floraAtTile[ti];var floraCount=fH?fH.length:0;
+function scoreTileForFauna(f,tx,ty,isHerb){var ti=idx(tx,ty);var dA=(aridity[ti]||5)-f.prefArid,dT=(tempField[ti]||5)-f.prefTemp,dS=(sunlight[ti]||5)-f.prefSL;var score=(1-Math.sqrt(dA*dA+dT*dT+dS*dS)/15)*2;if(road[ti]&&!isHerb)score-=CFG.roadAvoid;if(isHerb){var fH=_floraAtTile[ti];var floraCount=fH?fH.length:0;
     // Strong food signal: dense flora is very attractive
     score+=floraCount*2.5;
     // Depletion penalty: strongly avoid tiles with 0-1 flora
@@ -1096,8 +1123,8 @@ function mutateFaunaChild(parent,cx,cy){var mag=CFG.faunaMutationMag;
   }
   // Cosmetic size drifts on the cRng stream (balance-neutral); lineage id is inherited unchanged.
   var childSize=clamp((parent.size||1)+cRandn()*CFG.faunaSizeMutationMag,0.5,2.2);
-  return makeFauna(cx,cy,parent.type,{prefArid:clamp(parent.prefArid+randn()*mag,0,10),prefTemp:clamp(parent.prefTemp+randn()*mag,0,10),prefSL:clamp(parent.prefSL+randn()*mag,0,10),tolerance:clamp(parent.tolerance+randn()*0.3,1.5,6.0),hue:childHue,sat:childSat,val:childVal,vivid:childVivid,size:childSize,lineageId:(parent.lineageId||parent.id),gen:parent.gen+1});}
-function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefArid:parent.prefArid,prefTemp:parent.prefTemp,prefSL:parent.prefSL,tolerance:parent.tolerance,hue:parent.hue,sat:parent.sat,val:parent.val,vivid:parent.vivid,size:(parent.size||1),lineageId:(parent.lineageId||parent.id),gen:parent.gen});}
+  return makeFauna(cx,cy,parent.type,{prefArid:clamp(parent.prefArid+randn()*mag,0,10),prefTemp:clamp(parent.prefTemp+randn()*mag,0,10),prefSL:clamp(parent.prefSL+randn()*mag,0,10),prefElev:(parent.prefElev===undefined?undefined:clamp(parent.prefElev+hRandn()*mag,0,10)),tolerance:clamp(parent.tolerance+randn()*0.3,1.5,6.0),hue:childHue,sat:childSat,val:childVal,vivid:childVivid,size:childSize,lineageId:(parent.lineageId||parent.id),gen:parent.gen+1});}
+function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefArid:parent.prefArid,prefTemp:parent.prefTemp,prefSL:parent.prefSL,prefElev:parent.prefElev,tolerance:parent.tolerance,hue:parent.hue,sat:parent.sat,val:parent.val,vivid:parent.vivid,size:(parent.size||1),lineageId:(parent.lineageId||parent.id),gen:parent.gen});}
 // A fauna death drops a corpse for scavengers (trophic-depth experiment). No-op unless the flag is on -> the
 // eRng stream is byte-identical to C2 when off. No RNG here, so even when on it does not shift the stream.
 function _dropCarrion(x,y){ if(CFG.scavengersEnabled) carrion.push({x:x,y:y,tick:tick}); }
@@ -1144,7 +1171,7 @@ function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIn
 // ======================================================================
 //  RENDERING
 // ======================================================================
-function buildSnapshot(){return {meta:{version:'wb-eco-1',W:W,H:H,tick:tick,seed:_seed,preset:activePreset,world:WORLD,cfg:{climateIntensity:CFG.climateIntensity,climateSeasonLength:CFG.climateSeasonLength},sunlightPhase:sunPhase},grid:Array.from(grid),elev:Array.from(elev),aridity:Array.from(aridity),temp:Array.from(tempField),flora:flora.filter(function(f){return f!==null;}),fauna:fauna.filter(function(f){return f!==null;}),remnants:floraRemnants,rivers:riverGenerated?riverData:null,springs:springs.length?springs.slice():null,seaSteps:seaSteps,drownedElev:seaSteps?Array.from(drownedElev):null,drownedAt:seaSteps?Array.from(drownedAt):null,godTemp:_godClimatePainted?Array.from(godTemp):null,godArid:_godClimatePainted?Array.from(godArid):null,godPainted:_godClimatePainted};}
+function buildSnapshot(){return {meta:{version:'wb-eco-1',W:W,H:H,tick:tick,seed:_seed,preset:activePreset,world:WORLD,cfg:{climateIntensity:CFG.climateIntensity,climateSeasonLength:CFG.climateSeasonLength},sunlightPhase:sunPhase},grid:Array.from(grid),elev:Array.from(elev),aridity:Array.from(aridity),temp:Array.from(tempField),flora:flora.filter(function(f){return f!==null;}),fauna:fauna.filter(function(f){return f!==null;}),remnants:floraRemnants,road:Array.from(road),rivers:riverGenerated?riverData:null,springs:springs.length?springs.slice():null,seaSteps:seaSteps,drownedElev:seaSteps?Array.from(drownedElev):null,drownedAt:seaSteps?Array.from(drownedAt):null,godTemp:_godClimatePainted?Array.from(godTemp):null,godArid:_godClimatePainted?Array.from(godArid):null,godPainted:_godClimatePainted};}
 var WORLD_CODE_VERSION = 1;
 // These CFG keys are DERIVED from elevationIntensity by applyElevationIntensity and recomputed on every
 // initWorld, so the world code ships elevationIntensity, not its derivatives. A default world then encodes
@@ -1293,7 +1320,12 @@ function chronicleSample(){
   if(s.herb>r.peakHerb)r.peakHerb=s.herb; if(s.carn>r.peakCarn)r.peakCarn=s.carn; if(s.flora>r.peakFlora)r.peakFlora=s.flora; if(s.maxSize>r.peakSize)r.peakSize=s.maxSize;
   chronicle.prev=s;
 }
-function speciesKey(f){ return f.type+'|'+Math.floor(f.hue/20)+'|'+Math.floor(f.prefArid/2.5)+'|'+Math.floor(f.prefTemp/2.5); }
+// A preference bucket: four steps of 2.5 over 0..10; exactly 10 (a clamped mutation) joins the top bucket instead of
+// opening a fifth. Shared by the key and the name so one key is one binomial.
+function prefBucket(p){ return Math.min(3,Math.floor((p||0)/2.5)); }
+// Widened 2026-10-24 (Ketch'em step 1, owner's open item taken as YES): light and height join dryness and warmth, so a
+// Sun / Shade / Peak / Vale creature can evolve into a new species by growth. Names only: nothing in the ecology reads it.
+function speciesKey(f){ return f.type+'|'+Math.floor(f.hue/20)+'|'+prefBucket(f.prefArid)+'|'+prefBucket(f.prefTemp)+'|'+prefBucket(f.prefSL)+'|'+prefBucket(f.prefElev); }
 // Pure census of the LIVING fauna, bucketed into species (defaults to the module fauna list; takes an
 // explicit list so the gate can exercise the bucketing on synthetic genomes). Returns entries sorted by
 // population desc: {key,type,name,pop,maxGen,maxSize,vivid}. The most-evolved member represents the species
@@ -1810,8 +1842,9 @@ function initWorld(seedOverride){
   // Cosmetic stream: a THIRD distinct offset for purely-visual genes (size). Separate so it cannot
   // shift the eRng phase -> the ecology run is byte-identical with or without the cosmetic genes.
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
+  hRng=mulberry32((_seed ^ 0xC2B2AE35) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
-  tick=0;_godUndo=null;springs=[];grid=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
+  tick=0;_godUndo=null;springs=[];grid=new Uint8Array(W*H);road=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],scav:[],apex:[],omni:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];carrion=[];speciesNameCache={};chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();foodWeb=newFoodWeb();clearRivers();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();
@@ -1932,7 +1965,7 @@ function snapshotState(){
     yearlyVariation:yearlyVariation, sunPhase:sunPhase, seasonAnchorTick:seasonAnchorTick, riverGenerated:riverGenerated,
     WORLD:WORLD, popHistory:popHistory, speciesNameCache:speciesNameCache, chronicle:chronicle, speciesRegistry:speciesRegistry, foodWeb:foodWeb,
     // terrain + volcano fields
-    grid:grid, elev:elev, aridity:aridity, tempField:tempField, sunlight:sunlight,
+    grid:grid, road:road, elev:elev, aridity:aridity, tempField:tempField, sunlight:sunlight,
     coastTTL:coastTTL, adjCooldown:adjCooldown, ringDone:ringDone, hillDecayCount:hillDecayCount,
     peakVolcano:peakVolcano, volcActive:volcActive, volcAge:volcAge, volcLife:volcLife,
     volcanoRing:volcanoRing, volcanoCenters:volcanoCenters, biomeStability:biomeStability,
@@ -1955,11 +1988,12 @@ function restoreState(snap){
   sRng=mulberry32(_seed);
   eRng=mulberry32((_seed ^ 0x9E3779B9) >>> 0);
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
+  hRng=mulberry32((_seed ^ 0xC2B2AE35) >>> 0);
   floraIdCounter=s.floraIdCounter; faunaIdCounter=s.faunaIdCounter;
   yearlyVariation=s.yearlyVariation; sunPhase=s.sunPhase; seasonAnchorTick=s.seasonAnchorTick||0; riverGenerated=s.riverGenerated;
   _prevSeasonalTilt=!!CFG.seasonalTilt; _prevAnomalies=!!CFG.anomalies; // a restore is not a toggle edge
   WORLD=s.WORLD; popHistory=s.popHistory; speciesNameCache=s.speciesNameCache; chronicle=s.chronicle||newChronicle(); speciesRegistry=s.speciesRegistry||newSpeciesRegistry(); foodWeb=s.foodWeb||newFoodWeb();
-  grid=s.grid; elev=s.elev; aridity=s.aridity; tempField=s.tempField; sunlight=s.sunlight;
+  grid=s.grid; road=s.road||new Uint8Array(W*H); elev=s.elev; aridity=s.aridity; tempField=s.tempField; sunlight=s.sunlight;
   coastTTL=s.coastTTL; adjCooldown=s.adjCooldown; ringDone=s.ringDone; hillDecayCount=s.hillDecayCount;
   peakVolcano=s.peakVolcano; volcActive=s.volcActive; volcAge=s.volcAge; volcLife=s.volcLife;
   volcanoRing=s.volcanoRing; volcanoCenters=s.volcanoCenters; biomeStability=s.biomeStability;
@@ -2001,8 +2035,11 @@ function applySnapshot(data){
   if(data.meta.cfg){CFG.climateIntensity=data.meta.cfg.climateIntensity||1.0;CFG.climateSeasonLength=data.meta.cfg.climateSeasonLength||10000;}
   if(data.meta.sunlightPhase!==undefined)sunPhase=data.meta.sunlightPhase;
   grid=new Uint8Array(W*H);if(data.grid&&data.grid.length===W*H){grid=new Uint8Array(data.grid);}
+  road=new Uint8Array(W*H);if(data.road&&data.road.length===W*H){road=new Uint8Array(data.road);}
   elev=new Float32Array(data.elev);aridity=new Float32Array(data.aridity);tempField=new Float32Array(data.temp);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);anomalyBlobs=null;
   flora=(data.flora&&Array.isArray(data.flora))?data.flora:[];fauna=(data.fauna&&Array.isArray(data.fauna))?data.fauna:[];floraRemnants=(data.remnants&&Array.isArray(data.remnants))?data.remnants:[];
+  // A save from before the height axis carries no prefElev: give each loaded creature its own tile's height (fitE 1).
+  for(var _pe=0;_pe<fauna.length;_pe++){var _pf=fauna[_pe];if(_pf&&_pf.prefElev===undefined)_pf.prefElev=clamp(elev[idx(_pf.x,_pf.y)]||0,0,10);}
   // A JSON load starts a FRESH narrative: the wb-eco-1 format does not carry the Chronicle / species
   // registry / population graph / carrion, so RESET them - otherwise the previous world in the tab bleeds
   // in (phantom "the last predator vanished" beats, stale species extinctions, a graph tail from the old
@@ -2044,7 +2081,7 @@ export {
   initWorld, step, runAssertions, setWorldSize, setActiveScenario, setDeathParticles,
   // world size + core scalars/state (live bindings)
   W, H, tick, _seed, activePreset, CFG, DEFAULT_CFG, WORLD, T, TNAME, TERRAIN_COLORS, PRESETS,
-  grid, elev, aridity, tempField, sunlight, waterDist, coastTTL, baseTemp, baseArid,
+  grid, road, elev, aridity, tempField, sunlight, waterDist, coastTTL, baseTemp, baseArid,
   volcActive, volcAge, volcLife, volcanoRing, volcanoCenters, peakVolcano, adjCooldown, ringDone, hillDecayCount,
   biomeStability, biomeDesiredNext, biomeBoundary, anomalyBlobs, yearlyVariation, sunPhase,
   flora, fauna, floraIdCounter, faunaIdCounter, deathParticles, DEATH_PARTICLE_LIFE, carrion,
@@ -2066,14 +2103,14 @@ export {
   // ecology
   makeFlora, computeFloraHealth, seedFloraCluster, floraStep,
   makeFauna, computeFaunaClimateFit, seedFaunaGroup, scoreTileForFauna, faunaStep,
-  mutateFloraChild, mutateFaunaChild,
+  mutateFloraChild, mutateFaunaChild, cloneFaunaChild,
   // snapshot / serialize
   snapshotState, restoreState, buildSnapshot, applySnapshot,
   // chronicle (world memory)
   chronicle, newChronicle, chronicleStats, chronicleAdd, chronicleNote, chronicleSample, _crossLadder,
   CHRONICLE_MAX_EVENTS,
   // speciation
-  speciesKey, speciesCensus, updateSpeciesRegistry, newSpeciesRegistry, speciesRegistry, speciesSample,
+  speciesKey, prefBucket, speciesCensus, updateSpeciesRegistry, newSpeciesRegistry, speciesRegistry, speciesSample,
   // living food web
   foodWeb, newFoodWeb, foodWebCensus, foodWebSample, FOOD_WEB_EDGES,
   // god powers

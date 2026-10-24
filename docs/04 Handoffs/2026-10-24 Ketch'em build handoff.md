@@ -95,3 +95,5 @@ public site, trading between saves.
 
 ## Progress
 (append one line per step: date, step, gate verdict, commit)
+- 2026-10-24 · step 1 (sim: prefElev + hRng stream, road layer + three hooks, species key and name widened to light and height, CFG knobs, harness --elevw) · gate GREEN (96/96, lint 0 errors, build) · harness: elevw 0 byte-identical to C2; 0.25 / 0.15 / 0.05 all out of tolerance (Tuning Log) · **shipped faunaElevWeight 0, a changed default for the owner** · section 2 default 1 (widen the key) taken as YES; maxLandCap / ecoActive already existed as settables · commit: see git log
+  Critic (Sonnet): no blocker; noted for step 3: `seedLifeAt` and Root's `plant` verb can still put flora on a road tile (only the three ecology hooks honour it), and flora already standing on a tile that becomes road is not removed; the board builder must clear and guard those.

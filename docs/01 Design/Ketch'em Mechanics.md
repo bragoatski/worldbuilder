@@ -646,6 +646,10 @@ stores down each road, so the first decision is which way to walk.
 | fit | fit x (0.75 + 0.25 x exp(-dE^2 / (2 x 5^2 x 2))) |
 | worst case | a creature 10 elevation units from its preference keeps 75% + 25% x e^-1 = 84% of its fit |
 | acceptance | 1000-tick harness protocol: extinction rate and carnivore persistence within 3 points of the C2 baseline, else weight drops to 0.15 |
+| knobs (built 2026-10-24) | `CFG.faunaElevWeight` (shipped 0, see result), `CFG.faunaElevTolerance` 5; harness `--elevw=N` |
+| result (2026-10-24) | fit feeds exactly one thing in the sim, the per-tick energy drain, so the term is a survival tax on every creature off its birth height. 0.25: extinction 33%, carnivores 0/6. 0.15: 17%, 3/6. 0.05 at 12 seeds: 17%, 9/12, phase lag flipped to -83t (C2 0%, 8/12, +60t). No weight met the acceptance; shipped at 0: the gene exists, drifts, sets the type and the species key, and does not touch survival. Owner may overturn; the alternative is a movement-scoring term as its own harness task (Ecosystem Tuning Log) |
+| RNG stream (built 2026-10-24) | its own seeded stream `hRng`, so at weight 0 the ecology is byte-identical to C2 and the harness measures the fit term alone |
+| legacy saves | a creature without `prefElev` is given its tile's elevation on load (fit term 1) |
 
 ## 18. Save file, in detail
 
@@ -768,9 +772,10 @@ evolution:
   reward for growing it;
 - bred offspring of the evolved creature are born in the new bucket.
 Visual: a long white flash, the shape re-drawn in its new colour band, the new name typed out above it.
-Only Sun / Shade / Peak / Vale types cannot evolve this way (their axes are not in the species key); growth still
-raises their level, size and abilities. Decision point: add light and height to the species key in the sim (a
-balance-neutral change, names only) so every type can evolve.
+Decided 2026-10-24 (handoff default, open to the owner): light and height ARE in the species key, so every type can
+evolve. Buckets are four steps of 2.5 on each of the four axes; a preference of exactly 10 (a clamped mutation)
+joins the top bucket rather than opening a fifth. The binomial's suffix now encodes light x height so one key is
+still one name; names of existing species changed with it (nothing persisted them).
 
 ### 20.4 Alternatives considered
 | idea | verdict |

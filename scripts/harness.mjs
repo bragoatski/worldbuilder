@@ -13,6 +13,7 @@
 //                                  [--seasonlen=N]   (CFG.climateSeasonLength; default 10000 - shorten to
 //                                                     fit several full seasons inside --ticks)
 //                                  [--intensity=N]   (CFG.climateIntensity multiplier; default 1.0)
+//                                  [--elevw=N]       (CFG.faunaElevWeight; 0 = height axis off, byte-identical to C2)
 //
 // Climate A/B: warmup ALWAYS runs climate-off (a clean genesis baseline), then the climate toggles are
 // applied just before the measured window, so the only difference vs the seasons-off baseline is the
@@ -35,7 +36,7 @@ function parseArgs() {
   // before there is enough land/flora to measure ecology on. Scale --seeds / --warmup down for a smoke check.
   const o = { seeds: 6, warmup: 3000, ticks: 1000, herb: 24, carn: 8, flora: 40, sample: 5,
     repeat: 1, snapshot: false, traj: false, scav: 0, apex: 0, omni: 0,
-    seasons: false, anomalies: false, volcano: false, seasonlen: 10000, intensity: 1.0, birth: 0 };
+    seasons: false, anomalies: false, volcano: false, seasonlen: 10000, intensity: 1.0, birth: 0, elevw: -1 };
   for (const a of process.argv.slice(2)) {
     const m = /^--([a-z]+)(?:=(.+))?$/.exec(a);
     if (!m) continue;
@@ -274,6 +275,9 @@ sim.CFG.climateIntensity = o.intensity;
 // the WHOLE run - warmup + window - unlike the climate/trophic window-only toggles. --birth=0 (default) is
 // the C2 baseline (byte-identical); --birth=RATE measures the ecology impact of the occasional volcano.
 sim.CFG.volcanoBirthRate = o.birth;
+// Height-axis A/B (Ketch'em step 1): --elevw=0 is byte-identical to the pre-height C2 run (hRng is its own stream);
+// --elevw=0.25 measures the fit term alone. Default -1 leaves CFG.faunaElevWeight as shipped.
+if (o.elevw >= 0) sim.CFG.faunaElevWeight = o.elevw;
 const anyClimate = o.seasons || o.anomalies || o.volcano;
 function setClimateToggles(on) {
   sim.CFG.seasonalTilt = on && o.seasons;

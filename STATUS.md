@@ -2,6 +2,15 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-24 (b) - Ketch'em step 1: the sim's height axis, road layer, widened species key - DONE, GATE GREEN
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (its Progress section has the per-step log). Next: **step 2, `src/ketchem/rules.js`** (elementalType, levelOf, abilitiesOf, priceOf, oddsOf, rarity; every worked example in mechanics 4, 5, 10 as a test fixture).
+
+What the sim can now do for Ketch'em: every creature carries a height preference (`prefElev`, born near its tile, inherited with drift), so Peak / Vale types, levels and height-bucket evolution have a real gene behind them; the species key and the binomial include light and height, so every elemental type can evolve into a new named species; a `road` layer sits beside `grid` and the ecology honours it (no roots on a road, plants hop a road half the time, non-grazers avoid road tiles). `CFG.maxLandCap` and `CFG.ecoActive` already serve as the board builder's land cap and ecology-off switch; `seedFaunaGroup` is exported for the full-board seed.
+
+**Changed default, for the owner (overturnable):** the height term's fit weight ships at **0**, not the 0.25 the mechanics asked for. Fit feeds exactly one thing, the per-tick energy drain, so any weight is a survival tax on every creature off its birth height: 0.25 took extinction 0% to 33% and carnivores 3/6 to 0/6; 0.15 and even 0.05 (12 seeds) still added extinctions and flipped the predator-prey phase lag negative. Full ladder in the Ecosystem Tuning Log. At 0 the ecology is byte-identical to C2 (the height gene draws on its own seeded stream `hRng`; the `--elevw=0` harness report diffed clean against the baseline). The alternative, if he wants creatures to self-sort by altitude, is a movement-scoring term as its own harness task.
+
+Gate: typecheck clean, lint 0 errors (29 warnings, baseline), 96/96 tests (57 sim incl. 7 new, 39 visit; 8m33s), build green. Harness: same-day C2 baseline matched the 2026-08-21 record exactly; `--elevw=0` byte-identical. Rehearsal: live page (vite dev, `?debug`) ran a 1,800-tick world with the new sim: every creature had a valid `prefElev`, six-field species keys with unique binomials, empty road layer, no console errors beyond the pre-existing favicon 404. Root was not launched in this step, so the real `~/root` record was never in play.
+
 ## Session 2026-10-23 - Root modes: Visitor, Shaper, Sky - DONE (gate: see commit)
 Newest handoff: **`docs/04 Handoffs/2026-10-23 Root modes - Visitor, Shaper, Sky.md`** - read it first.
 

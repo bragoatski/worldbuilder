@@ -358,3 +358,37 @@ Two flora-only mechanisms (biomes/terrain untouched), all behind CFG knobs + liv
 High land: coverage ~halved into the "moderate" target, flora clusters wetter-than-land + near-water, desert-free, cycle held. Low land: balance NEUTRAL-to-better (clean same-code A/B; the standard harness's 17%/50% was an RNG-reshuffle artifact vs the old-code baseline - flora was identical).
 
 NOTE: river/lake hugging is GATE-BLIND (harness has no rivers). Verified in-browser on a loaded preview world + generated rivers; Kevin signed off on the look. Live sliders: Flora Thinning / Water Clustering / Desert Harshness (Ecology panel).
+
+---
+
+# Height axis (Ketch'em step 1, 2026-10-24) - SHIPPED AT WEIGHT 0
+
+Ask (owner, 2026-10-24): "Add the height preference, but broad, so it has little effect on survival." Mechanics sec. 17:
+`prefElev` per creature, fit x ((1-w) + w x exp(-dE^2 / 100)), w 0.25, fallback 0.15; acceptance = standard 1000-tick
+protocol within 3 points of C2 on extinction and carnivore persistence.
+
+Method: `prefElev` draws on its own seeded stream (`hRng`), so `--elevw=0` is byte-identical to the pre-change code
+(verified: the 6-seed report diffed clean against the same-day baseline, timing lines aside). Every number below is
+therefore the fit term alone, no RNG reshuffle. Baseline re-run today matched the 2026-08-21 record exactly.
+
+| run | extinction | carn-persistence | phase lag | final fauna | final flora | cap-hits |
+|---|---|---|---|---|---|---|
+| C2 baseline, 6 seeds (= `--elevw=0`) | 0% (0/6) | 50% (3/6) | +65t | 49.3 | 2119 | 0 |
+| w 0.25 | **33% (2/6)** | **0% (0/6)** | +14t | 14.2 | 2351 | 0 |
+| w 0.15 | **17% (1/6)** | 50% (3/6) | **-83t** | 10.2 | 2364 | 0 |
+| w 0.05 | **17% (1/6)** | 67% (4/6) | **-154t** | 24.0 | 2113 | 0 |
+| C2 baseline, 12 seeds (= `--elevw=0`) | 0% (0/12) | 67% (8/12) | +60t | 54.8 | 2244 | 0 |
+| w 0.05, 12 seeds | **17% (2/12)** | 75% (9/12) | **-83t** | 44.1 | 2217 | 0 |
+
+Reading: `computeFaunaClimateFit` is consumed in exactly one place, `energy -= idleCost + faunaClimatePenalty x (1 - fit)`
+(0.1 / 0.5). A multiplier that is at most 1 is therefore a per-tick tax on everyone who has wandered off its birth
+height, every tick; the broad tolerance caps the tax at w x (1 - e^-1) but does not make it rare. Even w 0.05 flips the
+phase lag negative on 12 seeds (predators peaking before prey: the coupling C2 bought is gone) and costs two herbivore
+extinctions. Carnivore persistence alone would have passed, which is why the handoff's two-metric acceptance matters.
+
+Decision: **ship `faunaElevWeight` 0.** The gene is in (birth near the tile, inherited with drift, in the species key and
+the Almanac types), the ecology is byte-identical to C2, and the owner's "little effect on survival" is met at its limit.
+Flagged to the owner as a changed default. If he wants creatures to self-sort by altitude, the next experiment is a
+movement-only term in `scoreTileForFauna` (no energy path), measured as its own task; the 2026-06-23 lesson warns that
+even movement-only scoring changes have regressed C2 before, so it is not a quick add.
+

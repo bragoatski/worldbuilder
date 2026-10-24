@@ -143,7 +143,7 @@ function renderLineagePanel(f,died){
   html+='<span class="ig-k">Energy</span><span class="ig-v">'+f.energy.toFixed(0)+'/'+f.maxEnergy+'</span>';
   html+='<span class="ig-k">Age</span><span class="ig-v">'+f.age+'/'+Math.round(f.maxAge)+'</span>';
   html+='<span class="ig-k">Position</span><span class="ig-v">('+f.x+', '+f.y+')</span>';
-  html+='<span class="ig-k">Climate pref</span><span class="ig-v">A'+f.prefArid.toFixed(1)+' T'+f.prefTemp.toFixed(1)+' S'+f.prefSL.toFixed(1)+'</span>';
+  html+='<span class="ig-k">Climate pref</span><span class="ig-v">A'+f.prefArid.toFixed(1)+' T'+f.prefTemp.toFixed(1)+' S'+f.prefSL.toFixed(1)+(f.prefElev!==undefined?' E'+f.prefElev.toFixed(1):'')+'</span>';
   html+='</div><hr class="insp-divider"><div class="insp-sub">Lineage</div>';
   html+='<div class="insp-grid"><span class="ig-k">Living kin</span><span class="ig-v">'+kin+'</span><span class="ig-k">Lineage top gen</span><span class="ig-v">'+topGen+'</span></div>';
   el.innerHTML=html;
