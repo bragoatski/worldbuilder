@@ -200,7 +200,7 @@ Kevin plays the same verbs with keys and clicks.
 - Confirmed: animals released wild at the spot when a player is beaten (Mechanics sec. 11.6).
 - Confirmed: the growth and evolution system (Mechanics sec. 20) is IN. Growth moves the real genome; evolution is
   the species key changing. Open: widen the species key with light and height so every type can evolve.
-- Not Pokestones: another holding device, and another name than Almanac. Root offered amber (Resin / Amber / Deep
+- Not Pokeballs: another holding device, and another name than Pokedex. Root offered amber (Resin / Amber / Deep
   Amber; a held creature is an inclusion; the store box is the Cabinet) with the Bestiary as the book, plus geodes,
   seed pods, Field Guide and Almanac as alternatives. Owner choice pending.
 - Potions in the market: speed, sight, putting animals to sleep for easy catching, and others. Mechanics sec. 21.
