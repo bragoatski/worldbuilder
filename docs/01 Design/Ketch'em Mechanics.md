@@ -278,27 +278,49 @@ III to pay more.
 
 Elder (gen >= 8) is a price tag (x1.5), not an ability.
 
-## 6. Awareness
+## 6. Awareness: how a creature notices you
 
-| state | enters when | odds | bolts on approach | leaves after |
+Every living creature carries a mode-side awareness record: `{state, until, encounter: {player, fails, since}}`.
+States in order of alarm:
+
+| state | enters when | odds | behaviour each tick | leaves after |
 |---|---|---|---|---|
-| calm | default; feeding on bait | +15 (if fed, en >= 0.5) | no | alert or wary |
-| alert | a character within 3 tiles (carnivore, apex only; all types at 2 tiles) | -10 | 30% per tick to step 1 tile away | 50 ticks with no character within 3 |
-| wary | a failed throw | -30 | always steps away, 1 tile / tick for 4 ticks (the bolt) | 200 ticks (100 with Stalk II) |
-| fled | third failed throw in one encounter | cannot be thrown at | teleports 10-14 tiles away out of sight | the visit |
+| calm | default; feeding on bait | +15 if also fed (en >= 0.5) | the sim's own movement | alert, wary |
+| alert | a player within 3 tiles (carnivore, apex) or 2 tiles (all others) | -10 | 30% chance to step 1 tile directly away; keeps feeding otherwise | 50 ticks with no player within 3 |
+| growl | a HUNGRY carnivore or apex is alert and a player is adjacent | -10 | shows a skull; attacks at the end of the player's NEXT action if still adjacent (sec. 11) | the player steps away, or it attacks |
+| wary | a failed throw | -30 | bolts: 1 tile per tick directly away for 4 ticks, over passable ground; then alert behaviour | 200 ticks (100 with Stalk II) |
+| fled | third failed throw in one encounter | cannot be targeted | moves 10-14 tiles away out of sight over 6 ticks (not a teleport: it runs, and Kevin can watch it go) | the visit (resets on save/load) |
 
-An encounter is one creature and one player within 6 tiles, continuous; leaving 6 tiles for 100 ticks resets it.
-Stalk I removes alert. Dread II removes bolting. Lure pulls calm creatures toward the player.
+An encounter is one creature and one player within 6 tiles, continuous. Leaving 6 tiles for 100 ticks resets fails
+to 0. Two players count as two encounters on the same creature, with separate fail counts.
 
-## 7. Bait
+Growl is the warning turn: Root, who acts in turns, always gets one result that says `C 1E growls` before an
+attack lands, and can step away. Kevin sees the skull for the same beat.
 
-| bait | who takes it | from how far | approach | feeds for | odds while feeding | cost |
-|---|---|---|---|---|---|---|
-| plant (picked) | grazer, omnivore | 4 tiles | 1 tile / tick | 20 ticks | +20, calm, no bolt | one plant from the pack |
-| meat (a party or box creature) | carnivore, apex, scavenger, omnivore | 5 tiles | 1 tile / tick | 30 ticks | +25, calm, no bolt | that creature, eaten |
-| rots | | | | after 60 ticks unclaimed | | |
+Ability hooks: Stalk I skips alert (and therefore growl: a creature must be alert to growl). Dread I turns attacks
+off; II turns the alert step-away off; III turns wary off. Lure pulls calm creatures toward the player.
 
-Bait is placed on the player's tile or an adjacent one. One active bait per player.
+## 7. Baiting methods
+
+Bait is anything placed on the ground that a creature wants more than it fears you. Five methods, two of them
+co-op. One active bait per player; a second placement replaces the first.
+
+| method | tool | what is placed | who comes | from how far | walks | feeds for | odds while feeding | cost |
+|---|---|---|---|---|---|---|---|---|
+| plant bait | `bait plant` | one plant from the pack, on your tile or an adjacent one | grazer, omnivore | 4 tiles | 1 tile / tick | 20 ticks | +20, calm, no bolt | the plant |
+| scatter | `bait scatter` | three plants in a line of three tiles | grazers only; up to three creatures, one per tile | 6 tiles | 1 tile / tick | 20 ticks each | +20 each | three plants |
+| meat bait | `bait meat <name>` | a party creature, set down adjacent | carnivore, apex, scavenger, omnivore | 5 tiles | 1 tile / tick | 30 ticks | +25, calm, no bolt | the creature is eaten at the END of the 30 ticks (or when feeding is interrupted by a catch) |
+| stake | `bait stake <name>` | a party creature, tethered adjacent | carnivore, apex | 5 tiles | 1 tile / tick | 30 ticks | +25 | if you CATCH the hunter within the 30 ticks, the staked creature is untouched and returns to the party; if you fail or wait too long, it is eaten |
+| corral | no tool: both players adjacent to one creature on opposite sides | nothing | any | | | while both stay | +10 for both players; the creature's bolt is blocked on the flanked axis | nothing |
+
+Rot: any unclaimed bait vanishes after 60 ticks. A bait a creature is walking toward keeps its bait slot; once it
+feeds, the clock is the feeding window.
+
+Who takes what: scavengers refuse plants; grazers refuse meat; omnivores take either; a fed creature (en >= 0.8)
+ignores bait altogether (it is not hungry, and the look says `fed` so the player can tell).
+
+Stake is the gamble the mode is built around: a live party member on a rope and a strong ball in hand. Scatter is
+how you pull a herd to you instead of chasing it. Corral is the reason to play with a partner.
 
 ## 8. Catch odds
 
@@ -318,22 +340,73 @@ Base by ball and level, then modifiers, clamped 1-99; master is always 100.
 | alert | -10 | aw alert |
 | wary | -30 | aw wary |
 | Lure III | +10 | in party |
+| corral | +10 | the other player adjacent on the opposite side |
 | Dread III | wary and alert count 0 | in party |
 | basic ball on L10 | stays 0 | no modifier lifts it |
 
 Expected balls per catch (basic, no modifiers): L1 1.2, L2 1.5, L3 2.2, L4 3.3, L5 5, L6 8.3. The fled rule caps
 any encounter at 3 throws, so above L5 a basic ball is a gamble, which is the point of the strong tier.
 
-## 9. Throw resolution
+## 9. Catching an animal, start to finish
 
-| step | rule |
-|---|---|
-| preconditions | target within 1 tile (8-neighbour), in sight, not at sea, a ball of that tier in the pack |
-| spend | the ball is consumed on the throw, win or lose |
-| roll | uniform 0-99 < odds |
-| success | creature removed from `fauna`; added to the thrower's party (max 3) else the box; thrower names it (<= 24 chars); if the species has no nickname, thrower names the species (<= 16 chars) |
-| fail | aw = wary (or fled on the third fail of the encounter); bolt 3-4 tiles away from the thrower over passable tiles; a hungry carnivore or apex attacks (sec. 11) |
-| Pokedex | seen++, caught++ on success, best L, nickname, abilities, scientific name, first world and tick |
+The whole encounter as it plays, with what each player sees and the tick clock. The sim runs at the visit speed
+(6 ticks a second at most); a "tick" here is one sim step.
+
+| phase | what happens | Kevin sees | Root reads |
+|---|---|---|---|
+| 1. sight | a creature enters the sight square; the Pokedex marks it seen | the creature with a small level tag `L4` above it; a type badge colour on the tag (Dune sand, Frost white, Ember orange, ...) | `H 2N1E L4 Dune fed` |
+| 2. approach | the player steps toward it; at 3 or 2 tiles it goes alert (unless Stalk) | a `!` pops over the creature for 10 ticks; it may step away | `H 1N1E L4 Dune alert` |
+| 3. read | within 2 tiles (Nose: further) the odds appear | a ring around the creature: green 60+, amber 25-59, red < 25; a skull replaces the ring on a growling predator | `H 1N1E L4 Dune alert 55%` |
+| 4. bait (optional) | a bait is placed; the creature walks to it and feeds | a leaf (plant) or a bone (meat) icon on the tile; the creature's path dotted; a chewing bob while it feeds; the ring turns a shade greener | `bait set 1E`, then on the next look `H 1E L4 Dune feeding 75%` |
+| 5. throw | `throw strong` at the adjacent target; the ball is spent; the roll happens now, before any animation | the ball arcs from the player to the creature (sec. 9b); the creature is pulled in; the ball wobbles | the result line arrives after the animation's length in ticks so both players learn it at the same beat: `caught! name it` or `broke free (wary)` |
+| 6a. caught | creature leaves `fauna`; joins the party (or the box); naming prompt; Pokedex caught++ | the ball clicks shut with a flash; a card slides into the party row; a naming field focuses | `caught H L4 Dune. name: ` then `name <name>` (and `name species <nick>` if new) |
+| 6b. broke free | aw = wary; bolt 3-4 tiles; fails++ (3 = fled) | the ball bursts; the creature runs with dust puffs; `~` marks over it while wary | `broke free; H bolts 3N, wary` |
+| 6c. attack | a hungry predator that was growling, or that you failed on, attacks | lunge, red flash on the party card taken, the card cracks and empties; or the player fades and reappears at the store with a coin-loss line | `C attacks: "Tam" is taken` or `C attacks: you wake at the North Store, 120 coins lost` |
+| 7. record | Pokedex and save updated | the Pokedex badge pulses once | `new in your Pokedex: ...` on first catch of a species |
+
+Preconditions for a throw: target within 1 tile (8 neighbours), in sight, both on land (no throws from a boat or
+at a swimming creature), a ball of that tier in the pack. Names: individual <= 24 characters, species nickname <= 16,
+letters, digits, spaces and apostrophes.
+
+The roll is decided at the throw, not at the end of the animation; the animation is a reveal. The wobble count is
+derived from the roll so it tells the truth: a catch always ends on the third wobble; a near miss (roll within 15
+of the odds) breaks out on the third wobble; a clear miss breaks out on the first or second. Nothing in the
+animation is random on its own.
+
+## 9b. Animation of the key actions
+
+The renderer is a 2D canvas, one draw per sim step, `PIX` pixels per tile. Animations are a list of timed effects
+the mode draws on top of `draw()`; each has a start tick and a length; the sim never waits for them, and Root's
+results are delayed to match them (sec. 9) so the two players are in step. All durations in ticks (6 a second).
+
+| action | length | frames |
+|---|---|---|
+| level tag | always | small rounded tag above the creature, `L4`, in the type's colour; fades to 40% when out of the odds range |
+| alert | 10 | `!` rises 1 tile over the creature and fades |
+| growl | until resolved | a skull replaces the ring; the creature's shape shakes 1px side to side every tick |
+| ring | while in range | a ring at 0.9 tile radius, 2px, green / amber / red by odds; width pulses slowly when calm |
+| bait drop | 6 | the icon drops from the player's hand (0.5 tile up) to the tile with a small bounce |
+| bait walk | 1 per tile | a dotted line from creature to bait, erased as it walks |
+| feeding | 20 or 30 | the creature bobs 1px up and down every 3 ticks; the ring turns a shade greener |
+| throw | 8 | the ball (a two-tone circle, 0.5 tile) travels a parabola from the player's centre to the creature's, apex 1.5 tiles up, with a 3-frame spin |
+| pull-in | 4 | the creature's shape shrinks into the ball with a white streak; the ball drops to the tile |
+| wobble | 3 x 10 | the ball rocks 15 degrees left, right, centre, pausing 4 ticks between wobbles; 1, 2 or 3 wobbles per the roll |
+| click | 6 | the ball flashes white, two sparkles, a small ring expands and fades; the party card slides in from the right over 6 ticks |
+| burst | 6 | the ball splits into two halves that fly apart and fade; the creature reappears at full size |
+| bolt | 4 | the creature moves 1 tile per tick with a dust puff (3 grey dots) behind each step |
+| wary | 200 | a `~` drifts above the creature every 20 ticks |
+| flee | 6 | the creature runs 10-14 tiles at 2 tiles per tick, trailing dust, and the tag reads `fled` |
+| corral | while held | a thin line joins the two players through the creature; the ring gains a second, thinner ring |
+| attack | 12 | the predator lunges 0.5 tile toward the player and back; a red flash fills the party card for 6 ticks; the card cracks (two diagonal lines) and empties; or, with no grazer, the player's dot fades over 6 ticks and reappears at the store with `-120` floating up |
+| Hardy absorb | 8 | the lunge lands on a brief white shield arc over the player |
+| store enter | 6 | the panel slides up from the bottom; the store roof lights |
+| sell | 8 | the card lifts, shrinks into the counter; a coin count ticks up in the wallet |
+| boat | per step | a small brown hull under the player's dot, bobbing 1px every 6 ticks |
+| fog clear | 4 per tile | cloud tiles fade to terrain as the sight square moves |
+
+Root's text keeps the same beats: a throw's result is delivered after throw + pull-in + wobbles + click or burst
+(8 + 4 + 30 + 6 = 48 ticks, 8 seconds at full visit speed), so when Kevin sees the ball click, Root reads `caught`.
+Sound is deferred: a single short click, burst and growl sample would be enough when we add it.
 
 ## 10. Price
 
@@ -365,7 +438,7 @@ preference within 1 of an extreme. Forager multiplies. Pack holds 10 plants (Pac
 
 | trigger | attacker | effect | counters |
 |---|---|---|---|
-| a hungry (en < 0.5) carnivore or apex is adjacent when the player's action ends | that creature | takes the lowest-level grazer in the party (the creature eats it: +40 energy); with no grazer, the player wakes at the nearest store with floor(wallet / 2) | Guard I (carnivore), Guard II (apex), Hardy (absorbs), Dread I |
+| a hungry (en < 0.5) carnivore or apex has growled (sec. 6) and is still adjacent when the player's NEXT action ends | that creature | takes the lowest-level grazer in the party (the creature eats it: +40 energy); with no grazer, the player wakes at the nearest store with floor(wallet / 2) | Guard I (carnivore), Guard II (apex), Hardy (absorbs), Dread I |
 | a failed throw on a hungry carnivore or apex | same | same, at once | same |
 | a creature feeding on meat bait | none | no attack while feeding | |
 
