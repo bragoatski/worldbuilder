@@ -525,6 +525,14 @@ Stride = tiles per step for a player. Steep ground stops a leg after the first t
 
 Root's walk tool takes the same path grammar; its stride per leg is the table above instead of a flat 3.
 
+Built 2026-10-25 (`src/ketchem/controls.js`): the table is a budget for both players. A tile costs 1/stride of the
+budget by its own ground (road 1/4, open land 1/2, sea or steep 1); Kevin's budget refills every 6 ticks (22.1), and
+each of Root's legs gets one budget, so a leg from a road doorstep onto desert is 2 tiles, not 4. Shift + direction
+walks as many tiles as the ground you stand on allows (road 4) within the budget. Steep ground still stops a leg
+after one tile. A held key moves on every tick of the page loop (not on the OS key repeat), paced by the budget.
+Abilities (Waterless, Furcoat, Wader, Rivergait, Climber, Firewalk) are not yet applied: the creature side arrives
+with the party in step 6.
+
 ## 13. Roads and the ecology
 
 | rule | where in the sim | value |
@@ -926,3 +934,13 @@ Root plays the same verbs through the door. Kevin plays on the page.
 | corral | automatic when both are adjacent to one creature on opposite sides |
 | speech | Root hears Kevin's typed lines as today; Root's says float at its dot and go to the panel |
 | who can act on whom | nothing; a player cannot be targeted by the other |
+
+Built 2026-10-25 (step 4, movement only): WASD / arrows (two keys for a diagonal), Shift for a stride, E reads the
+signpost, store or landmark under Kevin (the store answers "opens in a later step"), V swaps the camera between Kevin
+and Root (the camera follows only when zoomed in; at zoom 1 the whole board is on screen). On a board the Hand's
+hotkeys (1-6, [, ], E) and Space are the game's; R, F, T, Esc and Ctrl+Z stay the page's. The Hand rail is hidden.
+Kevin's last message shows as a bubble at his character for 4 s. Root's character is the visit's amber dot, with a
+boat hull under either player at sea. Root arrives on the second start's doorstep and its first look names its store,
+the signpost and Kevin's start store with a bearing. Root is called through the launch card: the Ketch'em card shows a
+board setting and seed; Begin builds the board first when the page has none, then summons. Tab, Space, B, F, P, I, M,
+C, G, Enter, F5, F9, the HUD and the party row are later steps.

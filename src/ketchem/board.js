@@ -255,9 +255,24 @@ export function signpostText(i, stores) {
   return [...best.entries()].sort((u, v) => u[1][0] - v[1][0]).map(([name, [d, dist]]) => DIR_NAMES[d] + ': ' + name + ' ' + dist).join(' - ');
 }
 
+// Branches out of a road tile: its road neighbours grouped by orthogonal adjacency, so the two tiles a diagonal
+// road touches count once. Roads are 8-connected; counting raw neighbours made every tile beside a T a junction.
+export function branchCount(i) {
+  const nb = roadNeighbours(i).map(p => p[1]);
+  let groups = 0;
+  const seen = new Set();
+  for (const a of nb) {
+    if (seen.has(a)) continue;
+    groups++;
+    const q = [a]; seen.add(a);
+    for (let h = 0; h < q.length; h++) for (const b of nb) { const d = Math.abs(b - q[h]); if (!seen.has(b) && (d === 1 || d === W)) { seen.add(b); q.push(b); } }
+  }
+  return groups;
+}
+
 export function placeSignposts(stores) {
   const tiles = new Set();
-  for (let i = 0; i < W * H; i++) if (road[i] && roadNeighbours(i).length >= 3) tiles.add(i);
+  for (let i = 0; i < W * H; i++) if (road[i] && branchCount(i) >= 3) tiles.add(i);
   for (const s of stores) {
     const rn = roadNeighbours(s.i).map(p => p[1]).filter(j => !stores.some(o => o.i === j));
     if (rn.length) { s.door = { x: rn[0] % W, y: (rn[0] / W) | 0 }; tiles.add(rn[0]); }

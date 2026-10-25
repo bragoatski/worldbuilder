@@ -2,6 +2,17 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-25 - Ketch'em step 4: both players move - DONE, GATE GREEN
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 5, `src/ketchem/save.js`** (schema v1, IndexedDB, export/import, relay mirror; acceptance in the handoff's step table).
+
+What the game does now: on a board (`?ketchem=...`, or Call Root > Ketch'em, which builds one first) Kevin's character stands on his start doorstep as a blue dot and moves on WASD / arrows: a held key runs at the stride table's pace (4 tiles a window on road, 2 on open land, 1 at sea or on steep ground), Shift takes a whole stride, two keys make a diagonal, a boat appears under him when he steps off the shore and vanishes on landing, E reads the signpost, store or landmark he stands on (a bubble at his character), V swaps the camera between him and Root when zoomed in. The Hand rail is hidden and its hotkeys are off on a board. Root, called as Ketch'em from the launch card (which gains a board setting and seed row), arrives on the other start's doorstep: its first look names its store, the signpost and where Kevin started; its looks show `=` roads, `S` stores, the nearest signpost's text, found stores and Kevin's character; its walk uses the same budget rule, one stride per leg. Fog clears around both for good. Screenshots: `docs/04 Handoffs/img/2026-10-25-ketchem-step4/`.
+
+Rehearsal (scripted, scratch `VISIT_ROOT`, scratch relay, headless Chromium driving the live page, the door over stdio with no model): Hand rail hidden; E on the doorstep read `NE: Forest Depot 42`; a held key moved 5-6 tiles per 1.2 s; Shift+W two tiles over open land; a greedy walk to the shore put Kevin in a boat (E there reads `open water`); the launch card showed the four modes with the board row for Ketch'em; Root's door served look / walk / guide / say / listen / note / leave only and refused `plant`; Root arrived at Desert Post with the signpost and Kevin's bearing (`51S22E`), walked `4E` as `walked 2E 2E` over desert, fog grew 324 to 360 tiles, and `leave` wrote a field note headed "(as Ketch'em)" into the scratch record; no page errors. Real `~/root` untouched (scratch relay replaced the keepalive's; the keepalive restored the real one afterwards, see the Progress line).
+
+Readings recorded in the mechanics file (12, 22.4 notes): the stride table is a budget for both players, each tile costing by its own ground; a held key moves on the page loop, not the OS key repeat; Root's route walks as a run of legs (`walked 4E 2E`); abilities on movement, the HUD, party row, Tab, Space and the rest of 22.2 are later steps. Also fixed from step 3: the junction rule counted every tile beside a T as a junction on 8-connected roads; junctions now count orthogonally grouped road neighbours.
+
+Gate: typecheck clean, lint 0 errors (29 warnings, baseline), 162/162 full suite in 78 s, build green. Critic: see the Progress line.
+
 ## Session 2026-10-24 (d) - Ketch'em step 3: the board, roads, stores, signposts, fog - DONE, GATE GREEN
 Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 4, `src/ketchem/controls.js`**, boats, Kevin's character, the Ketch'em launch card entry and Root's mode plumbing (acceptance in the handoff's step table).
 

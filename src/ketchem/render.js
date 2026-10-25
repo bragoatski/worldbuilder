@@ -53,6 +53,39 @@ export function drawKetchemGround(ctx, PIX, K) {
   }
 }
 
+export const KEVIN = '#3b9eff', HULL = '#7a5a3a';
+function hull(ctx, x, y, PIX) {
+  ctx.fillStyle = HULL;
+  ctx.beginPath(); ctx.ellipse((x + 0.5) * PIX, (y + 0.62) * PIX, PIX * 0.75, PIX * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+}
+
+// The two characters: Kevin's blue dot (and boat), Root's boat under the amber dot visitDraw paints, Kevin's sight
+// square, and his last message as a bubble. Drawn after the fog, before Root's own marks.
+export function drawPlayers(ctx, PIX, K) {
+  if (!K) return;
+  ctx.save();
+  if (K.root && K.root.boat) hull(ctx, K.root.x, K.root.y, PIX);
+  const p = K.kevin;
+  if (p) {
+    ctx.strokeStyle = 'rgba(59,158,255,0.45)'; ctx.lineWidth = Math.max(1, PIX / 4);
+    ctx.strokeRect((p.x - 4) * PIX, (p.y - 4) * PIX, 9 * PIX, 9 * PIX);
+    if (p.boat) hull(ctx, p.x, p.y, PIX);
+    const cx = (p.x + 0.5) * PIX, cy = (p.y + 0.5) * PIX, r = Math.max(3, PIX * 0.9);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = KEVIN; ctx.fill(); ctx.lineWidth = Math.max(1.5, PIX / 3); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    if (p.msg && p.msgUntil > Date.now()) {
+      const font = Math.max(9, PIX * 1.6);
+      ctx.font = font + 'px "JetBrains Mono",monospace'; ctx.textBaseline = 'bottom';
+      const text = p.msg.length > 70 ? p.msg.slice(0, 67) + '...' : p.msg;
+      const w = ctx.measureText(text).width, bx = Math.max(2, Math.min(ctx.canvas.width - w - 12, cx - w / 2 - 5));
+      const above = cy - r - font - 8 >= 0, top = above ? cy - r - font - 8 : cy + r + 4;   // below the dot near the top edge
+      ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fillRect(bx, top, w + 10, font + 6);
+      ctx.fillStyle = '#10141c'; ctx.fillText(text, bx + 5, top + font + 2);
+    }
+  }
+  ctx.restore();
+}
+
 // Fog last: an undiscovered tile is cloud, and whatever stands on it (plants, creatures, roads) is hidden.
 export function drawFog(ctx, PIX, K) {
   if (!K || !K.fog) return;

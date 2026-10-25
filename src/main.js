@@ -23,8 +23,9 @@ import {
 import { drawWorld } from './render.js';
 import { bootVisit, visitDraw, visitTick } from './visit.js';
 import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
-import { drawKetchemGround, drawFog } from './ketchem/render.js';
+import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
+import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
 
 // ===== Panel collapse =====
 window.togglePanel = function(id){
@@ -620,6 +621,7 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 // Hotkeys
 window.addEventListener('keydown',function(e){
   if(/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||''))return;
+  if(K&&ketchemKey(e))return;   // a board is up: the keys are Kevin's character's
   if(e.code==='Space'){e.preventDefault();running=!running;if(running)loop();}
   else if(e.key==='s'||e.key==='S'){e.preventDefault();running=false;step();draw();}
   else if(e.key==='r'||e.key==='R'){e.preventDefault();running=false;init();buildSliders();applyElevationIntensity();draw();}
@@ -667,6 +669,7 @@ function buildSliders(){
 function draw(){
   if(!ctx||!grid||!elev)return;
   drawWorld(ctx,PIX,{overlayMode:overlayMode,followId:followId,ground:K?_kGround:null,top:K?_kTop:null});
+  if(K){kevinCamera();drawPlayers(ctx,PIX,K);}   // Kevin's character and the boats, over the fog
   visitDraw(ctx,PIX);   // Root's body, sight and named places; no-op unless Root is here
   if(_kProgress)drawBoardProgress();
   drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
@@ -686,30 +689,67 @@ function getKetchemParam(){
   return {setting:m[1],seed:seedM?+seedM[1]:undefined,size:sizeM?+sizeM[1]:96};
 }
 var _pendingKetchem=getKetchemParam();
-function startKetchem(setting,seed,size){
-  if(!KETCHEM_SETTINGS[setting]){var eb0=document.getElementById('err');if(eb0){eb0.style.display='block';eb0.textContent='Unknown Ketch\'em board setting: '+setting;}return;}
-  if(_kWorker){_kWorker.terminate();_kWorker=null;}
-  K=null;running=false;followId=null;
+// Kevin's character on the keys (mechanics 22.1): WASD or arrows, two keys for a diagonal, Shift for a whole stride,
+// E reads what he stands on, V swaps the camera between him and Root. With a board up these keys are the game's and
+// the Hand's hotkeys are off; R, F, T and Ctrl+Z stay the page's.
+var _kPressed={},_kCamAt=null;
+var KEYDIR={w:[0,-1],a:[-1,0],s:[0,1],d:[1,0],arrowup:[0,-1],arrowleft:[-1,0],arrowdown:[0,1],arrowright:[1,0]};
+function kevinSay(text){var p=K&&K.kevin;if(!p)return;p.msg=text;p.msgUntil=Date.now()+4000;}
+function kevinCamera(){
+  if(!K||zoomLevel<=1)return;
+  var t=(K.cam==='root'&&K.root)?K.root:K.kevin;if(!t)return;
+  var at=t.x+','+t.y;if(at===_kCamAt)return;_kCamAt=at;centerOnTile(t.x,t.y);
+}
+function ketchemKey(e){
+  var p=K.kevin;if(!p)return false;
+  if(e.ctrlKey||e.metaKey||e.altKey)return false;   // browser and page chords (copy, undo, reload) stay theirs
+  var k=String(e.key||'').toLowerCase();
+  if(KEYDIR[k]){
+    e.preventDefault();
+    if(e.repeat)return true;                  // the loop repeats a held key; the OS repeat would double it
+    _kPressed[k]=tick;                        // when it was pressed: the loop repeats it only from the next tick
+    var dx=0,dy=0;for(var q in KEYDIR){if(_kPressed[q]!==undefined){dx+=KEYDIR[q][0];dy+=KEYDIR[q][1];}}
+    dx=Math.sign(dx);dy=Math.sign(dy);if(!dx&&!dy)return true;
+    if(e.shiftKey){strideStep(K,p,dx,dy);}
+    else{var r=tryStep(K,p,dx,dy);if(!r.ok&&r.why!=='winded')kevinSay(r.why);}
+    draw();return true;
+  }
+  if(k==='e'){e.preventDefault();kevinSay(interact(K,p).text);draw();return true;}
+  if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
+  if(k==='escape'||k==='tab'||k==='enter'||k==='f'||k==='t'||/^f\d+$/.test(k))return false;   // R is NOT let through: it would reset the world under both players (the Reset button still does)
+  e.preventDefault();return true;   // Space, 1-6, [ ], E, R: the Hand is off on a board
+}
+window.addEventListener('keyup',function(e){delete _kPressed[String(e.key||'').toLowerCase()];});
+window.addEventListener('blur',function(){_kPressed={};});
+var _kOnDone=null;   // the callback of the build in flight, told false if the build is abandoned
+function abandonBuild(){if(_kWorker){_kWorker.terminate();_kWorker=null;}_kProgress=null;var cb=_kOnDone;_kOnDone=null;if(cb)cb(false);}
+function startKetchem(setting,seed,size,onDone){
+  if(!KETCHEM_SETTINGS[setting]){var eb0=document.getElementById('err');if(eb0){eb0.style.display='block';eb0.textContent='Unknown Ketch\'em board setting: '+setting;}if(onDone)onDone(false);return;}
+  abandonBuild();_kOnDone=onDone||null;
+  K=null;running=false;followId=null;document.body.classList.remove('ketchem');
   clearScenario();if(_scenWarmTimer){clearTimeout(_scenWarmTimer);_scenWarmTimer=null;}   // a scenario warm-up must not seed life into the arriving board
   _kProgress={phase:'land',land:0,target:1,setting:setting};draw();
   _kWorker=new Worker(new URL('./ketchem/board.worker.js',import.meta.url),{type:'module'});
   _kWorker.onmessage=function(e){
     var m=e.data;
     if(m.type==='progress'){_kProgress=m;draw();return;}
-    if(m.type==='error'){_kProgress=null;_kWorker.terminate();_kWorker=null;var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent='Board build failed: '+m.message;}draw();return;}
+    if(m.type==='error'){var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent='Board build failed: '+m.message;}abandonBuild();draw();return;}
     if(m.type!=='done')return;
-    _kWorker.terminate();_kWorker=null;_kProgress=null;
+    _kWorker.terminate();_kWorker=null;_kProgress=null;var done=_kOnDone;_kOnDone=null;
     Object.assign(CFG,m.cfg);          // the setting's genesis knobs, the frozen land cap, ecology on
     restoreState(m.snap);
     godCancelMark(null);               // any Hand mark belongs to the world the board replaced
     K=m.board;
+    K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);K.root=null;K.cam='kevin';_kCamAt=null;_kPressed={};
+    setHandTool('none');document.body.classList.add('ketchem');   // the Hand is off on a board
     placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
     speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;   // the hero boot runs at 60; a board plays at the normal rate
     var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
     chronicleNote('terrain','A Ketch\'em board: '+KETCHEM_SETTINGS[K.setting].label+'. Two stores stand at the starts: '+K.starts.map(function(st){return K.stores[st.store].name;}).join(' and ')+'; two more are out there.','#8a9a7b');
     running=true;draw();refreshUndoBtn();
+    if(done)done(true);
   };
-  _kWorker.onerror=function(ev){_kProgress=null;var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent='Board worker error: '+(ev&&ev.message||'unknown');}};
+  _kWorker.onerror=function(ev){var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent='Board worker error: '+(ev&&ev.message||'unknown');}abandonBuild();};
   _kWorker.postMessage({setting:setting,seed:seed,size:size});
 }
 function drawBoardProgress(){
@@ -1100,8 +1140,8 @@ function init(){
   // A rebuilt world re-issues fauna ids from 1, so a stale followId would re-attach the camera to an unrelated
   // creature (or spuriously report "the creature you were following has died"). Drop the follow on any rebuild.
   followId=null;
-  K=null;   // a rebuilt world has no board; a build in flight is abandoned
-  if(_kWorker){_kWorker.terminate();_kWorker=null;_kProgress=null;}
+  K=null;abandonBuild();   // a rebuilt world has no board; a build in flight is abandoned (its caller is told)
+  if(typeof document!=='undefined')document.body.classList.remove('ketchem');
   if(_pendingWorldCode){
     var wc=_pendingWorldCode; _pendingWorldCode=null;
     try{
@@ -1148,7 +1188,13 @@ function init(){
   if(seedEl&&!seedVal)seedEl.value='';
   resize();buildSliders();draw();refreshUndoBtn();
 }
-function loop(){try{if(running){step();visitTick();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+// A held direction key moves Kevin every tick within the stride budget, independent of the OS key-repeat delay.
+function kevinHeld(){
+  if(!K||!K.kevin)return;var dx=0,dy=0;
+  for(var q in KEYDIR){if(_kPressed[q]!==undefined&&tick>_kPressed[q]+1){dx+=KEYDIR[q][0];dy+=KEYDIR[q][1];}}   // a tap moves once (the keydown); a hold repeats from the second tick
+  dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy)tryStep(K,K.kevin,dx,dy);
+}
+function loop(){try{if(running){step();visitTick();kevinHeld();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){
@@ -1185,7 +1231,8 @@ function dismissIntro(){
 // Inert on the public site and when no relay answers; the game is unchanged until Root is called in.
 bootVisit({draw:draw,screenToTile:screenToTile,canvas:canvas,getSpeed:function(){return speed;},
   setSpeed:function(s){speed=s;var sp=document.getElementById('speed');if(sp)sp.value=s;},
-  onGodMark:refreshUndoBtn});   // Root's shaping is one act in the Hand's undo, so the button must wake for it
+  onGodMark:refreshUndoBtn,     // Root's shaping is one act in the Hand's undo, so the button must wake for it
+  ketchem:{board:function(){return K;},start:function(setting,seed,cb){startKetchem(setting,seed,96,cb);}}});   // the game mode builds a board first
 
 // Verification handle, active ONLY with ?debug in the URL (inert for normal users). Lets the
 // gate-blind river visual verify drive load->rivers->draw from one script call, no file dialog.
@@ -1195,7 +1242,8 @@ if(typeof location!=='undefined'&&/[?&]debug(\b|=)/.test(location.search)){
     setPix:function(p){PIX=p;},setView:function(z,px,py){zoomLevel=z;panX=px;panY=py;applyZoomPan();draw();},
     lakeCells:function(){var out=[];if(riverData)for(var i=0;i<riverData.length;i++)if(riverData[i]&&riverData[i].lake)out.push(i);return out;},
     // Ketch'em step 3: build a board from the console, read it back, lift the fog for a screenshot.
-    ketchem:{start:startKetchem,board:function(){return K;},building:function(){return !!_kProgress;},fogOff:function(){if(K&&K.fog){K.fog.fill(255);draw();}}}};
+    ketchem:{start:startKetchem,board:function(){return K;},building:function(){return !!_kProgress;},fogOff:function(){if(K&&K.fog){K.fog.fill(255);draw();}},
+      step:function(dx,dy){if(!K||!K.kevin)return null;var r=tryStep(K,K.kevin,dx,dy);draw();return r;},interact:function(){return K&&K.kevin?interact(K,K.kevin):null;}}};
 }
 
 // ===== Snapshot / restore (headless A/B: warm the slow terrain once, replay ecology many times) =====

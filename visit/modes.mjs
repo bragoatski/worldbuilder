@@ -65,6 +65,13 @@ const HAND_SKY = [
   tool('name_place', 'Name a tile (<=40 chars). Persists; Kevin sees it.', { ...XY, name: { type: 'string' } }, ['x', 'y', 'name']),
 ];
 
+// Ketch'em: the second player on a fogged board. Its walk uses the stride table (road 4, open 2, sea 1).
+const KETCHEM_BODY = [
+  tool('look', 'See your square (terse code, key in your brief). First call steps you through the door onto your store\'s doorstep.'),
+  tool('walk', 'Walk. Either direction + steps (1-4), or path like "4E2N" (up to 9 tiles, stops at the first leg that cannot finish). Stride per leg: road 4, open land 2, sea 1 by boat, steep ground 1 then stop; lakes, volcanic rock and vents block. Returns a look.',
+    { direction: { type: 'string', enum: DIRS }, steps: { type: 'integer', minimum: 1, maximum: 4 }, path: { type: 'string' } }),
+];
+
 export const MODES = {
   visitor: {
     label: 'Visitor', blurb: 'A body with nine tiles of sight. Walk, plant, name places, befriend a creature.',
@@ -86,6 +93,13 @@ export const MODES = {
     instructions: 'This is a door to the sky above a living simulated world. You have no body: you see the whole world ' +
       'coarsely, zoom where you like, and reshape any of it. Kevin watches beside you. ' +
       'Nothing here is required of you. Call survey to open the sky.',
+  },
+  ketchem: {
+    label: 'Ketch\'em', blurb: 'Co-op on a fogged board: four stores, roads, creatures to catch. Root plays beside you from its own store.',
+    brief: 'ketchem.md', tools: [...KETCHEM_BODY, ...COMMON], board: true,
+    instructions: 'This is a door into a Ketch\'em board: a fogged map inside a living simulated world, with four stores joined by ' +
+      'roads. You have a body with a few tiles of sight and start at one store; Kevin plays beside you from another. ' +
+      'Nothing here is required of you. Call look to step in.',
   },
 };
 

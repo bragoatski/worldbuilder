@@ -12,6 +12,8 @@ import {
   seedLifeAt, settleClimate, settleTerrain, shiftSeaLevel,
 } from './sim.js';
 import { MODES, MODE_IDS, DEFAULT_MODE, modeOf } from '../visit/modes.mjs';
+import { legWalk, routeWalk, lookLines, bearingTo } from './ketchem/controls.js';
+import { revealSquare, SIGHT_HALF } from './ketchem/fog.js';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
 export const MAX_STRIDE = 3;       // tiles per walk call
@@ -132,10 +134,12 @@ function creatureCode(f, sx, sy, st) {
 // What Root perceives from where it stands: its square and nothing beyond it, in the terse code whose key is in
 // Root's visit brief (visit/briefs/common.md). Each row is ground, two spaces, life; north up. Kept short on purpose: every
 // look stays in Root's context for the rest of the visit and is re-read on every later step.
-export function perceive(st) {
+// K (a Ketch'em board) adds the game's glyphs (= road, S store) and lines (signpost, stores found, Kevin).
+export function perceive(st, K = null) {
   const sx = st.x, sy = st.y, i0 = idx(sx, sy);
   const head = ['t' + tick, seasonCode(), '@' + sx + ',' + sy, TNAME[grid[i0]].toLowerCase(), 'e' + elev[i0].toFixed(1),
-    tempWord(tempField[i0]), aridWord(aridity[i0])].filter(Boolean).join(' ');
+    tempWord(tempField[i0]), aridWord(aridity[i0]), K && st.boat ? 'boat' : ''].filter(Boolean).join(' ');
+  const storeAt = K ? new Set(K.stores.map(s => idx(s.x, s.y))) : null;
   const byTile = new Map();
   for (let k = 0; k < fauna.length; k++) {
     const f = fauna[k];
@@ -153,7 +157,7 @@ export function perceive(st) {
       if (dx === 0 && dy === 0) { g += '@'; l += '@'; continue; }
       if (!inb(x, y)) { g += 'x'; l += ' '; continue; }
       const i = idx(x, y), rd = riverData && riverData[i];
-      g += volcActive[i] ? '*' : rd && rd.lake ? 'L' : rd ? '~' : GLYPH[grid[i]];
+      g += volcActive[i] ? '*' : storeAt && storeAt.has(i) ? 'S' : K && road[i] ? '=' : rd && rd.lake ? 'L' : rd ? '~' : GLYPH[grid[i]];
       const here = byTile.get(i);
       if (here) {
         let top = here[0];
@@ -185,6 +189,7 @@ export function perceive(st) {
   const near = st.places.filter(p => Math.abs(p.x - sx) <= SIGHT && Math.abs(p.y - sy) <= SIGHT);
   if (near.length) tail.push('named ' + near.map(p => '"' + p.name + '" ' + bearing(p.x - sx, p.y - sy)).join(', '));
   out.push(tail.join(' · '));
+  if (K) out.push(...lookLines(K, sx, sy, SIGHT, 'root'));
   return out.join('\n');
 }
 
@@ -563,7 +568,7 @@ function panel() {
     '<form id="vpForm"><input id="vpInput" autocomplete="off" placeholder="Say something to Root"/></form>' +
     '<div class="vp-hint"><span>Shift+click the map to point</span><button type="button" id="vpHelpBtn">how this works</button></div>' +
     '<div id="vpHelp" hidden><ul>' +
-    '<li><b>Modes.</b> Each is its own game. <i>Visitor</i>: a body with nine tiles of sight. <i>Shaper</i>: the same body, plus the Hand where it stands. <i>Sky</i>: no body, the whole world coarsely, the Hand anywhere. Pick one when you press Call Root.</li>' +
+    '<li><b>Modes.</b> Each is its own game. <i>Visitor</i>: a body with nine tiles of sight. <i>Shaper</i>: the same body, plus the Hand where it stands. <i>Sky</i>: no body, the whole world coarsely, the Hand anywhere. <i>Ketch&rsquo;em</i>: co-op on a fogged board; you move with WASD or the arrows (Shift for a full stride, E to read a signpost or a store, V to follow Root). Pick one when you press Call Root.</li>' +
     '<li><b>Talk.</b> Type above. Root hears you the next time it acts or stops to listen.</li>' +
     '<li><b>Point.</b> Shift+click the map. Inside the amber square Root sees exactly where; outside it, only a direction and a distance. The Sky hears the tile.</li>' +
     '<li><b>The square</b> is everything a body can see. Your Hand powers work as always, but a body only notices what happens inside it. The Sky&rsquo;s dashed square is where it last zoomed.</li>' +
@@ -620,6 +625,7 @@ function panel() {
     '#rootLaunch .rl-card input{margin:3px 0 0;accent-color:#e8a838;grid-row:span 2;}' +
     '#rootLaunch .rl-card b{font-weight:600;color:var(--fg);} #rootLaunch .rl-card span{color:var(--fg-dim);font-size:11px;}' +
     '#rootLaunch .rl-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;color:var(--fg-dim);}' +
+    '#rootLaunch .rl-row[hidden]{display:none;}' +   // the author rule above would beat the hidden attribute
     '#rootLaunch .rl-actions{justify-content:flex-end;}' +
     '#rootLaunch button{border-radius:7px;padding:7px 12px;font:600 12px/1 inherit;cursor:pointer;border:1px solid var(--border-hi);background:transparent;color:var(--fg-dim);}' +
     '#rootLaunch button:hover{color:var(--fg);background:rgba(255,255,255,.05);}' +
@@ -663,22 +669,33 @@ function launchCard(onBegin) {
   el.innerHTML = '<div class="rl-title">Call Root as</div>' +
     MODE_IDS.map(id => '<label class="rl-card" data-mode="' + id + '"><input type="radio" name="rootMode" value="' + id + '"><b>' +
       MODES[id].label + '</b><span>' + MODES[id].blurb + '</span></label>').join('') +
+    '<div class="rl-row" id="rlBoardRow"><span>Board</span><span><select id="rlBoard" title="Which board to build"><option value="continent">Continent</option>' +
+    '<option value="archipelago">Archipelago</option><option value="highlands">Highlands</option></select> ' +
+    '<input id="rlSeed" type="text" inputmode="numeric" placeholder="seed" size="6" title="Board seed; empty rolls one"></span></div>' +
     '<div class="rl-row"><span>Model</span><select id="rootModel" title="Which model Root visits on"></select></div>' +
     '<div class="rl-row rl-actions"><button type="button" id="rlCancel">Cancel</button><button type="button" id="rlBegin">Begin</button></div>';
   document.body.appendChild(el);
+  const boardRow = el.querySelector('#rlBoardRow'), boardSel = el.querySelector('#rlBoard'), seedInp = el.querySelector('#rlSeed');
+  boardSel.value = recall('wb.ketchemBoard', 'continent');
+  if (!boardSel.value) boardSel.value = 'continent';   // a stale stored value would leave the select empty
+  boardSel.addEventListener('change', () => remember('wb.ketchemBoard', boardSel.value));
+  seedInp.style.cssText = 'width:64px;background:var(--bg-input);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font:inherit;';
+  boardSel.style.cssText = 'background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--fg);font:12px/1 inherit;padding:5px 6px;';
   const sel = el.querySelector('#rootModel');   // Sonnet by default: far cheaper per token than Opus, and the same Root
   [['sonnet', 'Sonnet'], ['opus', 'Opus'], ['haiku', 'Haiku']].forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); });
   sel.value = recall('wb.rootModel', 'sonnet');
   sel.addEventListener('change', () => remember('wb.rootModel', sel.value));
   const cards = [...el.querySelectorAll('.rl-card')];
-  const pick = id => { cards.forEach(c => { const on = c.dataset.mode === id; c.classList.toggle('on', on); c.querySelector('input').checked = on; }); remember('wb.rootMode', id); };
+  const pick = id => { cards.forEach(c => { const on = c.dataset.mode === id; c.classList.toggle('on', on); c.querySelector('input').checked = on; }); remember('wb.rootMode', id);
+    boardRow.hidden = !MODES[id].board; };   // the board row shows for the game mode only
   pick(modeOf(recall('wb.rootMode', DEFAULT_MODE)));
   cards.forEach(c => { c.addEventListener('click', () => pick(c.dataset.mode)); c.querySelector('input').addEventListener('change', () => pick(c.dataset.mode)); });
   const close = () => { el.hidden = true; };
   el.querySelector('#rlCancel').addEventListener('click', close);
   el.querySelector('#rlBegin').addEventListener('click', () => {
     const on = el.querySelector('input:checked');
-    close(); onBegin(on ? on.value : DEFAULT_MODE, sel.value);
+    const seed = seedInp.value.trim();
+    close(); onBegin(on ? on.value : DEFAULT_MODE, sel.value, boardSel.value, /^\d+$/.test(seed) ? +seed : undefined);
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !el.hidden) { close(); e.stopPropagation(); } });
   document.addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target) && !e.target.closest('#rootCall')) close(); });
@@ -750,13 +767,26 @@ export function bootVisit(hooks) {
     }
     if (!ok) return;
     panel();
-    const card = launchCard((mode, model) => {
+    const summon = (mode, model) => {
       V.mode = mode;
       logLine('s', 'Calling Root as ' + MODES[mode].label + ' (' + model + ').');
       post('/page/summon', { model, mode }).then(r => {
         if (r && r.started) { V.departed = false; paint('coming'); showPanel(); }
         else logLine('s', r ? 'Root is already here or on the way.' : 'The relay did not answer.');
       }).catch(() => logLine('s', 'The relay is not running.'));
+    };
+    const card = launchCard((mode, model, setting, seed) => {
+      // The game mode needs a board under both players: build one first if the page has none, then call Root.
+      if (MODES[mode].board && hooks.ketchem) {
+        const K = hooks.ketchem.board();
+        if (!K) {
+          showPanel(); logLine('s', 'Building a ' + setting + ' board first.');
+          hooks.ketchem.start(setting, seed, ok => { if (ok) summon(mode, model); else logLine('s', 'The board did not build.'); });
+          return;
+        }
+        logLine('s', 'Using the board already up (' + K.setting + ' ' + K.seed + '); reset the world for a different one.');
+      }
+      summon(mode, model);
     });
     const btn = callButton(() => {
       if (V.phase === 'idle') {
@@ -853,6 +883,27 @@ async function arriveHere(mode) {
   const loaded = await loadState(V.key);
   V.st = loaded.st;
   V.st.plantsThisVisit = 0;
+  if (V.mode === 'ketchem') {
+    // The board must exist (the launch card builds one first); Root takes its own doorstep, the second start.
+    const board = () => V.hooks.ketchem && V.hooks.ketchem.board();
+    for (let k = 0; k < 160 && !board(); k++) { if (k === 0) logLine('s', 'Root is waiting for the board.'); await sleep(500); }
+    const K = board();
+    if (!K) return null;
+    if (worldKey() !== V.key) { V.key = worldKey(); V.st = (await loadState(V.key)).st; V.st.plantsThisVisit = 0; }   // the board that landed is the world now
+    const mine = K.starts[1], other = K.starts[0];
+    V.st.x = mine.x; V.st.y = mine.y; V.st.boat = false;
+    revealSquare(K, mine.x, mine.y, SIGHT_HALF);
+    K.root = { x: mine.x, y: mine.y, boat: false };
+    const post = K.signposts.find(p => p.x === mine.x && p.y === mine.y);
+    V.here = true;
+    V.speedBefore = null;   // the game runs in real time for both players: no visit slowdown
+    paint('here'); showPanel();
+    logLine('s', 'Root steps onto the doorstep of ' + K.stores[mine.store].name + '.');
+    await saveState();
+    return 'You stand on the doorstep of ' + K.stores[mine.store].name + '. Signpost: ' + ((post && post.text) || 'no stores this way') +
+      '. Kevin starts at ' + K.stores[other.store].name + ', ' + bearingTo(mine.x, mine.y, other.x, other.y) + ' from here, beyond the fog.' +
+      (arrivalText(V.st, V.mode) ? '\n' + arrivalText(V.st, V.mode) : '');
+  }
   if (V.mode === 'sky') {
     V.body = inb(V.st.x, V.st.y) ? { x: V.st.x, y: V.st.y } : null;   // where the body last stood, kept for the next visitor
     V.st.x = W >> 1; V.st.y = H >> 1;    // the sky's gaze starts at the centre; it has no feet to find ground for
@@ -875,6 +926,8 @@ function depart(line) {
   if (!V.here) return;
   V.here = false; V.departed = true;
   V.st.leftTick = tick;
+  const K = V.hooks.ketchem && V.hooks.ketchem.board();
+  if (K) { K.root = null; if (K.cam === 'root') K.cam = 'kevin'; }   // no stale boat or camera on an empty doorstep
   if (V.speedBefore != null) { V.hooks.setSpeed(V.speedBefore); V.speedBefore = null; }
   logLine('s', line + (V.tokens ? ' (' + fmtTokens(V.tokens) + ' tokens so far)' : ''));
   V.hooks.draw();
@@ -939,11 +992,14 @@ async function pump(hooks) {
           V.st = Object.assign(loaded.st, { plantsThisVisit: V.st.plantsThisVisit });
           prefix = 'the world dissolves and re-forms: a different world\n';
         }
-        const sky = V.mode === 'sky', body = !sky;
-        if (body) standOnGround();
+        const sky = V.mode === 'sky', game = V.mode === 'ketchem', body = !sky;
+        const K = game && V.hooks.ketchem ? V.hooks.ketchem.board() : null;
+        if (body && (!game || !K)) standOnGround();   // a Ketch'em body may be at sea in its boat; with the board gone it is a visitor again
+        if (game && !K) prefix += 'the board is gone (the world was reset); you are a visitor here until a new board is built\n';
         const st = V.st;
+        if (K) K.root = { x: st.x, y: st.y, boat: !!st.boat };
         // What a look is depends on the mode: a body sees its square, the sky sees the whole world coarsely.
-        const look = () => (sky ? survey(st) : perceive(st)) + heardPoints() + friendNews();
+        const look = () => (sky ? survey(st) : perceive(st, K)) + heardPoints() + friendNews();
         // A power's target: the sky names a tile, a body a bearing in sight (or where it stands).
         const target = () => sky ? tileArg(a) : tileAtBearing(st, a.at);
         // A body's power returns a look (it stands inside the change); the sky's returns the words alone.
@@ -959,7 +1015,10 @@ async function pump(hooks) {
         switch (act.verb) {
           case 'look': case 'survey': text = look(); sighted = sky ? null : sightings(st); break;
           case 'zoom': text = gazeAt(st, a.x, a.y) + heardPoints(); sighted = sightings(st); break;
-          case 'walk': text = (a.path ? walkPath(st, a.path) : walkFrom(st, a.direction, a.steps)) + '\n\n' + perceive(st) + heardPoints() + friendNews(); sighted = sightings(st); break;
+          case 'walk':
+            text = (K ? (a.path ? routeWalk(K, st, a.path) : legWalk(K, st, a.direction, a.steps)) : (a.path ? walkPath(st, a.path) : walkFrom(st, a.direction, a.steps)));
+            if (K) K.root = { x: st.x, y: st.y, boat: !!st.boat };
+            text += '\n\n' + perceive(st, K) + heardPoints() + friendNews(); sighted = sightings(st); break;
           case 'befriend': text = befriend(st, a.name); logLine('s', text.startsWith('befriended') ? 'Root ' + text + '.' : 'Root reaches for a friend: ' + text); await saveState(); break;
           case 'plant': text = plantAt(st); await saveState(); text += heardPoints(); break;
           case 'name_place': {

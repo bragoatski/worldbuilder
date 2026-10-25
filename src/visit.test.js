@@ -361,7 +361,7 @@ describe('visit: the sky\'s way of seeing', () => {
 describe('visit: modes', () => {
   it('each mode has its own tool set, and the body never has the sky\'s reach', async () => {
     const m = await import('../visit/modes.mjs');
-    expect(m.MODE_IDS).toEqual(['visitor', 'shaper', 'sky']);
+    expect(m.MODE_IDS).toEqual(['visitor', 'shaper', 'sky', 'ketchem']);
     expect(m.verbsFor('visitor')).toEqual(['look', 'walk', 'plant', 'name_place', 'befriend', 'guide', 'say', 'listen', 'note', 'leave']);
     expect(m.verbsFor('shaper')).toEqual(expect.arrayContaining(['walk', 'shape', 'ember', 'spring', 'seed', 'leave']));
     expect(m.verbsFor('shaper')).not.toContain('weather');
