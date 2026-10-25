@@ -20,12 +20,15 @@ import {
   seasonPhase, seedFaunaGroup, seedFloraCluster, setActiveScenario, setWorldSize, speciesCensus,
   speciesRegistry, step, sunlight, tempField, tick, worldPermalink, worldPostcard,
 } from './sim.js';
+import * as SIM from './sim.js';   // the live module, for the ?debug handle only (a URL import after a hot reload is a second instance)
 import { drawWorld } from './render.js';
 import { bootVisit, visitDraw, visitTick } from './visit.js';
 import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
 import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
+import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews } from './ketchem/encounter.js';
+import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
 import { saveMenu } from './ketchem/menu.js';
 import { mirrorSave } from './visit.js';
@@ -672,7 +675,7 @@ function buildSliders(){
 function draw(){
   if(!ctx||!grid||!elev)return;
   drawWorld(ctx,PIX,{overlayMode:overlayMode,followId:followId,ground:K?_kGround:null,top:K?_kTop:null});
-  if(K){kevinCamera();drawPlayers(ctx,PIX,K);}   // Kevin's character and the boats, over the fog
+  if(K){kevinCamera();drawEncounters(ctx,PIX,K);drawPlayers(ctx,PIX,K);}   // tags, rings, baits and animations, then the characters, over the fog
   visitDraw(ctx,PIX);   // Root's body, sight and named places; no-op unless Root is here
   if(_kProgress)drawBoardProgress();
   drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
@@ -707,6 +710,14 @@ function ketchemKey(e){
   var p=K.kevin;if(!p)return false;
   if(e.ctrlKey||e.metaKey||e.altKey)return false;   // browser and page chords (copy, undo, reload) stay theirs
   var k=String(e.key||'').toLowerCase();
+  if(_kBait){   // B then a kind, then a direction (22.2)
+    e.preventDefault();
+    if(k==='escape'){_kBait=null;kevinSay('bait: cancelled');draw();return true;}
+    if(!_kBait.kind){var kind={p:'plant',s:'scatter',m:'meat',t:'stake'}[k];if(kind){_kBait.kind=kind;kevinSay('bait '+kind+': which way? (WASD, or E for here with a plant)');}draw();return true;}
+    var dirName=KEYDIR[k]?dirOf(KEYDIR[k]):(k==='e'?'':null);
+    if(dirName!==null){var rb=placeBait(K,p,_kBait.kind,dirName,null);kevinSay(rb.text);_kBait=null;}
+    draw();return true;
+  }
   if(KEYDIR[k]){
     e.preventDefault();
     if(e.repeat)return true;                  // the loop repeats a held key; the OS repeat would double it
@@ -717,13 +728,47 @@ function ketchemKey(e){
     else{var r=tryStep(K,p,dx,dy);if(!r.ok&&r.why!=='winded')kevinSay(r.why);}
     draw();return true;
   }
-  if(k==='e'){e.preventDefault();kevinSay(interact(K,p).text);draw();return true;}
+  if(k==='e'){e.preventDefault();var pk=pickPlant(K,p);kevinSay(pk.ok?pk.text:interact(K,p).text);draw();return true;}
   if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
+  if(e.repeat&&(k==='tab'||k===' '||e.code==='Space'||k==='f'||k==='n'||k==='b')){e.preventDefault();return true;}   // an act is one press, never an auto-repeat
+  if(k==='tab'){e.preventDefault();kevinCycleTarget();draw();return true;}
+  if(k===' '||e.code==='Space'){e.preventDefault();kevinThrow();draw();return true;}
+  if(k==='1'||k==='2'||k==='3'){e.preventDefault();p.stone=['Amber','Geode','Obsidian'][+k-1];kevinSay(p.stone+' in hand ('+p.stones[['amber','geode','obsidian'][+k-1]]+')');draw();return true;}
+  if(k==='b'){e.preventDefault();_kBait={kind:null};kevinSay('bait: P plant, S scatter, M meat, T stake');draw();return true;}
+  if(k==='f'){e.preventDefault();var rf=p.follower?recall(K,p):follow(K,p,null);kevinSay(rf.text);draw();return true;}
+  if(k==='n'){e.preventDefault();kevinName();draw();return true;}
   if(k==='f5'){e.preventDefault();saveGame();return true;}
   if(k==='f9'){e.preventDefault();_kMenu().toggle();return true;}
-  if(k==='escape'||k==='tab'||k==='enter'||k==='f'||k==='t'||/^f\d+$/.test(k))return false;   // R is NOT let through: it would reset the world under both players (the Reset button still does)
+  if(k==='escape'||k==='enter'||k==='t'||/^f\d+$/.test(k))return false;   // R is NOT let through: it would reset the world under both players (the Reset button still does)
   e.preventDefault();return true;   // Space, 1-6, [ ], E, R: the Hand is off on a board
 }
+// Acting (22.2): Tab cycles the target among creatures within 2 tiles, a click picks one, Space throws the stone in
+// hand at it, 1 / 2 / 3 pick the stone, B then P / S / M / T then a direction baits, F lets the follower out or
+// recalls it, N names the last catch, E picks the plant underfoot (else reads what is there).
+var _kBait=null;
+function dirOf(d){return (d[1]<0?'N':d[1]>0?'S':'')+(d[0]<0?'W':d[0]>0?'E':'');}
+function kevinCycleTarget(){
+  var p=K.kevin,list=targetsNear(K,p,2);if(!list.length){p.target=null;kevinSay('nothing within 2 tiles');return;}
+  var i=list.findIndex(function(f){return f.id===p.target;});p.target=list[(i+1)%list.length].id;
+}
+function kevinThrow(){
+  var p=K.kevin,f=p.target?fauna.find(function(a){return a&&a.id===p.target;}):null;
+  if(f&&Math.max(Math.abs(f.x-p.x),Math.abs(f.y-p.y))>1)f=null;   // the target has moved off: the nearest adjacent creature instead
+  if(!f){var near=targetsNear(K,p,1);if(near.length){f=near[0];p.target=f.id;}}
+  if(!f){kevinSay('no target: Tab or click a creature within 2 tiles');return;}
+  var r=throwStone(K,p,f,p.stone);kevinSay(r.text);if(r.caught){p.target=null;}
+}
+function kevinName(){
+  var p=K.kevin;if(!p.naming){kevinSay('nothing to name');return;}
+  var name=window.prompt('Name your catch (and, after a comma, a nickname for the species)','');if(name===null)return;
+  var parts=name.split(',');var r=nameCatch(K,p,parts[0],parts[1]&&parts[1].trim());kevinSay(r.text);
+}
+canvas.addEventListener('click',function(ev){
+  if(!K||!K.kevin||ev.shiftKey)return;
+  var t=screenToTile(ev.clientX,ev.clientY);if(!inb(t.x,t.y))return;
+  var f=targetsNear(K,K.kevin,2).find(function(a){return a.x===t.x&&a.y===t.y;});
+  if(f){K.kevin.target=f.id;draw();}
+});
 window.addEventListener('keyup',function(e){delete _kPressed[String(e.key||'').toLowerCase()];});
 window.addEventListener('blur',function(){_kPressed={};});
 // F9 outside a board too: load a saved game onto a plain page.
@@ -759,7 +804,7 @@ function loadGame(slot){
 // A board arriving from the Worker or from a save becomes the page's game.
 function adoptBoard(board){
   abandonBuild();followId=null;godCancelMark(null);
-  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_kAutoAt=tick;
+  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_kBait=null;_kAutoAt=tick;
   setHandTool('none');document.body.classList.add('ketchem');
   placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
   speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
@@ -1236,7 +1281,8 @@ function kevinHeld(){
   for(var q in KEYDIR){if(_kPressed[q]!==undefined&&tick>_kPressed[q]+1){dx+=KEYDIR[q][0];dy+=KEYDIR[q][1];}}   // a tap moves once (the keydown); a hold repeats from the second tick
   dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy)tryStep(K,K.kevin,dx,dy);
 }
-function loop(){try{if(running){step();visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+function kevinNews(){if(!K)return;var n=drainNews(K,'kevin');if(n.length)kevinSay(n[n.length-1]);}
+function loop(){try{if(running){step();if(K){encounterTick(K);kevinNews();}visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){
@@ -1279,7 +1325,7 @@ bootVisit({draw:draw,screenToTile:screenToTile,canvas:canvas,getSpeed:function()
 // Verification handle, active ONLY with ?debug in the URL (inert for normal users). Lets the
 // gate-blind river visual verify drive load->rivers->draw from one script call, no file dialog.
 if(typeof location!=='undefined'&&/[?&]debug(\b|=)/.test(location.search)){
-  window.__wb={importJSON:importJSON,generateRivers:generateRivers,computeAridity:computeAridity,
+  window.__wb={sim:SIM,importJSON:importJSON,generateRivers:generateRivers,computeAridity:computeAridity,
     reclassTerrain:reclassTerrain,draw:draw,resize:resize,initWorld:initWorld,step:step,landCoverage:landCoverage,
     setPix:function(p){PIX=p;},setView:function(z,px,py){zoomLevel=z;panX=px;panY=py;applyZoomPan();draw();},
     lakeCells:function(){var out=[];if(riverData)for(var i=0;i<riverData.length;i++)if(riverData[i]&&riverData[i].lake)out.push(i);return out;},

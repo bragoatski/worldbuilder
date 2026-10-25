@@ -70,6 +70,14 @@ const KETCHEM_BODY = [
   tool('look', 'See your square (terse code, key in your brief). First call steps you through the door onto your store\'s doorstep.'),
   tool('walk', 'Walk. Either direction + steps (1-4), or path like "4E2N" (up to 9 tiles, stops at the first leg that cannot finish). Stride per leg: road 4, open land 2, sea 1 by boat, steep ground 1 then stop; lakes, volcanic rock and vents block. Returns a look.',
     { direction: { type: 'string', enum: DIRS }, steps: { type: 'integer', minimum: 1, maximum: 4 }, path: { type: 'string' } }),
+  tool('pick', 'Pick the plant on your tile into your pack (10 plants).'),
+  tool('bait', 'Set bait on a tile beside you: plant (one plant from the pack; grazers and omnivores come), scatter (three plants in a line; grazers), meat (a party creature set down; it is eaten at the end), stake (a party creature tethered; recovered if you catch its hunter). One bait at a time.',
+    { kind: { type: 'string', enum: ['plant', 'scatter', 'meat', 'stake'] }, direction: { type: 'string', enum: DIRS }, name: { type: 'string', description: 'the party creature for meat or stake' } }, ['kind']),
+  tool('throw', 'Throw a stone at an adjacent creature (a bearing in sight like "1E", or its type letter; default the nearest adjacent). The roll is decided now; the result arrives after the animation. Odds in your look.',
+    { stone: { type: 'string', enum: ['Amber', 'Geode', 'Obsidian'] }, at: { type: 'string' } }),
+  tool('name', 'Name your latest catch (<= 24 chars); species: a nickname for its species if it has none (<= 16).', { name: { type: 'string' }, species: { type: 'string' } }, ['name']),
+  tool('follow', 'Let a party creature out of its stone to walk beside you (one at a time). No name: the first.', { name: { type: 'string' } }),
+  tool('recall', 'Put your follower back in its stone.'),
 ];
 
 export const MODES = {

@@ -1,7 +1,7 @@
 // Ketch'em saves (mechanics sec. 18): the whole game as one JSON record, version 1. The pure part (buildSave /
 // applySave / export / import / migrations) is DOM-free and gate-tested; the IndexedDB slot store below runs only
 // in a browser. The page mirrors every save to the relay (visit.js mirrorSave), which keeps ~/root/ketchem/slots.
-import { CFG, DEFAULT_CFG, T, W, H, _seed, tick, grid, road, volcActive, volcAge, volcLife, volcanoRing, peakVolcano, volcanoCenters, coastTTL,
+import { CFG, DEFAULT_CFG, T, W, H, _seed, tick, grid, road, fauna, volcActive, volcAge, volcLife, volcanoRing, peakVolcano, volcanoCenters, coastTTL,
   ringDone, adjCooldown, hillDecayCount, biomeStability, biomeDesiredNext, reclassTerrain, buildSnapshot, applySnapshot } from '../sim.js';
 import { newPlayer } from './controls.js';
 
@@ -21,11 +21,19 @@ export function stamp(d = new Date()) {
 
 export function worldKey() { return 's' + _seed + '-' + W + 'x' + H; }
 
+// Awareness records (sec. 6) minus the fled ones: a save reads as a fresh start on that moment (18.4), and a bolt
+// or flight in progress is dropped with its hold.
+function awarenessRecords(aw) {
+  const out = {};
+  for (const [id, a] of Object.entries(aw || {})) { if (a.state === 'fled') continue; const c = { ...a }; delete c.bolt; delete c.flee; out[id] = c; }
+  return out;
+}
 function activeVents() { const out = []; for (let i = 0; i < W * H; i++) if (volcActive[i]) out.push({ i, age: volcAge[i], life: volcLife[i] }); return out; }
 function cfgDiff() { const d = {}; for (const k of Object.keys(DEFAULT_CFG)) if (CFG[k] !== DEFAULT_CFG[k]) d[k] = CFG[k]; return d; }
 function playerRecord(id, p) {
-  return { id, x: p.x, y: p.y, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones || { amber: 10, geode: 0, obsidian: 0 },
-    pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null };
+  return { id, x: p.x, y: p.y, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones || { amber: 10, geode: 0, obsidian: 0 }, stone: p.stone || 'Amber',
+    pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null,
+    naming: p.naming || null, hardyAt: p.hardyAt || 0, away: !!p.away };
 }
 
 // The whole game in memory. slot = the record's name (the player's, default the seed).
@@ -51,7 +59,7 @@ export function buildSave(K, slot) {
     cabinet: K.cabinet || [],
     players: [playerRecord('kevin', K.kevin || newPlayer(K.starts[0].x, K.starts[0].y))].concat(K.root ? [playerRecord('root', K.root)] : []),
     almanac: K.almanac || { species: {}, places: { stores: [], landmarks: [] } },
-    baits: K.baits || [], encounters: K.encounters || {}, pulses: K.pulses || {},
+    baits: K.baits || [], encounters: awarenessRecords(K.aw), pulses: {}, nextId: K.nextId || 1,
   };
 }
 
@@ -104,13 +112,17 @@ export function applySave(raw) {
     origins: data.board && data.board.origins, springs: data.board && data.board.springs, rerolls: data.board && data.board.rerolls,
     links: (data.board && data.board.links) || [], spurs: (data.board && data.board.spurs) || [], repicks: data.board && data.board.repicks,
     stores: data.stores.map(s => ({ ...s })), signposts: data.signposts || [], landmarks: data.landmarks || [], starts: data.starts || [],
-    fog: d.fog, cabinet: data.cabinet || [], almanac: data.almanac, baits: data.baits || [], encounters: {}, pulses: data.pulses || {},
+    fog: d.fog, cabinet: data.cabinet || [], almanac: data.almanac, baits: data.baits || [], aw: data.encounters || {}, pulses: data.pulses || {}, nextId: data.nextId || 1,
     kevin: null, root: null, cam: 'kevin',
   };
   for (const p of data.players || []) {
-    const pl = Object.assign(newPlayer(p.x, p.y), { boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack, party: p.party, follower: p.follower, effects: p.effects, knockedDown: p.knockedDown });
-    if (p.id === 'kevin') K.kevin = pl; else if (p.id === 'root') K.root = { x: p.x, y: p.y, boat: !!p.boat, loaded: true };
+    const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, hardyAt: p.hardyAt || 0 });
+    if (p.id === 'kevin') K.kevin = pl; else if (p.id === 'root') { K.root = pl; K.root.loaded = true; K.root.away = true; }   // Root is away until it arrives
   }
+  // creatures held by a bait in the record keep their hold; a growl ends (it is alert again); everything else is free
+  for (const f of fauna) if (f) f.held = false;
+  for (const b of K.baits) if (b.creatureId) { const f = fauna.find(x => x && x.id === b.creatureId); if (f) f.held = true; else b.creatureId = null; }
+  for (const a of Object.values(K.aw)) if (a.state === 'growl') { a.state = 'alert'; a.until = tick + 50; }
   if (!K.kevin && K.starts[0]) K.kevin = newPlayer(K.starts[0].x, K.starts[0].y);
   return K;
 }

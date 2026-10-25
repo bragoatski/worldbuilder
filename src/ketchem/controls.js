@@ -142,6 +142,6 @@ export function lookLines(K, sx, sy, h, who) {
   const stores = K.stores.filter(s => s.revealed && inSight(s));
   if (stores.length) out.push('store ' + stores.map(s => '"' + s.name + '" ' + bearingTo(sx, sy, s.x, s.y)).join(', '));
   const other = who === 'root' ? K.kevin : K.root;
-  if (other && inSight(other)) out.push((who === 'root' ? 'Kevin ' : 'Root ') + bearingTo(sx, sy, other.x, other.y) + (other.boat ? ' (boat)' : ''));
+  if (other && !other.away && inSight(other)) out.push((who === 'root' ? 'Kevin ' : 'Root ') + bearingTo(sx, sy, other.x, other.y) + (other.boat ? ' (boat)' : ''));
   return out;
 }

@@ -509,6 +509,45 @@ time, per player.
 
 Attack cooldown 50 ticks per creature. The box at the stores is never touched by an attack.
 
+Built 2026-10-25 (step 6, `src/ketchem/encounter.js`, readings of sections 6-9 and 11, overturnable):
+- The sim leaves a creature alone while the encounter moves it (`held`: walking to bait, feeding, bolting, fleeing,
+  growling); with nothing held the ecology loop is unchanged. The board's own random stream decides alert steps,
+  pulse counts and rolls; the sim's streams are untouched.
+- A roll is `1 + floor(rng x 100)` against the odds; the wobble count follows the rule in sec. 9. Root's result is
+  held back 48 ticks (or 10 s if the world is paused) so it lands with the animation Kevin watches.
+- The growl needs the predator alert, hungry, adjacent, not guarded, not on cooldown, the player off a store tile;
+  it then holds still and pulses every 10 ticks (counts by level as in 11.2). When the pulses run out it attacks if
+  adjacent, else steps toward the player once per pulse; a player more than 3 tiles away ends it unless the
+  predator is a stalker (hash and level rule), which pursues one tile per 16 ticks for 60 ticks, never onto a road
+  from off it. A follower of higher level, Dread, Guard (by strength), a store tile or a full belly ends it too.
+- An attack: Hardy absorbs one per 500 ticks; else a lower-level follower, else the lowest-level grazer, else the
+  knock-down: half the wallet, every stone, plant and party creature lost; the creatures go wild and wary at the
+  spot, the plants drop as plants (they do not rot: the sim grows or grazes them), and the player wakes on the
+  nearest store's doorstep. Attack cooldown 50 ticks per creature.
+- Bait: one per player (a new bait replaces the old; a set-down or staked creature comes back); it binds the nearest
+  hungry taker in range that is free, which walks one tile a tick and feeds on arrival; a fed creature (energy
+  >= 80 %) ignores bait; a bait with no feeder rots after 60 ticks; a failed throw on a feeding creature frees the
+  bait with a fresh clock. Meat and stake feed the hunter 40 energy at the end; a stake is recovered if its hunter
+  is caught while feeding.
+- Caught: the creature leaves the world into the party (3) or the cabinet, keeps its sim record plus `caughtAt`,
+  `by` and `name`; the Almanac keyed by species key counts seen (on every look) and caught and keeps the nickname.
+- Kevin's keys: Tab cycles targets within 2 tiles, a click picks one, Space throws (the nearest adjacent creature
+  if nothing is targeted), 1 / 2 / 3 pick the stone, B then P / S / M / T then a direction (E = here) baits, F
+  lets the first party creature out or recalls the follower, N names the last catch (a prompt: "name, species
+  nickname"), E picks the plant underfoot before reading the tile. A one-line HUD shows wallet, stones, pack and
+  party.
+- A failed throw on a creature eating a set-down or staked party member: that member is eaten at once (sec. 7); on
+  a plant bait the bait is freed. A caught hunter gives its stake or meat back. A creature that cannot reach its bait
+  gives up and is free again. A creature released by a knock-down lands on the nearest ground it can stand on.
+  The attack cooldown (50 ticks) also covers the failed-throw attack. Root keeps its party, stones and wallet between
+  visits (`K.root.away` while it is out of the world); a knock-down moves Root's body to the doorstep on its next
+  action, and a growl that attacks between Root's actions reports itself on the next result (Kevin sees a bubble).
+- Not yet: potions, the party row, sounds, items; the corral's bolt block; a caught creature vanishes at the throw
+  and a failed one bolts before the burst plays (the animation is a reveal in Kevin's eyes only); the ability hooks
+  for Stalk, Lure, Dread, Guard, Hardy, Pack and Nose are in place; Farsight, Climber, Firewalk, Waterless, Wader,
+  Rivergait, Forager and Scrounge wait for the movement and market passes. The sim's own id counter is rebuilt from
+  wild creatures on a load, so a party creature's id could be reissued to a newborn (saves keep records by object).
+
 ## 12. Movement
 
 Stride = tiles per step for a player. Steep ground stops a leg after the first tile as today.

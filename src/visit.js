@@ -12,8 +12,9 @@ import {
   seedLifeAt, settleClimate, settleTerrain, shiftSeaLevel,
 } from './sim.js';
 import { MODES, MODE_IDS, DEFAULT_MODE, modeOf } from '../visit/modes.mjs';
-import { legWalk, routeWalk, lookLines, bearingTo } from './ketchem/controls.js';
+import { legWalk, routeWalk, lookLines, bearingTo, newPlayer } from './ketchem/controls.js';
 import { revealSquare, SIGHT_HALF } from './ketchem/fog.js';
+import { initPlayer, initEncounters, creatureTag, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall as recallFollower, markSeen, drainNews } from './ketchem/encounter.js';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
 export const MAX_STRIDE = 3;       // tiles per walk call
@@ -120,7 +121,7 @@ export function lineCount(lineageId) {
   return n;
 }
 
-function creatureCode(f, sx, sy, st) {
+function creatureCode(f, sx, sy, st, K = null) {
   const e = f.maxEnergy ? f.energy / f.maxEnergy : 0.5;
   const a = f.maxAge ? f.age / f.maxAge : 0;
   const size = f.size >= 1.7 ? 'huge ' : f.size >= 1.3 ? 'big ' : f.size <= 0.75 ? 'small ' : '';
@@ -128,7 +129,7 @@ function creatureCode(f, sx, sy, st) {
   const c = st && st.companion;
   const mine = c && c.goneTick == null && f.id === c.id && f.lineageId === c.lineageId ? ' "' + c.name + '"' : '';
   return (CREATURE[f.type] || '?') + mine + ' ' + bearing(f.x - sx, f.y - sy) + ' ' + size + (a < 0.2 ? 'young' : a > 0.8 ? 'old' : 'adult') +
-    ' ' + (e < 0.25 ? 'starving' : e < 0.5 ? 'hungry' : 'fed') + (sp ? ' (' + sp + ')' : '');
+    ' ' + (e < 0.25 ? 'starving' : e < 0.5 ? 'hungry' : 'fed') + (sp ? ' (' + sp + ')' : '') + (K ? creatureTag(K, K.root, f) : '');
 }
 
 // What Root perceives from where it stands: its square and nothing beyond it, in the terse code whose key is in
@@ -176,8 +177,9 @@ export function perceive(st, K = null) {
   byTile.forEach(list => list.forEach(f => creatures.push(f)));
   creatures.sort((a, b) => Math.max(Math.abs(a.x - sx), Math.abs(a.y - sy)) - Math.max(Math.abs(b.x - sx), Math.abs(b.y - sy)));
   if (creatures.length) {
-    out.push(creatures.slice(0, 8).map(f => creatureCode(f, sx, sy, st)).join('; ') +
+    out.push(creatures.slice(0, 8).map(f => creatureCode(f, sx, sy, st, K)).join('; ') +
       (creatures.length > 8 ? '; +' + (creatures.length - 8) + ' more' : ''));
+    if (K) markSeen(K, creatures);
   }
   const tail = ['plants ' + plants + '/' + plantTiles];
   const mine = st.planted.filter(p => Math.abs(p.x - sx) <= SIGHT && Math.abs(p.y - sy) <= SIGHT);
@@ -740,6 +742,8 @@ function paint(phase, extra) {
 export const NO_GROUND = '\u0000no-ground';
 const PAGE_ID = Math.random().toString(36).slice(2);   // the relay serves one live page; an older tab stands down
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Wait for n sim ticks to pass (or 10 s, if the world is paused), so a result lands with its animation.
+async function ticksPass(n) { const t0 = tick, at = Date.now(); while (tick - t0 < n && Date.now() - at < 10000) await sleep(80); }
 // Only a page served from this machine ever looks for the relay. The public site never probes the local network.
 const LOCAL = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 
@@ -900,7 +904,9 @@ async function arriveHere(mode) {
     const mine = K.starts[1], other = K.starts[0];
     V.st.x = mine.x; V.st.y = mine.y; V.st.boat = false;
     revealSquare(K, mine.x, mine.y, SIGHT_HALF);
-    K.root = { x: mine.x, y: mine.y, boat: false };
+    initEncounters(K);
+    K.root = initPlayer(K.root && K.root.party ? Object.assign(K.root, { x: mine.x, y: mine.y, boat: false }) : newPlayer(mine.x, mine.y), 'root');   // a loaded game or an earlier visit keeps Root's party and stones
+    K.root.away = false; delete K.root.loaded;
     const post = K.signposts.find(p => p.x === mine.x && p.y === mine.y);
     V.here = true;
     V.speedBefore = null;   // the game runs in real time for both players: no visit slowdown
@@ -934,7 +940,7 @@ function depart(line) {
   V.here = false; V.departed = true;
   V.st.leftTick = tick;
   const K = V.hooks.ketchem && V.hooks.ketchem.board();
-  if (K) { K.root = null; if (K.cam === 'root') K.cam = 'kevin'; }   // no stale boat or camera on an empty doorstep
+  if (K && K.root) { K.root.away = true; if (K.cam === 'root') K.cam = 'kevin'; }   // Root's party and stones keep; its body is not in the world
   if (V.speedBefore != null) { V.hooks.setSpeed(V.speedBefore); V.speedBefore = null; }
   logLine('s', line + (V.tokens ? ' (' + fmtTokens(V.tokens) + ' tokens so far)' : ''));
   V.hooks.draw();
@@ -1011,9 +1017,17 @@ async function pump(hooks) {
           prefix += 'the world dissolves and re-forms: a saved game; you stand on your doorstep again\n';
         }
         const st = V.st;
-        if (K) K.root = { x: st.x, y: st.y, boat: !!st.boat };
+        if (K) {
+          if (!K.root || !K.root.party) K.root = initPlayer(newPlayer(st.x, st.y), 'root');
+          K.root.away = false;
+          // a knock-down moved Root's body to a doorstep between actions: the visit state follows it
+          if (K.root.knockedDown && K.root.knockedDown.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; delete K.root.knockedDown.moved; }
+          K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat;
+        }
+        const syncRoot = () => { if (K && K.root) { if (K.root.knockedDown && K.root.knockedDown.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; delete K.root.knockedDown.moved; } else { K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat; } } };
+        const rootNews = () => { const n = K ? drainNews(K, 'root') : []; return n.length ? '\n' + n.join('\n') : ''; };
         // What a look is depends on the mode: a body sees its square, the sky sees the whole world coarsely.
-        const look = () => (sky ? survey(st) : perceive(st, K)) + heardPoints() + friendNews();
+        const look = () => (sky ? survey(st) : perceive(st, K)) + heardPoints() + friendNews() + rootNews();
         // A power's target: the sky names a tile, a body a bearing in sight (or where it stands).
         const target = () => sky ? tileArg(a) : tileAtBearing(st, a.at);
         // A body's power returns a look (it stands inside the change); the sky's returns the words alone.
@@ -1031,8 +1045,26 @@ async function pump(hooks) {
           case 'zoom': text = gazeAt(st, a.x, a.y) + heardPoints(); sighted = sightings(st); break;
           case 'walk':
             text = (K ? (a.path ? routeWalk(K, st, a.path) : legWalk(K, st, a.direction, a.steps)) : (a.path ? walkPath(st, a.path) : walkFrom(st, a.direction, a.steps)));
-            if (K) K.root = { x: st.x, y: st.y, boat: !!st.boat };
-            text += '\n\n' + perceive(st, K) + heardPoints() + friendNews(); sighted = sightings(st); break;
+            syncRoot();
+            text += '\n\n' + perceive(st, K) + heardPoints() + friendNews() + rootNews(); sighted = sightings(st); break;
+          // Ketch'em verbs (sec. 7, 9, 11.5): the relay refuses them outside the game mode
+          case 'pick': text = pickPlant(K, K.root).text + heardPoints(); break;
+          case 'bait': { const r = placeBait(K, K.root, a.kind, a.direction, a.name); logLine('s', 'Root: ' + r.text + '.'); text = r.text + (r.ok ? '\n\n' + look() : heardPoints()); break; }
+          case 'throw': {
+            const near = targetsNear(K, K.root, 1);
+            const want = String(a.at || '').trim().toUpperCase();
+            let f = null;
+            if (want) { const t = tileAtBearing(st, want); f = t.error ? near.find(c => (CREATURE[c.type] || '') === want.slice(0, 1)) : near.find(c => c.x === t.x && c.y === t.y); }
+            else f = near[0];
+            const r = throwStone(K, K.root, f || null, a.stone || K.root.stone);
+            logLine('s', 'Root throws: ' + r.text + '.');
+            if (r.delay) { V.hooks.draw(); await ticksPass(r.delay); }   // the result lands when Kevin sees the stone click or burst
+            syncRoot();
+            text = r.text + '\n\n' + perceive(st, K) + heardPoints() + rootNews(); break;
+          }
+          case 'name': { const r = nameCatch(K, K.root, a.name, a.species); if (r.ok) logLine('s', 'Root names its catch ' + r.text + '.'); text = r.text + heardPoints(); break; }
+          case 'follow': { const r = follow(K, K.root, a.name); text = r.text + heardPoints(); break; }
+          case 'recall': { const r = recallFollower(K, K.root); text = r.text + heardPoints(); break; }
           case 'befriend': text = befriend(st, a.name); logLine('s', text.startsWith('befriended') ? 'Root ' + text + '.' : 'Root reaches for a friend: ' + text); await saveState(); break;
           case 'plant': text = plantAt(st); await saveState(); text += heardPoints(); break;
           case 'name_place': {
