@@ -2068,7 +2068,11 @@ function applySnapshot(data){
   // state, so a loaded world starts its season cycle fresh) and sync the edge detectors to the live CFG, so a
   // leftover seasonAnchorTick from a previous world in the tab cannot give the import an arbitrary season phase.
   seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;
-  reseedSunlight();computeSunlight();climateInit();computeTemperature();computeAridity();applyClimate();reclassTerrain();
+  // The sun field is drawn from the seeded stream in initWorld's order (world meta, phase, then computeSunlight's own
+  // draws). Reseeding and computing straight away put those draws at a different point of the stream, so every loaded
+  // world got a different sun field and some biomes shifted on load (found by the Ketch'em save round-trip,
+  // 2026-10-25). Replaying the same prefix from the fresh stream reproduces the original field exactly.
+  climateInit();pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();reclassTerrain();   // initWorld's order: climateInit draws first
   // Painted climate rides along in the save file. climateInit (above) just zeroed these, so restore
   // AFTER it and re-settle, otherwise a saved rain valley silently loads back as desert.
   // A load replaces the world, so any undo mark belongs to a world that no longer exists. The seed

@@ -779,6 +779,30 @@ fields: `growthXP`, `growthLevel`, `caughtAt`, `name`, `by`.
 | migrations are a list of functions by version | the usual |
 | size budget | a 96x96 world with 400 fauna and 4,000 flora is ~600 KB of JSON; IndexedDB and the relay take that without trouble; 128x128 is ~1 MB |
 
+Built 2026-10-25 (`src/ketchem/save.js`, `menu.js`; relay `/page/save`, `/page/slots`): schema v1 as above with the
+fields that exist at step 5 (stock, cabinet, almanac, baits, encounters, pulses are written empty and read back);
+plus `cfg` (every CFG key that differs from the default, so the setting's knobs and the frozen land cap survive, which
+the sim's own JSON format does not carry), `board` (target, land, ticks, links, spurs), and `vents` (active volcanoes), `rings` / `peaks` / `centers` (the volcano cones, which decide the biome of every
+ring tile) and `coast` (the shore timers) and `genesis` (the terrain passes' bookkeeping: ring-done, uplift cooldowns, hill
+decay, biome stability): the sim's JSON format forgets all of them, so a world loaded without them reclassifies its
+cones and shores and re-runs uplift on its first tick. A damaged file is decoded and checked before the live world
+is touched. Slot names are what the relay accepts as a file name (word characters, spaces, dashes, starting with a
+word character); the page sanitises typed and imported names the same way. `road` is the plain road layer (0 / 1);
+the 2-5 codes of the schema table are not used, since stores, signposts and landmarks are their own lists. The slot
+store is IndexedDB `ketchem` / `slots` keyed by the slot name; F5 saves (the first time asks for a name, default the
+seed), F9 opens the menu (load, delete, export, import; F9 works on a plain page too), autosave every 2,000 ticks
+once a slot exists and on `beforeunload`. The mirror is best effort; the bubble says "not mirrored" when the relay
+is absent (the public site). A loaded game puts Root where the save left it, with "the world dissolves" on its next
+action. Found on the way: the sim's JSON load reseeded the sun field at a different point of the seeded stream, so
+every loaded world (Ketch'em or the old Load button) got a different sun field and some biomes flipped; the load now
+replays initWorld's draw order and the grid is identical after a load. Remaining differences after a load: the
+climate base is recomputed at load while the live world refreshes it every 20 ticks (a few tiles of temperature and
+aridity differ, mostly by hundredths, a few tenths on a tile at a biome edge, until the next refresh; the critic saw
+one tile change biome on 1 of 16 loads), `yearlyVariation` restarts at 1, and the ecology streams are reseeded by the
+sim's loader as they always were (only the instant of the load is reproducible). Not built yet from 18.2: autosave
+on entering a store and when Root leaves, Root's `save` verb, load / delete from the launch card (the F9 menu does
+them), and a mirror delete.
+
 ## 19. Relationships, in one view
 
 ```

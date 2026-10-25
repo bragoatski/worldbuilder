@@ -752,6 +752,13 @@ async function post(path, body) {
 
 function retire() { if (!V.retired) { V.retired = true; paint('resting'); } }
 
+// The relay's mirror of Ketch'em saves (mechanics 18.1). No relay (the public site, or it is down): false, and the
+// local save stands on its own. The body is the save record itself.
+export async function mirrorSave(data) {
+  if (!LOCAL || !V) return false;
+  try { return !!(await post('/page/save', data)); } catch { return false; }
+}
+
 function worldKey() { return 's' + _seed + '-' + W + 'x' + H; }
 
 // hooks: { draw, screenToTile, canvas, getSpeed, setSpeed, onGodMark }
@@ -996,6 +1003,13 @@ async function pump(hooks) {
         const K = game && V.hooks.ketchem ? V.hooks.ketchem.board() : null;
         if (body && (!game || !K)) standOnGround();   // a Ketch'em body may be at sea in its boat; with the board gone it is a visitor again
         if (game && !K) prefix += 'the board is gone (the world was reset); you are a visitor here until a new board is built\n';
+        if (K && K.root && K.root.loaded) {   // a saved game was loaded under Root: it stands where the save left it
+          V.st.x = K.root.x; V.st.y = K.root.y; V.st.boat = K.root.boat; delete K.root.loaded;
+          prefix += 'the world dissolves and re-forms: a saved game, and you stand where it left you\n';
+        } else if (K && !inb(V.st.x, V.st.y)) {   // a loaded game with no record of Root: back to its own doorstep
+          const s = K.starts[1]; V.st.x = s.x; V.st.y = s.y; V.st.boat = false; revealSquare(K, s.x, s.y, SIGHT_HALF);
+          prefix += 'the world dissolves and re-forms: a saved game; you stand on your doorstep again\n';
+        }
         const st = V.st;
         if (K) K.root = { x: st.x, y: st.y, boat: !!st.boat };
         // What a look is depends on the mode: a body sees its square, the sky sees the whole world coarsely.

@@ -26,6 +26,9 @@ import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
 import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
+import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
+import { saveMenu } from './ketchem/menu.js';
+import { mirrorSave } from './visit.js';
 
 // ===== Panel collapse =====
 window.togglePanel = function(id){
@@ -620,7 +623,7 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 
 // Hotkeys
 window.addEventListener('keydown',function(e){
-  if(/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||''))return;
+  if(/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'')){if(K&&(e.key==='F5'||e.key==='F9')){e.target.blur();ketchemKey(e);}return;}   // F5 must never reload an unsaved game because a slider had focus
   if(K&&ketchemKey(e))return;   // a board is up: the keys are Kevin's character's
   if(e.code==='Space'){e.preventDefault();running=!running;if(running)loop();}
   else if(e.key==='s'||e.key==='S'){e.preventDefault();running=false;step();draw();}
@@ -716,11 +719,56 @@ function ketchemKey(e){
   }
   if(k==='e'){e.preventDefault();kevinSay(interact(K,p).text);draw();return true;}
   if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
+  if(k==='f5'){e.preventDefault();saveGame();return true;}
+  if(k==='f9'){e.preventDefault();_kMenu().toggle();return true;}
   if(k==='escape'||k==='tab'||k==='enter'||k==='f'||k==='t'||/^f\d+$/.test(k))return false;   // R is NOT let through: it would reset the world under both players (the Reset button still does)
   e.preventDefault();return true;   // Space, 1-6, [ ], E, R: the Hand is off on a board
 }
 window.addEventListener('keyup',function(e){delete _kPressed[String(e.key||'').toLowerCase()];});
 window.addEventListener('blur',function(){_kPressed={};});
+// F9 outside a board too: load a saved game onto a plain page.
+window.addEventListener('keydown',function(e){if(!K&&e.key==='F9'&&!/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'')){e.preventDefault();_kMenu().toggle();}});
+
+// ===== Ketch'em: saves (step 5, mechanics 18) =====
+// F5 saves the game to its slot (named at the first save, default the seed) in IndexedDB, then mirrors it to the
+// relay; F9 opens the menu (load / delete / export / import). Autosave every 2,000 ticks and on leaving the page.
+var AUTOSAVE_TICKS=2000,_kAutoAt=0,_kMenuEl=null;
+function _kMenu(){
+  if(!_kMenuEl)_kMenuEl=saveMenu({slots:listSlots,load:loadGame,del:function(slot){if(K&&K.slot===slot)K.slot=null;return deleteSlot(slot);},saveNow:saveGame,hasGame:function(){return !!K;},
+    exportNow:function(){if(!K)return;var json=exportSave(buildSave(K,K.slot));var blob=new Blob([json],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ketchem_'+(K.slot||K.seed)+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);},
+    importFile:function(file){var r=new FileReader();r.onload=function(){try{adoptBoard(importSave(String(r.result)));kevinSay('imported '+(K.slot||''));}catch(e){showErr('Import failed: '+e.message);}};r.readAsText(file);}});
+  return _kMenuEl;
+}
+function showErr(text){var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent=text;}}
+// A slot name as both the page and the relay accept it (relay: ^[\w][\w -]{0,63}$): word characters, spaces and dashes, starting with a word character.
+function slotName(raw){return String(raw||'').replace(/[^\w -]/g,'').replace(/^[^\w]+/,'').trim().slice(0,64);}
+// Save: build in memory, write IndexedDB, then mirror; a failed mirror never fails the save (18.1).
+var _kSaving=false;
+function saveGame(){
+  if(!K||_kSaving)return Promise.resolve(false);
+  if(!K.slot){var name=window.prompt('Name this game',String(K.seed));if(name===null)return Promise.resolve(false);K.slot=slotName(name)||String(K.seed);}
+  _kSaving=true;_kAutoAt=tick;   // the autosave clock advances now, so a slow or failed write is never retried every tick
+  var data=buildSave(K,K.slot);
+  return putSlot(data).then(function(){return mirrorSave(data);}).then(function(mirrored){kevinSay('saved "'+K.slot+'"'+(mirrored?'':', not mirrored'));draw();return true;})
+    .catch(function(e){showErr('Save failed: '+e.message);return false;}).finally(function(){_kSaving=false;});
+}
+function loadGame(slot){
+  return getSlot(slot).then(function(data){if(!data)throw new Error('no save "'+slot+'"');adoptBoard(applySave(data));kevinSay('loaded "'+slot+'"');draw();})
+    .catch(function(e){showErr('Load failed: '+e.message);});
+}
+// A board arriving from the Worker or from a save becomes the page's game.
+function adoptBoard(board){
+  abandonBuild();followId=null;godCancelMark(null);
+  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_kAutoAt=tick;
+  setHandTool('none');document.body.classList.add('ketchem');
+  placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
+  speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
+  var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
+  running=!_kHold;draw();refreshUndoBtn();
+}
+var _kHold=false;   // debug only (window.__wb.ketchem.pause): a held world lets a rehearsal compare a save with its load exactly
+function kevinAutosave(){if(K&&K.slot&&tick-_kAutoAt>=AUTOSAVE_TICKS)saveGame();}
+window.addEventListener('beforeunload',function(){if(K&&K.slot){try{putSlot(buildSave(K,K.slot));}catch(e){/* best effort */}}});
 var _kOnDone=null;   // the callback of the build in flight, told false if the build is abandoned
 function abandonBuild(){if(_kWorker){_kWorker.terminate();_kWorker=null;}_kProgress=null;var cb=_kOnDone;_kOnDone=null;if(cb)cb(false);}
 function startKetchem(setting,seed,size,onDone){
@@ -738,15 +786,9 @@ function startKetchem(setting,seed,size,onDone){
     _kWorker.terminate();_kWorker=null;_kProgress=null;var done=_kOnDone;_kOnDone=null;
     Object.assign(CFG,m.cfg);          // the setting's genesis knobs, the frozen land cap, ecology on
     restoreState(m.snap);
-    godCancelMark(null);               // any Hand mark belongs to the world the board replaced
-    K=m.board;
-    K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);K.root=null;K.cam='kevin';_kCamAt=null;_kPressed={};
-    setHandTool('none');document.body.classList.add('ketchem');   // the Hand is off on a board
-    placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
-    speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;   // the hero boot runs at 60; a board plays at the normal rate
-    var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
+    var board=m.board;board.kevin=newPlayer(board.starts[0].x,board.starts[0].y);board.root=null;board.cam='kevin';board.tick0=tick;
+    adoptBoard(board);   // the Hand goes off, the page syncs, the game runs at the normal rate
     chronicleNote('terrain','A Ketch\'em board: '+KETCHEM_SETTINGS[K.setting].label+'. Two stores stand at the starts: '+K.starts.map(function(st){return K.stores[st.store].name;}).join(' and ')+'; two more are out there.','#8a9a7b');
-    running=true;draw();refreshUndoBtn();
     if(done)done(true);
   };
   _kWorker.onerror=function(ev){var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent='Board worker error: '+(ev&&ev.message||'unknown');}abandonBuild();};
@@ -1194,7 +1236,7 @@ function kevinHeld(){
   for(var q in KEYDIR){if(_kPressed[q]!==undefined&&tick>_kPressed[q]+1){dx+=KEYDIR[q][0];dy+=KEYDIR[q][1];}}   // a tap moves once (the keydown); a hold repeats from the second tick
   dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy)tryStep(K,K.kevin,dx,dy);
 }
-function loop(){try{if(running){step();visitTick();kevinHeld();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+function loop(){try{if(running){step();visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){
@@ -1243,7 +1285,10 @@ if(typeof location!=='undefined'&&/[?&]debug(\b|=)/.test(location.search)){
     lakeCells:function(){var out=[];if(riverData)for(var i=0;i<riverData.length;i++)if(riverData[i]&&riverData[i].lake)out.push(i);return out;},
     // Ketch'em step 3: build a board from the console, read it back, lift the fog for a screenshot.
     ketchem:{start:startKetchem,board:function(){return K;},building:function(){return !!_kProgress;},fogOff:function(){if(K&&K.fog){K.fog.fill(255);draw();}},
-      step:function(dx,dy){if(!K||!K.kevin)return null;var r=tryStep(K,K.kevin,dx,dy);draw();return r;},interact:function(){return K&&K.kevin?interact(K,K.kevin):null;}}};
+      step:function(dx,dy){if(!K||!K.kevin)return null;var r=tryStep(K,K.kevin,dx,dy);draw();return r;},interact:function(){return K&&K.kevin?interact(K,K.kevin):null;},
+      // saves (step 5): the record as the page would write it, a save without the prompt, a load by slot or from a record
+      saveJSON:function(){return K?exportSave(buildSave(K,K.slot||String(K.seed))):null;},save:function(slot){if(K){K.slot=slot||K.slot||String(K.seed);}return saveGame();},
+      load:loadGame,loadData:function(data){adoptBoard(applySave(data));},slots:listSlots,pause:function(on){_kHold=!!on;running=!_kHold;if(running)loop();}}};
 }
 
 // ===== Snapshot / restore (headless A/B: warm the slow terrain once, replay ecology many times) =====

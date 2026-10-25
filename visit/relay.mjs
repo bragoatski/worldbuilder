@@ -30,7 +30,9 @@ const WORLDS = path.join(HOME, 'worlds');   // what Root left in each world, key
 const NOTES = path.join(HOME, 'notes.jsonl');
 const GUIDE = path.join(HOME, 'field-guide.json');   // every named species Root has seen, across all worlds
 const FIELD_NOTES = path.join(ROOT_DIR, 'field-notes', 'field-notes.md');
+const SLOTS = path.join(ROOT_DIR, 'ketchem', 'slots');   // a mirror of every Ketch'em save the page makes (mechanics 18.1)
 fs.mkdirSync(WORLDS, { recursive: true });
+fs.mkdirSync(SLOTS, { recursive: true });
 fs.mkdirSync(path.dirname(FIELD_NOTES), { recursive: true });
 
 // The Claude executable. On Windows `claude` is a .cmd shim that would need a shell (and its quoting);
@@ -371,6 +373,16 @@ function sendHome() {
 }
 
 function stateFile(key) { return /^[\w-]{1,64}$/.test(key || '') ? path.join(WORLDS, key + '.json') : null; }
+// A slot name is the player's: letters, digits, space, dash, underscore, up to 64, as a file name.
+function slotFile(slot) { return /^[\w][\w -]{0,63}$/.test(slot || '') && !/\.\./.test(slot) ? path.join(SLOTS, slot + '.json') : null; }
+function listSlotFiles() {
+  const out = [];
+  for (const f of fs.readdirSync(SLOTS)) {
+    if (!f.endsWith('.json')) continue;
+    try { const d = JSON.parse(fs.readFileSync(path.join(SLOTS, f), 'utf8')); if (d && d.meta) out.push(d.meta); } catch { /* a damaged mirror is skipped */ }
+  }
+  return out.sort((a, b) => (a.lastSaved < b.lastSaved ? 1 : -1));
+}
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -437,6 +449,21 @@ const server = http.createServer(async (req, res) => {
       if (t) { inbox.push({ t: Date.now(), text: t }); log({ kevin: t }); }
       if (t || b.wake) wakeListeners();     // a point wakes a listening Root; the page words it on delivery
       return sendJSON(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url === '/page/save') {   // the mirror of a Ketch'em save: tmp then rename
+      if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
+      const b = await body(req);
+      const f = slotFile(b && b.meta && b.meta.slot);
+      if (!f || !Number.isInteger(b.version)) return sendJSON(res, 400, { error: 'bad save' });
+      fs.writeFileSync(f + '.tmp', JSON.stringify(b));
+      fs.renameSync(f + '.tmp', f);
+      return sendJSON(res, 200, { ok: true, file: f });
+    }
+    if (req.method === 'GET' && url === '/page/slots') return sendJSON(res, 200, { slots: listSlotFiles() });
+    if (req.method === 'GET' && url === '/page/save') {    // read a mirrored slot back (a browser that lost its IndexedDB)
+      const f = slotFile(u.searchParams.get('slot'));
+      if (!f) return sendJSON(res, 400, { error: 'bad slot' });
+      return sendJSON(res, 200, fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null);
     }
     if (url === '/page/state') {            // what Root left in one world: names, plantings, footsteps
       const f = stateFile(u.searchParams.get('key'));

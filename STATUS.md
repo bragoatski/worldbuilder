@@ -2,6 +2,15 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-25 (b) - Ketch'em step 5: saves - DONE, GATE GREEN
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 6, `src/ketchem/encounter.js`** (awareness, pulses, bait, throw, attack, follower, stalkers, animations; acceptance in the handoff's step table).
+
+What the game does now: F5 saves the game (the first time asks for a name, default the seed) into the browser's IndexedDB and mirrors it to `~/root/ketchem/slots/<name>.json` through the relay (a bubble says "saved" or "saved, not mirrored"); F9 opens the saved-games menu, on a board or on a plain page: load, delete (with a confirm), export the current game as a file, import one; autosave every 2,000 ticks once the game has a name and on leaving the page. A load brings back the whole world, the roads and stores, the fog, both characters and the ticks played; Root, if inside, is moved to where the save left it with "the world dissolves". A save from a newer version is refused with a message. Screenshots: `docs/04 Handoffs/img/2026-10-25-ketchem-step5/`.
+
+**Found on the way, fixed in the sim:** the JSON load (the old Load button too) reseeded the sun field at a different point of the seeded stream, so every loaded world got a different sun field and some biomes flipped on load. `applySnapshot` now replays initWorld's draw order; after a load the grid and the sun field are identical (test: a 48x48 archipelago saved and loaded tile for tile). Outside `step()`, so the balance harness is untouched.
+
+Gate: typecheck clean, lint 0 errors (30 warnings), 168/168 in 79 s, build green. Critic: 1 blocker (autosave retry loop) + 9 risks + 3 nits, all but three taken; details in the handoff's Progress section. Rehearsal on the scratch relay; the keepalive restored the real one at 13:41 Pacific.
+
 ## Session 2026-10-25 - Ketch'em step 4: both players move - DONE, GATE GREEN
 Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 5, `src/ketchem/save.js`** (schema v1, IndexedDB, export/import, relay mirror; acceptance in the handoff's step table).
 
