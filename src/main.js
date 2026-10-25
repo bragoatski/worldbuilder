@@ -16,12 +16,15 @@ import {
   buildSnapshot, chronicle, chronicleNote, chronicleStats, clamp, clearScenario, computeAridity,
   decodeWorldCode, droughtEvent, elev, fauna, flora, floraRemnants, foodWebCensus, generateRivers,
   getSpeciesName, grid, hsv2hex, idx, inb, initWorld, initialScenarioStatus, landCoverage,
-  makeFauna, meteorStrike, peakVolcano, popHistory, reclassTerrain, riverData, riverGenerated, runAssertions,
+  makeFauna, meteorStrike, peakVolcano, popHistory, reclassTerrain, restoreState, riverData, riverGenerated, runAssertions,
   seasonPhase, seedFaunaGroup, seedFloraCluster, setActiveScenario, setWorldSize, speciesCensus,
   speciesRegistry, step, sunlight, tempField, tick, worldPermalink, worldPostcard,
 } from './sim.js';
 import { drawWorld } from './render.js';
 import { bootVisit, visitDraw, visitTick } from './visit.js';
+import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
+import { drawKetchemGround, drawFog } from './ketchem/render.js';
+import { isRevealed } from './ketchem/fog.js';
 
 // ===== Panel collapse =====
 window.togglePanel = function(id){
@@ -663,9 +666,63 @@ function buildSliders(){
 // ======================================================================
 function draw(){
   if(!ctx||!grid||!elev)return;
-  drawWorld(ctx,PIX,{overlayMode:overlayMode,followId:followId});
+  drawWorld(ctx,PIX,{overlayMode:overlayMode,followId:followId,ground:K?_kGround:null,top:K?_kTop:null});
   visitDraw(ctx,PIX);   // Root's body, sight and named places; no-op unless Root is here
+  if(_kProgress)drawBoardProgress();
   drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
+}
+
+// ===== Ketch'em: the board (step 3, 2026-10-24) =====
+// K is the board (src/ketchem/board.js): stores, signposts, landmarks, starts and the shared fog. It is built in a
+// Worker on a copy of the sim and arrives as a snapshot; while it builds, the page shows a progress line on the canvas.
+// Reached for now through ?ketchem=<setting>[&kseed=N][&ksize=96]; the launch card entry is step 4.
+var K=null,_kWorker=null,_kProgress=null;
+function _kGround(c,p){drawKetchemGround(c,p,K);}
+function _kTop(c,p){drawFog(c,p,K);}
+function getKetchemParam(){
+  if(typeof location==='undefined'||!location.search)return null;
+  var m=/[?&]ketchem=(\w+)/.exec(location.search);if(!m)return null;
+  var seedM=/[?&]kseed=(\d+)/.exec(location.search),sizeM=/[?&]ksize=(\d+)/.exec(location.search);
+  return {setting:m[1],seed:seedM?+seedM[1]:undefined,size:sizeM?+sizeM[1]:96};
+}
+var _pendingKetchem=getKetchemParam();
+function startKetchem(setting,seed,size){
+  if(!KETCHEM_SETTINGS[setting]){var eb0=document.getElementById('err');if(eb0){eb0.style.display='block';eb0.textContent='Unknown Ketch\'em board setting: '+setting;}return;}
+  if(_kWorker){_kWorker.terminate();_kWorker=null;}
+  K=null;running=false;followId=null;
+  clearScenario();if(_scenWarmTimer){clearTimeout(_scenWarmTimer);_scenWarmTimer=null;}   // a scenario warm-up must not seed life into the arriving board
+  _kProgress={phase:'land',land:0,target:1,setting:setting};draw();
+  _kWorker=new Worker(new URL('./ketchem/board.worker.js',import.meta.url),{type:'module'});
+  _kWorker.onmessage=function(e){
+    var m=e.data;
+    if(m.type==='progress'){_kProgress=m;draw();return;}
+    if(m.type==='error'){_kProgress=null;_kWorker.terminate();_kWorker=null;var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent='Board build failed: '+m.message;}draw();return;}
+    if(m.type!=='done')return;
+    _kWorker.terminate();_kWorker=null;_kProgress=null;
+    Object.assign(CFG,m.cfg);          // the setting's genesis knobs, the frozen land cap, ecology on
+    restoreState(m.snap);
+    godCancelMark(null);               // any Hand mark belongs to the world the board replaced
+    K=m.board;
+    placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
+    speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;   // the hero boot runs at 60; a board plays at the normal rate
+    var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
+    chronicleNote('terrain','A Ketch\'em board: '+KETCHEM_SETTINGS[K.setting].label+'. Two stores stand at the starts: '+K.starts.map(function(st){return K.stores[st.store].name;}).join(' and ')+'; two more are out there.','#8a9a7b');
+    running=true;draw();refreshUndoBtn();
+  };
+  _kWorker.onerror=function(ev){_kProgress=null;var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent='Board worker error: '+(ev&&ev.message||'unknown');}};
+  _kWorker.postMessage({setting:setting,seed:seed,size:size});
+}
+function drawBoardProgress(){
+  var p=_kProgress,cw=canvas.width,ch=canvas.height;var label=KETCHEM_SETTINGS[p.setting]?KETCHEM_SETTINGS[p.setting].label:p.setting;
+  var frac=0,text='';
+  if(p.phase==='land'){frac=p.target?Math.min(1,p.land/p.target):0;text='Raising the '+label+': land '+Math.round(p.land*100)+'% of '+Math.round(p.target*100)+'%';}
+  else if(p.phase==='life'){frac=p.of?p.tick/p.of:0;text='Life settling: '+p.tick+' / '+p.of+' ticks';}
+  else if(p.phase==='roads'){frac=1;text='Laying roads and stores';}
+  else if(p.phase==='reroll'){frac=0;text='Re-rolling the board ('+p.why+')';}
+  var bw=Math.max(120,(cw*0.5)|0),bh=10,bx=((cw-bw)/2)|0,by=((ch/2)|0)+8;
+  ctx.fillStyle='rgba(0,17,26,0.72)';ctx.fillRect(0,0,cw,ch);
+  ctx.fillStyle='#e6edf3';ctx.font='13px "JetBrains Mono",monospace';ctx.textAlign='center';ctx.fillText(text,cw/2,by-10);ctx.textAlign='left';
+  ctx.fillStyle='#223';ctx.fillRect(bx,by,bw,bh);ctx.fillStyle='#3b9eff';ctx.fillRect(bx,by,(bw*frac)|0,bh);
 }
 
 // ===== Inspector =====
@@ -702,7 +759,13 @@ function updateTooltip(ev){
   if(!grid)return;
   var t=document.getElementById('tip');if(!t)return;var tile=screenToTile(ev.clientX,ev.clientY);var x=tile.x,y=tile.y;if(!inb(x,y)){t.style.display='none';return;}var i=idx(x,y);
   var isPeak=(grid[i]===T.MOUNTAIN&&peakVolcano&&peakVolcano[i]);var terr=isPeak?'Volcano':TNAME[grid[i]];var sw=isPeak?TERRAIN_COLORS[T.VOLCANIC]:(TERRAIN_COLORS[grid[i]]||'#333');
+  if(K&&K.fog&&!isRevealed(K.fog,i)){t.innerHTML='<h4>Unexplored ('+x+','+y+')</h4>';t.style.left=(ev.clientX+14)+'px';t.style.top=(ev.clientY+14)+'px';t.style.display='block';return;}
   var html='<h4><span class="tsw" style="background:'+sw+'"></span>'+terr+' ('+x+','+y+')</h4>';
+  if(K){   // Ketch'em: what stands here (14.5, 14.6)
+    for(var ks=0;ks<K.stores.length;ks++){if(K.stores[ks].x===x&&K.stores[ks].y===y)html+='<div class="kv">Store <span>'+K.stores[ks].name+'</span></div>';}
+    for(var kp=0;kp<K.signposts.length;kp++){if(K.signposts[kp].x===x&&K.signposts[kp].y===y)html+='<div class="kv">Signpost <span>'+(K.signposts[kp].text||'no stores this way')+'</span></div>';}
+    for(var kl=0;kl<K.landmarks.length;kl++){if(K.landmarks[kl].x===x&&K.landmarks[kl].y===y)html+='<div class="kv">Landmark <span>'+K.landmarks[kl].name+'</span></div>';}
+  }
   html+='<div class="kv">Elevation <span>'+(elev[i]||0).toFixed(1)+'</span></div><div class="bar"><i style="width:'+pct01(elev[i])+'%"></i></div>';
   html+='<div class="kv">Aridity <span>'+(aridity[i]||0).toFixed(1)+'</span></div><div class="bar"><i style="width:'+pct01(aridity[i])+'%"></i></div>';
   html+='<div class="kv">Temp <span>'+(tempField[i]||0).toFixed(1)+'</span></div><div class="bar"><i style="width:'+pct01(tempField[i])+'%"></i></div>';
@@ -1037,6 +1100,8 @@ function init(){
   // A rebuilt world re-issues fauna ids from 1, so a stale followId would re-attach the camera to an unrelated
   // creature (or spuriously report "the creature you were following has died"). Drop the follow on any rebuild.
   followId=null;
+  K=null;   // a rebuilt world has no board; a build in flight is abandoned
+  if(_kWorker){_kWorker.terminate();_kWorker=null;_kProgress=null;}
   if(_pendingWorldCode){
     var wc=_pendingWorldCode; _pendingWorldCode=null;
     try{
@@ -1095,7 +1160,9 @@ function runTests(){
 
 // ===== Boot =====
 function boot(){
-  try{if(!canvas||!canvas.getContext)throw new Error('Canvas unsupported');if(!ctx)ctx=canvas.getContext('2d');ctx.fillStyle='#00111a';ctx.fillRect(0,0,canvas.width||512,canvas.height||512);ctx.fillStyle='#3b9eff';ctx.font='13px "JetBrains Mono",monospace';ctx.fillText('initializing…',12,22);running=true;if(loopTimer){clearTimeout(loopTimer);loopTimer=null;}if(!started){started=true;init();}draw();loop();}
+  try{if(!canvas||!canvas.getContext)throw new Error('Canvas unsupported');if(!ctx)ctx=canvas.getContext('2d');ctx.fillStyle='#00111a';ctx.fillRect(0,0,canvas.width||512,canvas.height||512);ctx.fillStyle='#3b9eff';ctx.font='13px "JetBrains Mono",monospace';ctx.fillText('initializing…',12,22);running=true;if(loopTimer){clearTimeout(loopTimer);loopTimer=null;}if(!started){started=true;init();
+      if(_pendingKetchem){var kp=_pendingKetchem;_pendingKetchem=null;startKetchem(kp.setting,kp.seed,kp.size);}}   // ?ketchem= boot: build a board over the fresh world
+    draw();loop();}
   catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Boot error: '+e.message+'\n'+(e.stack||'');}console.error(e);}
 }
 function dismissIntro(){
@@ -1126,7 +1193,9 @@ if(typeof location!=='undefined'&&/[?&]debug(\b|=)/.test(location.search)){
   window.__wb={importJSON:importJSON,generateRivers:generateRivers,computeAridity:computeAridity,
     reclassTerrain:reclassTerrain,draw:draw,resize:resize,initWorld:initWorld,step:step,landCoverage:landCoverage,
     setPix:function(p){PIX=p;},setView:function(z,px,py){zoomLevel=z;panX=px;panY=py;applyZoomPan();draw();},
-    lakeCells:function(){var out=[];if(riverData)for(var i=0;i<riverData.length;i++)if(riverData[i]&&riverData[i].lake)out.push(i);return out;}};
+    lakeCells:function(){var out=[];if(riverData)for(var i=0;i<riverData.length;i++)if(riverData[i]&&riverData[i].lake)out.push(i);return out;},
+    // Ketch'em step 3: build a board from the console, read it back, lift the fog for a screenshot.
+    ketchem:{start:startKetchem,board:function(){return K;},building:function(){return !!_kProgress;},fogOff:function(){if(K&&K.fog){K.fog.fill(255);draw();}}}};
 }
 
 // ===== Snapshot / restore (headless A/B: warm the slow terrain once, replay ecology many times) =====

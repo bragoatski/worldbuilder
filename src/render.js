@@ -57,7 +57,9 @@ export function drawRivers(ctx, PIX){
 }
 
 // opts: { overlayMode: 'none' | 'elev' | 'clim-ar' | 'clim-te' | 'clim-su' | 'climate' | 'water',
-//         followId: the fauna id to ring, or null }
+//         followId: the fauna id to ring, or null,
+//         ground: optional fn(ctx, PIX) drawn after terrain + rivers, before life (Ketch'em roads and stores),
+//         top: optional fn(ctx, PIX) drawn last (Ketch'em fog) }
 export function drawWorld(ctx, PIX, opts){
   if(!ctx||!grid||!elev)return;
   var overlayMode=(opts&&opts.overlayMode)||'none';var followId=opts?opts.followId:null;
@@ -83,6 +85,8 @@ export function drawWorld(ctx, PIX, opts){
     ctx.fillStyle=col;ctx.fillRect(x*PIX,y*PIX,PIX,PIX);}
   // River render
   if(overlayMode==='none'||overlayMode==='elev')drawRivers(ctx,PIX);
+  // Ketch'em ground layer (roads, bridges, stores, signposts): above terrain and water, below plants and life.
+  if(opts&&opts.ground)opts.ground(ctx,PIX);
   // Flora render
   if(CFG.ecoRender){for(var fi=0;fi<flora.length;fi++){var f=flora[fi];if(!f)continue;var fw=riverData&&riverData[idx(f.x,f.y)];if(fw&&fw.lake)continue;var brightness=0.4+0.6*f.health;var fCol=hsv2hex(f.hue,f.sat*(0.3+0.7*f.health),f.val*brightness);ctx.fillStyle=fCol;var px=f.x*PIX,py=f.y*PIX;var sz=Math.max(1,PIX<6?1:2);var off=((PIX-sz)/2)|0;
     if(f.shape==='dot'){ctx.fillRect(px+off,py+off,sz,sz);}else if(f.shape==='plus'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='x'){ctx.fillRect(px+off-1,py+off-1,1,1);ctx.fillRect(px+off+sz,py+off-1,1,1);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off-1,py+off+sz,1,1);ctx.fillRect(px+off+sz,py+off+sz,1,1);}else if(f.shape==='ring'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='diamond'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,sz+2,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else{ctx.fillRect(px+off,py+off,sz,sz);}}}
@@ -112,4 +116,6 @@ export function drawWorld(ctx, PIX, opts){
   }ctx.globalAlpha=1.0;setDeathParticles(aliveParticles);
   // Carrion (scavenger food): a small dark speck where a corpse lies (only present when scavengers are on).
   if(CFG.ecoRender&&carrion.length){ctx.fillStyle='#5a5048';for(var cq=0;cq<carrion.length;cq++){var cc2=carrion[cq];if(!cc2)continue;var cwv=riverData&&riverData[idx(cc2.x,cc2.y)];if(cwv&&cwv.lake)continue;ctx.fillRect(cc2.x*PIX+((PIX/2)|0),cc2.y*PIX+((PIX/2)|0),1,1);}}
+  // Ketch'em top layer (fog): over everything, so what stands under the cloud stays hidden.
+  if(opts&&opts.top)opts.top(ctx,PIX);
 }

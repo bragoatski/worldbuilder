@@ -491,11 +491,15 @@ function computeSunlight(){
 // (applyClimate). Called on terrain change / periodically, so the base tracks erosion + new land.
 function computeTemperature(){for(var iT=0;iT<W*H;iT++){var s=Math.max(0,Math.min(1,sunlight[iT]/10));var sCurve=Math.pow(s,1.2);var e=elev[iT]||0;baseTemp[iT]=clamp(0.3+sCurve*9.8-0.06*e-0.24*Math.pow(Math.max(0,e-6),2)/16,0,10);}}
 function computeAridity(){
-  var dist=new Float32Array(W*H);for(var i=0;i<W*H;i++)dist[i]=1e9;var q=[];
-  for(var y=0;y<H;y++)for(var x=0;x<W;x++){var ii=idx(x,y);if(grid[ii]===T.OCEAN||grid[ii]===T.COAST){dist[ii]=0;q.push([x,y]);}}
-  while(q.length){var p=q.shift();var i0=idx(p[0],p[1]);neighbors4(p[0],p[1]).forEach(function(n){var j=idx(n[0],n[1]);if(dist[j]>dist[i0]+1){dist[j]=dist[i0]+1;q.push(n);}});}
+  // BFS from the sea over an index-pointer queue (as computeWaterDist). The old Array.shift() queue was O(n) per pop,
+  // which made this function half of every genesis tick (Ketch'em step 3 profile, 2026-10-24). Distances are the
+  // same integers in any FIFO order, so the field is byte-identical.
+  var dist=new Float32Array(W*H);for(var i=0;i<W*H;i++)dist[i]=1e9;var q=new Int32Array(W*H),qn=0;
+  for(var y=0;y<H;y++)for(var x=0;x<W;x++){var ii=idx(x,y);if(grid[ii]===T.OCEAN||grid[ii]===T.COAST){dist[ii]=0;q[qn++]=ii;}}
+  for(var qh=0;qh<qn;qh++){var i0=q[qh],x0=i0%W,d1=dist[i0]+1;if(x0+1<W&&dist[i0+1]>d1){dist[i0+1]=d1;q[qn++]=i0+1;}if(x0>0&&dist[i0-1]>d1){dist[i0-1]=d1;q[qn++]=i0-1;}if(i0+W<W*H&&dist[i0+W]>d1){dist[i0+W]=d1;q[qn++]=i0+W;}if(i0-W>=0&&dist[i0-W]>d1){dist[i0-W]=d1;q[qn++]=i0-W;}}
   for(var k=0;k<W*H;k++){var d=dist[k];var base=10*(1-Math.exp(-d*CFG.aridityDistK));var Tm=baseTemp[k]||0;var hot=(Tm>8)?CFG.aridityHotBoost*((Tm-8)/2):0;baseArid[k]=clamp(base+CFG.ariditySunCoef*sunlight[k]-CFG.aridityElevCoef*(10-(elev[k]||0))+hot,0,10);}
-  var c2=new Float32Array(baseArid);for(var y4=0;y4<H;y4++)for(var x4=0;x4<W;x4++){var sum2=0,n2=0;neighbors4(x4,y4).forEach(function(p){sum2+=c2[idx(p[0],p[1])];n2++;});baseArid[idx(x4,y4)]=clamp((c2[idx(x4,y4)]+sum2)/(n2+1),0,10);}
+  // 4-neighbour smoothing, neighbours summed in neighbors4's order (E, W, S, N) so the floating-point result is unchanged.
+  var c2=new Float32Array(baseArid);for(var y4=0;y4<H;y4++)for(var x4=0;x4<W;x4++){var i4=idx(x4,y4),sum2=0,n2=0;if(x4+1<W){sum2+=c2[i4+1];n2++;}if(x4-1>=0){sum2+=c2[i4-1];n2++;}if(y4+1<H){sum2+=c2[i4+W];n2++;}if(y4-1>=0){sum2+=c2[i4-W];n2++;}baseArid[i4]=clamp((c2[i4]+sum2)/(n2+1),0,10);}
   // River moisture effect: reduce aridity on river tiles and neighbors
   if(riverData&&riverGenerated){for(var rk=0;rk<W*H;rk++){if(riverData[rk]){baseArid[rk]=clamp(baseArid[rk]-RIVER_ARIDITY_EFFECT,0,10);var rx=rk%W,ry=(rk/W)|0;var rn=neighbors4(rx,ry);for(var rni=0;rni<rn.length;rni++){var rnj=idx(rn[rni][0],rn[rni][1]);baseArid[rnj]=clamp(baseArid[rnj]-RIVER_ARIDITY_EFFECT*0.3,0,10);}}}}
   computeWaterDist();
@@ -509,7 +513,7 @@ function computeWaterDist(){
   if(!waterDist||waterDist.length!==W*H)waterDist=new Float32Array(W*H);
   var q=new Int32Array(W*H),qn=0;
   for(var i=0;i<W*H;i++){var isW=(grid[i]===T.OCEAN||grid[i]===T.COAST||(riverGenerated&&riverData&&riverData[i]));if(isW){waterDist[i]=0;q[qn++]=i;}else waterDist[i]=1e9;}
-  for(var h=0;h<qn;h++){var c=q[h],cx=c%W,cy=(c/W)|0,nb=neighbors4(cx,cy);for(var k=0;k<nb.length;k++){var j=idx(nb[k][0],nb[k][1]);if(waterDist[j]>waterDist[c]+1){waterDist[j]=waterDist[c]+1;q[qn++]=j;}}}
+  for(var h=0;h<qn;h++){var c=q[h],cx=c%W,d1=waterDist[c]+1;if(cx+1<W&&waterDist[c+1]>d1){waterDist[c+1]=d1;q[qn++]=c+1;}if(cx>0&&waterDist[c-1]>d1){waterDist[c-1]=d1;q[qn++]=c-1;}if(c+W<W*H&&waterDist[c+W]>d1){waterDist[c+W]=d1;q[qn++]=c+W;}if(c-W>=0&&waterDist[c-W]>d1){waterDist[c-W]=d1;q[qn++]=c-W;}}
 }
 function classifyTile(e,A,Tm,SL){if(e>7)return T.MOUNTAIN;if(e>5.3){if(Tm<=2)return T.GLACIER;if(A>5&&Tm>4)return T.MESA;return T.HILLS;}if(Tm<2)return T.ARCTIC;if(Tm<2.5&&A<2.5)return T.GLACIER;if(Tm<3.2&&A<=3.5)return T.TUNDRA;if(A>5&&Tm>4&&SL>7.3)return T.DESERT;if(Tm>6&&SL>5.2&&A<4.3)return T.JUNGLE;if(Tm>5&&A>3&&A<=5.5)return T.SAVANNA;if(A>3&&Tm<3.5)return T.STEPPE;if(A>2&&A<=6.4&&Tm>2.7&&Tm<=6.6)return T.FOREST;if(e<1&&A<=3)return T.WETLAND;return T.PLAINS;}
 function reclassTerrain(){for(var y=0;y<H;y++)for(var x=0;x<W;x++){var iR=idx(x,y);if(grid[iR]===T.OCEAN||grid[iR]===T.VOLCANIC)continue;if(grid[iR]===T.COAST&&coastTTL[iR]>0)continue;if(volcanoRing&&volcanoRing[iR]===3){grid[iR]=T.MOUNTAIN;continue;}if(volcanoRing&&volcanoRing[iR]===1){grid[iR]=T.MOUNTAIN;continue;}if(volcanoRing&&volcanoRing[iR]===2){grid[iR]=T.HILLS;continue;}grid[iR]=classifyTile(elev[iR]||0,aridity[iR]||0,tempField[iR]||0,sunlight[iR]||0);}
@@ -533,10 +537,16 @@ function pickWorldMeta(){
   WORLD.gammaA=a;WORLD.gammaTheta=Math.max(10,theta);
 }
 function currentCoreHeight(age){return clamp(WORLD.H0+(WORLD.Hmax-WORLD.H0)*(1-Math.exp(-WORLD.k*age)),0,9.6);}
-function landCoverage(){var land=0;for(var i=0;i<W*H;i++)if(grid[i]!==T.OCEAN)land++;return land/(W*H);}
-function tryVolcano(x,y){var i=idx(x,y);if(grid[i]!==T.OCEAN)return false;var cov=landCoverage();if(cov>CFG.maxLandCap)return false;var boost=(cov===0)?200:1;var chance=Math.min(0.02,CFG.volcanoChancePerTile*boost);if(sRng()>=chance)return false;grid[i]=T.VOLCANIC;volcActive[i]=1;volcAge[i]=0;volcLife[i]=Math.max(20,Math.floor(sGamma(WORLD.gammaA,WORLD.gammaTheta)));elev[i]=currentCoreHeight(0);return true;}
+// landCoverage is asked ~W*H/7 times per tick by the genesis loop (every ocean try), each a full-grid scan: ~12M
+// tile reads per tick at 96x96, which made a headless board build take minutes (Ketch'em step 3, 2026-10-24).
+// Inside step()'s genesis loop the value is cached and dropped the moment a try turns ocean into land (the only
+// land change that loop makes), so every call still returns exactly what a scan would: byte-identical by
+// construction. Outside the loop (_covLive false) it always scans.
+var _covLive=false,_covCache=-1;
+function landCoverage(){if(_covLive&&_covCache>=0)return _covCache;var land=0;for(var i=0;i<W*H;i++)if(grid[i]!==T.OCEAN)land++;var cov=land/(W*H);if(_covLive)_covCache=cov;return cov;}
+function tryVolcano(x,y){var i=idx(x,y);if(grid[i]!==T.OCEAN)return false;var cov=landCoverage();if(cov>CFG.maxLandCap)return false;var boost=(cov===0)?200:1;var chance=Math.min(0.02,CFG.volcanoChancePerTile*boost);if(sRng()>=chance)return false;grid[i]=T.VOLCANIC;volcActive[i]=1;volcAge[i]=0;volcLife[i]=Math.max(20,Math.floor(sGamma(WORLD.gammaA,WORLD.gammaTheta)));elev[i]=currentCoreHeight(0);_covCache=-1;return true;}
 function coolVolcano(i){volcActive[i]=0;grid[i]=T.PLAINS;var x=i%W,y=(i/W)|0;var adjOcean=false;neighbors4(x,y).forEach(function(p){if(grid[idx(p[0],p[1])]==T.OCEAN)adjOcean=true;});if(adjOcean){grid[i]=T.COAST;coastTTL[i]=12+(sRng()*12)|0;}}
-function tryCoastal(x,y){var i=idx(x,y);if(grid[i]!==T.OCEAN)return false;var adj=[];neighbors4(x,y).forEach(function(p){var j=idx(p[0],p[1]);if(grid[j]!==T.OCEAN&&grid[j]!==T.VOLCANIC)adj.push(j);});if(!adj.length)return false;var cov=landCoverage();var mod=(cov>CFG.maxLandCap?0:(cov>CFG.maxLandCap*0.85?(1-(cov-CFG.maxLandCap*0.85)/(CFG.maxLandCap*0.15)):1));var chance=CFG.coastalSpreadBase*adj.length*mod;if(sRng()>=chance)return false;var nj=adj[(sRng()*adj.length)|0];elev[i]=clamp(0.85*(elev[nj]||0)+0.15*WORLD.coastBias+(sRng()*0.4-0.2),0,10);grid[i]=T.COAST;coastTTL[i]=(16+(sRng()*16)|0);return true;}
+function tryCoastal(x,y){var i=idx(x,y);if(grid[i]!==T.OCEAN)return false;var adj=[];neighbors4(x,y).forEach(function(p){var j=idx(p[0],p[1]);if(grid[j]!==T.OCEAN&&grid[j]!==T.VOLCANIC)adj.push(j);});if(!adj.length)return false;var cov=landCoverage();var mod=(cov>CFG.maxLandCap?0:(cov>CFG.maxLandCap*0.85?(1-(cov-CFG.maxLandCap*0.85)/(CFG.maxLandCap*0.15)):1));var chance=CFG.coastalSpreadBase*adj.length*mod;if(sRng()>=chance)return false;var nj=adj[(sRng()*adj.length)|0];elev[i]=clamp(0.85*(elev[nj]||0)+0.15*WORLD.coastBias+(sRng()*0.4-0.2),0,10);grid[i]=T.COAST;coastTTL[i]=(16+(sRng()*16)|0);_covCache=-1;return true;}
 function erosionStep(x,y){var i=idx(x,y);if(grid[i]===T.OCEAN)return;var nearOcean=false;neighbors4(x,y).forEach(function(p){if(grid[idx(p[0],p[1])]==T.OCEAN)nearOcean=true;});var sLoc=0;neighbors4(x,y).forEach(function(p){var d=Math.abs((elev[i]||0)-(elev[idx(p[0],p[1])]||0));if(d>sLoc)sLoc=d;});var eNow=elev[i]||0;var highE=Math.max(0,(eNow-8.5)/1.5);var p=CFG.erosionChanceBase*(nearOcean?1.4:1.0)*(1+0.6*sLoc)*(1+0.85*highE);if(sRng()<p){elev[i]=Math.max(0,eNow-(0.12+sRng()*0.18)*(1+0.30*highE));}}
 // Promote a tile to a UNIFORM conical volcano (Mt Fuji / Mt Hood). The peak is the ONLY elev-10 square; the
 // full 3x3 of touching squares (Chebyshev distance 1) are ALWAYS mountains, and the 5x5 ring around that
@@ -1595,6 +1605,7 @@ function seedLifeAt(tx,ty){
     if(!inb(ox,oy))continue;
     var tj=grid[idx(ox,oy)];
     if(tj===T.OCEAN||tj===T.MOUNTAIN||tj===T.VOLCANIC)continue;
+    if(kind==='flora'&&road[idx(ox,oy)])continue;   // no plant roots on a road (mechanics sec. 13); animals may stand there
     if(kind==='flora')flora.push(makeFlora(ox,oy,null));
     else fauna.push(makeFauna(ox,oy,kind,null));
     placed++;
@@ -1853,7 +1864,9 @@ function initWorld(seedOverride){
 // FIRST init() only (so a later preset change / reset rolls a fresh world instead of re-restoring the link).
 function step(){
   tick++;var tries=((W*H)/7)|0;var genesisChanged=false;
+  _covLive=true;_covCache=-1;   // cache land coverage across this loop's tries (see landCoverage)
   for(var n=0;n<tries;n++){var xS=(sRng()*W)|0,yS=(sRng()*H)|0;var i=idx(xS,yS);if(grid[i]===T.OCEAN){if(tryVolcano(xS,yS))genesisChanged=true;else if(tryCoastal(xS,yS))genesisChanged=true;}else{erosionStep(xS,yS);}}
+  _covLive=false;
   for(var i2=0;i2<W*H;i2++)if(volcActive[i2]){volcAge[i2]+=1;elev[i2]=currentCoreHeight(volcAge[i2]);if(volcAge[i2]>=volcLife[i2])coolVolcano(i2);}
   for(var ci=0;ci<W*H;ci++){if(grid[ci]===T.COAST&&coastTTL[ci]>0)coastTTL[ci]--;}
   clusterSpikePass();mountainFringePass();isolatedHillDecayPass();eruptionPromotionPass();tryVolcanoBirth();

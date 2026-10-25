@@ -7,7 +7,7 @@
 // reaches Root only if Root can see it.
 import {
   CFG, T, TNAME, W, H, _seed, chronicleNote, speciesKey, elev, aridity, fauna, flora, getSpeciesName, grid, idx, inb,
-  makeFlora, riverData, seasonPhase, seasonWave, tempField, tick, volcActive,
+  makeFlora, riverData, road, seasonPhase, seasonWave, tempField, tick, volcActive,
   addSpring, bloomEvent, brushClimateRaw, brushTerrainRaw, droughtEvent, emberStrike, godCancelMark, godMark, landCoverage,
   seedLifeAt, settleClimate, settleTerrain, shiftSeaLevel,
 } from './sim.js';
@@ -268,6 +268,7 @@ export function plantAt(st) {
   if (st.plantsThisVisit >= PLANTS_PER_VISIT) return 'no seeds left (' + PLANTS_PER_VISIT + ' per visit)';
   const i = idx(st.x, st.y);
   if (isWaterAt(i)) return 'nothing roots in water';
+  if (road[i]) return 'nothing roots in a road';
   if (liveFloraAt(st.x, st.y) >= (CFG.floraPerTileMax || 4)) return 'ground full of plants';
   const f = makeFlora(st.x, st.y, null);
   f.byRoot = true;

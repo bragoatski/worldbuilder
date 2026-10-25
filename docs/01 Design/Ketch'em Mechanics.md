@@ -575,6 +575,14 @@ Result: a 1-tile, 8-connected path over land, hills and bridges. Every store is 
 fails even with bridges (an island farther than 12 tiles from any land the network can reach), re-pick that store
 (14.1) and retry; after 3 failures, re-roll the board.
 
+Built 2026-10-24 (`src/ketchem/board.js`, `routeLink`), with these readings of the table, overturnable:
+- The doubling penalty applies only to a tile that is not itself road. Charging it on road tiles would have priced
+  sharing an existing road at 2.3 per tile and killed junctions.
+- A bridge run may take any of the 8 directions (diagonal x1.41 like any step); it is one edge from land to land.
+- A failed link re-picks the far store and lays the whole network again from a clean road layer (so no dangling
+  roads from the failed attempt); 3 re-picks, then the board re-rolls with seed + 1 (at most twice).
+- Heuristic 0.3 x straight-line distance (the cheapest tile), so the search is exact.
+
 ### 14.4 Spurs
 | step | rule |
 |---|---|
@@ -584,11 +592,20 @@ fails even with bridges (an island farther than 12 tiles from any land the netwo
 | route | same A*, m uniform 1-3 (spurs wander more), length cap 25 |
 | end | a dead end; 30% of spurs end at a small landmark tile (a cairn, a dead tree, a pool) that the Almanac names |
 
+Built 2026-10-24: the landmark kind follows the end tile (beside water: pool; forest / jungle / wetland / mesa: dead
+tree; else cairn) and its name is `<Biome> <kind>`, e.g. Steppe cairn. A spur starts on a land road tile (never a
+bridge); its path is capped at 25 tiles after the start tile; "nearest" targets are by straight-line distance.
+
 ### 14.5 Signposts
 Every junction (a road tile with 3+ road neighbours) and every store doorstep gets a signpost: standing on it reads
 the stores reachable along each branch with the road distance, e.g. `N: Tundra Depot 41 - E: Savanna Post 17`.
 Kevin hovers it; Root's look lists `signpost: ...` when it is in sight. This is how you find the next store without
 a map.
+
+Built 2026-10-24: a branch is a road neighbour of the signpost tile; each branch is searched along the road (not back
+through the signpost) and names the nearest store it reaches. A store is listed once, by the branch that reaches it
+soonest; the store you stand beside is not a destination; a branch that reaches no store (a spur) is omitted, so a
+doorstep with only spurs beyond it reads empty. The doorstep is the store's first road neighbour (N, NE, E, ... order).
 
 ### 14.6 Rendering
 | element | draw |
@@ -609,9 +626,24 @@ first and no further growth, so the mode runs a headless genesis and then freeze
 | setting | land target | genesis knobs | peaks | rivers | boats matter |
 |---|---|---|---|---|---|
 | Continent (default) | 60 + 35 x sqrt(r) %, r uniform (median ~85%) | one volcanic origin at the centre, coastal spread high (clumped) | normal | normal | little |
-| Archipelago | 60-75% uniform | 4-7 origins spread out, coastal spread low | normal | fewer | yes |
+| Archipelago | 45-60% uniform (was 60-75%, changed 2026-10-24, see the note below) | 4-7 origins spread out, coastal spread low | normal | fewer | yes |
 | Highlands | 70-95% uniform | one origin, elevation intensity x1.4 | many (Climber matters) | many springs | little |
 | Custom (dev) | any | the sim's own controls | | | |
+
+Built 2026-10-24 (`SETTINGS` in `src/ketchem/board.js`), overturnable:
+- Continent: `coastalSpreadBase` 0.010, `volcanoChancePerTile` 0.00002, one origin planted at the map centre before
+  the first tick (the sim's own first-volcano boost is skipped, so almost all land spreads from that one origin).
+- Archipelago: **45-60% land** (overturnable), `coastalSpreadBase` 0.002, `volcanoChancePerTile` 0.00012, erosion
+  0.0005, elevation intensity 0.8, 4-7 origins planted at random with at least W/4 between them, river threshold 10
+  (fewer rivers). Why not 60-75%: traced along genesis on 8 seeds, sea-divided landmasses of 60+ tiles went from
+  3-6 at 50% land to 1-3 at 55%, 1-2 at 60% and one at 65%+ (the largest holding 98-100% of the land). Slower
+  coastal spread and 6-12 origins did not change this: the sim's coastal spread closes every strait as land fills.
+  At 60-75% an archipelago is one continent with inlets, no store can be on an island, and boats would not matter.
+  The critic caught the first survey counting a ridge-divided store as an island; the metric now divides land by
+  sea alone (`landmassMap`).
+- Highlands: 70-95% land, elevation intensity 1.4, `volcanoChancePerTile` 0.0002, 6 volcano centres with the
+  volcanic preset's birth rate, 2-6 springs on the highest open ground found by sampling (`addSpring`).
+- Board size 96 (128 is a parameter, unmeasured).
 
 ### 15.2 The build
 | step | what | time budget |
@@ -627,6 +659,21 @@ first and no further growth, so the mode runs a headless genesis and then freeze
 | 9 | the first autosave, slot named by the player (default: the seed) | |
 
 Root is called in from the launch card after the board exists; its first look is the store doorstep.
+
+Built 2026-10-24 (`buildBoard` in `src/ketchem/board.js`; the Worker is `board.worker.js`; the page restores the
+result with `restoreState` and keeps the board as `K`):
+- Time: a headless genesis tick cost ~10 ms before this step because `landCoverage()` rescanned the grid on every
+  genesis try (~1,300 scans a tick) and `computeAridity` used an O(n) queue; both fixed byte-identically (fingerprint
+  of grid + elevation unchanged over 2,500 ticks on three seeds), a tick now costs ~1.2 ms. Measured on this machine,
+  ecology off: continent 85% ~10 s, 95% 13-18 s; archipelago 75% ~11 s; highlands 95% 17-19 s. All under the 20 s
+  budget, so boards are generated live behind a progress bar; no pre-baked boards.
+- Freeze: `maxLandCap` = land coverage minus a hair, so neither new volcanoes nor coastal spread add land; erosion,
+  volcano births and reclassification go on.
+- Life seed per land tile count L: flora L/40, grazers L/100, carnivores L/300 (at least 2), scavengers L/600,
+  omnivores L/400, apex L/1200 (each at least 1, and only if its CFG toggle is on); then 300 ticks with ecology on,
+  then every creature's `prefElev` is set to its tile's height. Flora standing on a road tile, a store tile or one of
+  the store's 8 neighbours is removed once the roads are laid; `seedLifeAt` and Root's `plant` refuse road tiles.
+- Progress is reported every 25 ticks (land %, then settle ticks, then "roads").
 
 ### 15.3 Start (owner ruling 2026-10-24: different stores; the others must be discovered)
 Kevin starts on the doorstep of one store, Root on the doorstep of another, chosen so they are not in adjacent
@@ -644,7 +691,14 @@ stores down each road, so the first decision is which way to walk.
 | Root | 9x9 (same) | same |
 | store | revealed when inside sight, or when a road tile leading to it is revealed within 12 tiles | |
 | road | revealed tile by tile inside sight | |
-| undiscovered | drawn as cloud; creatures and plants invisible; the Hand is off | |
+| undiscovered | drawn as cloud; creatures and plants invisible; the Hand is off |
+
+Built 2026-10-24 (`src/ketchem/fog.js`): one shared bit per tile, packed (`Uint8Array`, W x H / 8 bytes). A reveal
+is a square clipped to the map; after every reveal the store rule runs: a store whose tile is revealed, or that has a
+revealed road tile within 12 road steps (BFS along the road from the store, cached per board), is marked revealed and
+its own tile is cleared so the building shows while its surroundings stay cloud. The two start stores and the 9x9
+around each start doorstep are revealed at build time. Hovering a fogged tile reads "Unexplored" and nothing else.
+The Hand is still on in step 3 (it goes off with the controls in step 4). |
 
 ## 17. Height axis in the sim
 
