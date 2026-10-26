@@ -27,9 +27,10 @@ import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
 import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
-import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews } from './ketchem/encounter.js';
+import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
 import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary } from './ketchem/market.js';
 import { storePanel, textPanel, closePanel, panelOpen } from './ketchem/panel.js';
+import { growthTick, catchXP, feed as feedCreature, eventsText } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
 import { saveMenu } from './ketchem/menu.js';
@@ -760,6 +761,7 @@ function ketchemKey(e){
   if(k==='b'){e.preventDefault();_kBait={kind:null};kevinSay('bait: P plant, S scatter, M meat, T stake');draw();return true;}
   if(k==='f'){e.preventDefault();var rf=p.follower?recall(K,p):follow(K,p,null);kevinSay(rf.text);draw();return true;}
   if(k==='n'){e.preventDefault();kevinName();draw();return true;}
+  if(k==='t'){e.preventDefault();var fw=window.prompt('Feed which party creature, and what? "Goat" feeds it the first plant in the pack; "Wolf, Snack" feeds Wolf the party creature Snack',(p.party[0]&&(p.party[0].name||p.party[0].type))||'');if(fw===null)return true;var fp=fw.split(',').map(function(x){return x.trim();});var rf2=feedCreature(K,p,fp[0],fp[1]||'plant');kevinSay(rf2.text);draw();return true;}
   if(k==='f5'){e.preventDefault();saveGame();return true;}
   if(k==='f9'){e.preventDefault();_kMenu().toggle();return true;}
   if(k==='escape'||k==='enter'||k==='t'||/^f\d+$/.test(k))return false;   // R is NOT let through: it would reset the world under both players (the Reset button still does)
@@ -786,10 +788,12 @@ function kevinThrow(){
   if(f&&Math.max(Math.abs(f.x-p.x),Math.abs(f.y-p.y))>1)f=null;   // the target has moved off: the nearest adjacent creature instead
   if(!f){var near=targetsNear(K,p,1);if(near.length){f=near[0];p.target=f.id;}}
   if(!f){kevinSay('no target: Tab or click a creature within 2 tiles');return;}
-  var r=throwStone(K,p,f,p.stone);kevinSay(r.text);if(r.caught){p.target=null;}
+  var r=throwStone(K,p,f,p.stone);var ev=r.caught?catchXP(K,p,r.creature,r.level):[];kevinSay(r.text+eventsText(ev));if(r.caught){p.target=null;}
 }
 function kevinName(){
-  var p=K.kevin;if(!p.naming){kevinSay('nothing to name');return;}
+  var p=K.kevin;
+  if(!p.naming&&p.namingSpecies){var sn=window.prompt('Your creature evolved into a new species. Name the species','');if(sn===null)return;kevinSay(nameCatch(K,p,sn).text);return;}
+  if(!p.naming){kevinSay('nothing to name');return;}
   var name=window.prompt('Name your catch (and, after a comma, a nickname for the species)','');if(name===null)return;
   var parts=name.split(',');var r=nameCatch(K,p,parts[0],parts[1]&&parts[1].trim());kevinSay(r.text);
 }
@@ -1312,7 +1316,8 @@ function kevinHeld(){
   dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy){tryStep(K,K.kevin,dx,dy);kevinMoved();}
 }
 function kevinNews(){if(!K)return;var n=drainNews(K,'kevin');if(n.length)kevinSay(n[n.length-1]);}
-function loop(){try{if(running){step();if(K){encounterTick(K);marketTick(K);kevinNews();if(K.kevin.moved){K.kevin.moved=false;_kCamAt=null;}}visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+function growthNews(){var ev=growthTick(K);for(var i=0;i<ev.length;i++){var e=ev[i],owner=(K.kevin&&K.kevin.party.indexOf(e.creature)>=0)?'kevin':'root';var line=(e.creature.name||e.creature.type)+(e.kind==='grow'?' reaches growth level '+e.level:' EVOLVED from '+e.from+' into '+e.to+(e.named?'':(owner==='kevin'?': name the species (N)':': name the species (name)')));if(owner==='kevin')kevinSay(line);else pushNews(K,'root',line);}}
+function loop(){try{if(running){step();if(K){encounterTick(K);marketTick(K);growthNews();kevinNews();if(K.kevin.moved){K.kevin.moved=false;_kCamAt=null;}}visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){

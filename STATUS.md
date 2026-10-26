@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-25 (e) - Ketch'em step 8: growth and evolution - DONE, GATE GREEN
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 9, pens (the Breeder)**: two parents, a fee, offspring in the cabinet with a mixed genome; `breedHook` in growth.js is the seam.
+
+What the game does now: party creatures grow. Time with you pays XP (double for the follower), every catch pays the party the caught level, T feeds a creature a plant from the pack (rare plants pay five times more) or, for meat eaters, another party creature, and 500 ticks carried through its own type's country pays an exposure bonus. Each growth level (10, 40, 90, 160 XP, and on) moves the creature's real genome half a step toward its type's ideal and makes it a little bigger and hardier, so its level, abilities and price rise through the same rules as a wild one. When a preference crosses one of the world's species buckets the creature evolves: a white flash at your character, the new name typed above it, a linked entry in the Almanac (`evolved from <old species>`), and N names the new species. Root sees `EVOLVED from X into Y: name the species` on a throw or a `feed` result and names it with `name`. Screenshots: `docs/04 Handoffs/img/2026-10-25-ketchem-step8/`.
+
+Gate: typecheck clean, lint 0 errors (32 warnings), 197/197, build green. Critic: 1 blocker (the sim's cached binomial kept the old species name) + 7 risks and nits, all taken; details in the handoff's Progress section. Rehearsal on the scratch relay (Kevin: T fed "Edge" across a bucket, the flash, N named "Sandhopper", the Almanac linked the entries; Root: caught, named, `feed` paid a rare plant's 5 XP); the keepalive restored the real relay at 17:27 Pacific.
+
 ## Session 2026-10-25 (d) - Ketch'em step 7: the market - DONE, GATE GREEN
 Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 8, `src/ketchem/growth.js`** (XP sources, growth levels, genome moves, evolution; acceptance in the handoff's step table).
 

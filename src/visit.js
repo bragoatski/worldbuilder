@@ -16,6 +16,7 @@ import { legWalk, routeWalk, lookLines, bearingTo, newPlayer } from './ketchem/c
 import { revealSquare, SIGHT_HALF } from './ketchem/fog.js';
 import { initPlayer, initEncounters, creatureTag, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall as recallFollower, markSeen, drainNews } from './ketchem/encounter.js';
 import { initStores, shopText, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary } from './ketchem/market.js';
+import { catchXP, feed as feedCreature, eventsText } from './ketchem/growth.js';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
 export const MAX_STRIDE = 3;       // tiles per walk call
@@ -1061,7 +1062,8 @@ async function pump(hooks) {
             logLine('s', 'Root throws: ' + r.text + '.');
             if (r.delay) { V.hooks.draw(); await ticksPass(r.delay); }   // the result lands when Kevin sees the stone click or burst
             syncRoot();
-            text = r.text + '\n\n' + perceive(st, K) + heardPoints() + rootNews(); break;
+            const grown = r.caught ? eventsText(catchXP(K, K.root, r.creature, r.level)) : '';
+            text = r.text + grown + '\n\n' + perceive(st, K) + heardPoints() + rootNews(); break;
           }
           case 'shop': text = shopText(K, K.root) + heardPoints(); break;
           case 'buy': { const r = buyItem(K, K.root, a.item, a.qty); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
@@ -1076,6 +1078,7 @@ async function pump(hooks) {
             const r = usePotion(K, K.root, a.potion, tgt); logLine('s', 'Root: ' + r.text + '.'); syncRoot(); text = r.text + (r.ok ? '\n\n' + look() : heardPoints()); break;
           }
           case 'almanac': text = almanacText(K, K.root) + heardPoints(); break;
+          case 'feed': { const r = feedCreature(K, K.root, a.name, a.what); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
           case 'pack': { const ps = packSummary(K.root); text = 'pack ' + ps.used + '/' + ps.cap + ': ' + ps.plants + ' plants' + (Object.keys(ps.potions).length ? ', ' + Object.entries(ps.potions).map(x => x[0] + ' x' + x[1]).join(', ') : '') + '; stones Amber ' + K.root.stones.amber + ' Geode ' + K.root.stones.geode + ' Obsidian ' + K.root.stones.obsidian + '; ' + K.root.wallet + ' coins; party ' + (K.root.party.map(c => '"' + (c.name || c.type) + '"').join(', ') || 'none') + heardPoints(); break; }
           case 'name': { const r = nameCatch(K, K.root, a.name, a.species); if (r.ok) logLine('s', 'Root names its catch ' + r.text + '.'); text = r.text + heardPoints(); break; }
           case 'follow': { const r = follow(K, K.root, a.name); text = r.text + heardPoints(); break; }

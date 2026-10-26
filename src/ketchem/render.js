@@ -167,13 +167,16 @@ export function drawEncounters(ctx, PIX, K) {
       else if (e.caught) { const u = Math.min(1, (t - 12 - e.wobbles * 10) / 6); ctx.strokeStyle = 'rgba(255,255,255,' + (1 - u) + ')'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(tx, ty, PIX * (0.3 + u), 0, Math.PI * 2); ctx.stroke(); stoneDot(ctx, tx, ty, r, e.stone); if (u < 0.5) { ctx.fillStyle = '#fff'; ctx.fillRect(tx - r * 2, ty - r * 2, 2, 2); ctx.fillRect(tx + r * 2, ty + r, 2, 2); } }
       else { const u = Math.min(1, (t - 12 - e.wobbles * 10) / 6); ctx.globalAlpha = 1 - u; stoneDot(ctx, tx - u * PIX, ty, r * 0.7, e.stone); stoneDot(ctx, tx + u * PIX, ty, r * 0.7, e.stone); ctx.globalAlpha = 1; }
     }
+    else if (e.kind === 'evolve' && f === null && e.x !== undefined) {   // a long white flash at the owner's dot and the new name typed out above it
+      const u = t / e.len; ctx.fillStyle = 'rgba(255,255,255,' + (0.9 * (1 - u)).toFixed(2) + ')'; ctx.beginPath(); ctx.arc((e.x + 0.5) * PIX, (e.y + 0.5) * PIX, PIX * (1 + 2 * u), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.fillText(String(e.name || 'a new species').slice(0, Math.ceil(String(e.name || 'a new species').length * Math.min(1, u * 1.5))), (e.x + 0.5) * PIX, (e.y - 1.2) * PIX); }
     else if (e.kind === 'baitDrop') { const u = t / e.len; ctx.fillStyle = e.baitKind === 'plant' || e.baitKind === 'scatter' ? '#58d27a' : '#f3e9d2'; ctx.fillRect((e.x + 0.4) * PIX, (e.y + 0.4 - 0.5 * (1 - u)) * PIX, PIX * 0.2, PIX * 0.2); }
   }
   // the HUD line (22.3, minimal until step 10): wallet, stones, the stone in hand, the party
   ctx.textAlign = 'left'; ctx.font = Math.max(10, PIX * 1.6) + 'px "JetBrains Mono",monospace'; ctx.textBaseline = 'top';
   const party = (p.party || []).map(c => (c.name || c.type) + (p.follower === c.id ? '*' : '')).join(', ') || 'no party';
   const fxs = (p.effects || []).filter(e => e.until > now).map(e => e.potion.toLowerCase() + ' ' + (e.until - now)).join(' ');
-  const line = (fxs ? fxs + ' | ' : '') + p.wallet + ' coins | ' + (p.stone === 'Amber' ? '[' : '') + 'Amber ' + p.stones.amber + (p.stone === 'Amber' ? ']' : '') + ' ' + (p.stone === 'Geode' ? '[' : '') + 'Geode ' + p.stones.geode + (p.stone === 'Geode' ? ']' : '') + ' ' + (p.stone === 'Obsidian' ? '[' : '') + 'Obsidian ' + p.stones.obsidian + (p.stone === 'Obsidian' ? ']' : '') + ' | plants ' + (p.pack || []).filter(x => !x.potion).length + ' | ' + party + (p.naming ? ' | N to name your catch' : '');
+  const line = (fxs ? fxs + ' | ' : '') + p.wallet + ' coins | ' + (p.stone === 'Amber' ? '[' : '') + 'Amber ' + p.stones.amber + (p.stone === 'Amber' ? ']' : '') + ' ' + (p.stone === 'Geode' ? '[' : '') + 'Geode ' + p.stones.geode + (p.stone === 'Geode' ? ']' : '') + ' ' + (p.stone === 'Obsidian' ? '[' : '') + 'Obsidian ' + p.stones.obsidian + (p.stone === 'Obsidian' ? ']' : '') + ' | plants ' + (p.pack || []).filter(x => !x.potion).length + ' | ' + party + (p.naming ? ' | N to name your catch' : p.namingSpecies ? ' | N to name the new species' : '');
   const lw = ctx.measureText(line).width;
   ctx.fillStyle = 'rgba(8,11,16,0.75)'; ctx.fillRect(4, 4, lw + 10, Math.max(10, PIX * 1.6) + 6);
   ctx.fillStyle = '#e6edf3'; ctx.fillText(line, 9, 7);

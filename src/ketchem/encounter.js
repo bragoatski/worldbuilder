@@ -47,7 +47,7 @@ function dist(a, b) { return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 function fx(K, kind, o) { K.fx.push({ kind, start: tick, ...o }); K.fxCount = K.fxCount || {}; K.fxCount[kind] = (K.fxCount[kind] || 0) + 1; }
 // News for a player from tick-driven events (an attack that came when the pulses ran out): the page shows Kevin's as
 // a bubble, Root's ride on its next result.
-function news(K, pid, text) { (K.news || (K.news = [])).push({ pid, text, tick }); }
+export function news(K, pid, text) { (K.news || (K.news = [])).push({ pid, text, tick }); }
 export function drainNews(K, pid) { if (!K.news) return []; const mine = K.news.filter(n => n.pid === pid); K.news = K.news.filter(n => n.pid !== pid); return mine.map(n => n.text); }
 // Ground a wild creature can stand on: land that is not steep, not a lake, and not a bridge (a road over water is
 // still water for a creature: the sim deletes fauna on an ocean tile).
@@ -338,7 +338,7 @@ export function attack(K, f, p) {
   const spot = landNear(p.x, p.y) || [f.x, f.y];
   for (const c of p.party) { c.held = false; c.x = spot[0]; c.y = spot[1]; fauna.push(c); const a = aw(K, c); a.state = 'wary'; a.until = tick + WARY_TICKS; }
   for (const pl of p.pack) if (!pl.potion) { pl.x = spot[0]; pl.y = spot[1]; flora.push(pl); }   // plants drop; potions are lost
-  p.party = []; p.pack = []; p.follower = null; p.followerAt = null; p.stones = { amber: 0, geode: 0, obsidian: 0 };
+  p.party = []; p.pack = []; p.follower = null; p.followerAt = null; p.naming = null; p.namingSpecies = null; p.stones = { amber: 0, geode: 0, obsidian: 0 };
   const s = nearestStore(K, p.x, p.y);
   fx(K, 'knockdown', { x: p.x, y: p.y, len: 6, lost });
   p.x = s.door.x; p.y = s.door.y; p.boat = false; p.knockedDown = { at: tick, store: s.name }; p.moved = true;   // moved: the page (Root's visit state) must follow
@@ -374,8 +374,9 @@ export function throwStone(K, p, f, stone = p.stone) {
     const where = p.party.length < PARTY_CAP ? 'party' : 'cabinet';
     if (where === 'party') p.party.push(f); else K.cabinet.push(f);
     p.naming = f.id;
+    const level = facts.L;
     const entry = almanacEntry(K, f); entry.caught++; entry.bestLevel = Math.max(entry.bestLevel, facts.L); if (!entry.seen) noteSeen(K, f);   // a catch is a sighting too
-    return { ok: true, caught: true, text: 'caught ' + f.type + ' L' + facts.L + ' ' + facts.type + ' (' + where + '). name it', odds, roll, wobbles, where, creature: f, delay: THROW_TICKS };
+    return { ok: true, caught: true, text: 'caught ' + f.type + ' L' + facts.L + ' ' + facts.type + ' (' + where + '). name it', odds, roll, wobbles, where, creature: f, level, delay: THROW_TICKS };
   }
   enc.fails++;
   const dx = Math.sign(f.x - p.x), dy = Math.sign(f.y - p.y);
@@ -407,7 +408,19 @@ export function almanacEntry(K, f) {
 }
 export function noteSeen(K, f) { const e = almanacEntry(K, f); e.seen++; if (!e.scientific) e.scientific = getSpeciesName(f) || null; return e; }
 const NAME_OK = /^[A-Za-z0-9' ]+$/;
+// After an evolution the first evolver names the new species (20.3).
+export function nameSpecies(K, p, raw) {
+  const n = String(raw || '').trim().slice(0, 16);
+  if (!n || !NAME_OK.test(n)) return { ok: false, text: 'a species nickname is letters, digits, spaces and apostrophes, up to 16' };
+  const c = p.namingSpecies ? (p.party.find(x => x.id === p.namingSpecies) || K.cabinet.find(x => x.id === p.namingSpecies)) : null;
+  if (!c) return { ok: false, text: 'no new species to name' };
+  const e = almanacEntry(K, c); p.namingSpecies = null;
+  if (e.nickname) return { ok: true, text: 'the species is already "' + e.nickname + '" (named by ' + e.namedBy + ')' };
+  e.nickname = n; e.namedBy = p.id;
+  return { ok: true, text: 'the new species is "' + n + '"' };
+}
 export function nameCatch(K, p, raw, speciesNick) {
+  if (!p.naming && p.namingSpecies) return nameSpecies(K, p, raw);   // nothing caught to name: the evolved species takes the name
   const name = String(raw || '').trim().slice(0, 24);
   if (!name || !NAME_OK.test(name)) return { ok: false, text: 'a name is letters, digits, spaces and apostrophes, up to 24' };
   const c = p.naming ? (p.party.find(x => x.id === p.naming) || K.cabinet.find(x => x.id === p.naming)) : null;

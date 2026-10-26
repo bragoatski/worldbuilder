@@ -911,6 +911,27 @@ evolve. Buckets are four steps of 2.5 on each of the four axes; a preference of 
 joins the top bucket rather than opening a fifth. The binomial's suffix now encodes light x height so one key is
 still one name; names of existing species changed with it (nothing persisted them).
 
+Built 2026-10-25 (step 8, `src/ketchem/growth.js`, readings, overturnable):
+- XP as the 20.1 table: time 1 per 100 ticks in the party (2 following; the counter rides on the creature), a catch
+  pays every other party creature the caught creature's level (the follower is in the party), `feed` pays 1 / 5
+  for a common / rare plant (the plant-price rarity rule) to grazers and omnivores and 3 per level for a party
+  creature fed to a meat eater (it is gone), exposure pays 10 per 500 ticks carried through the type's home biomes
+  (Dune: desert, mesa, steppe; Marsh: wetland, jungle; Ember: volcanic, desert; Frost: arctic, glacier, tundra; Sun:
+  savanna, desert, steppe; Shade: forest, jungle; Peak: mountain, hills; Vale: wetland, grassland).
+- A growth level is applied the moment the XP is there (several in one go if the XP allows): the type's axis moves
+  0.5 toward its ideal (a Plain creature leans on its strongest axis; a dead-centre one takes dryness), size + 0.04
+  to 2.2, tolerance + 0.1 to 6.0. Note against 20.2's table: a type needs a preference 2 from centre, so a Plain
+  creature at dead centre is typed after FOUR growth levels (160 XP), not two; one already leaning 1 away needs two.
+  Level, abilities and price follow from the genome through rules.js, nothing is granted by a table.
+- Evolution: when the species key changes, the new Almanac entry gets `evolvedFrom` (the old nickname, else the
+  old scientific name), the old entry gets the variant `evolved`, the owner is asked to name the species (`N` for
+  Kevin, `name` for Root; the individual keeps its name), and a white flash with the new name plays at the owner.
+  Every look and card recomputes the species from the genome, so the sim's own naming follows.
+- Kevin: T feeds (a prompt: a creature, or "eater, meal"); the HUD says "N to name the new species" until the
+  species is named or the creature is gone; a pending species name rides in the save. Root: `feed`. The sim's
+  cached binomial on a record is dropped when its genome moves, so the evolved species gets its own name.
+  Breeding (step 9) hooks in through `breedHook`.
+
 ### 20.4 Alternatives considered
 | idea | verdict |
 |---|---|

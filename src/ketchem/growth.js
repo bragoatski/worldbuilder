@@ -1,0 +1,123 @@
+// Ketch'em growth and evolution (mechanics sec. 20): XP from time, following, catches, feeding and exposure; a growth
+// level moves the creature's REAL genome (its type axis toward the ideal, size, tolerance); when a preference crosses
+// one of the sim's species buckets the species key changes and that is the evolution: a new Almanac entry linked to
+// the old one, which the first evolver names. Pure over the player records and K; the page loop calls growthTick.
+import { T, grid, tick, idx, speciesKey, getSpeciesName, fauna } from '../sim.js';
+import { elementalType, levelOf, populationOf, prefBucket } from './rules.js';
+import { almanacEntry } from './encounter.js';
+// An evolved species still waiting for its name from this player (the HUD keeps asking until it is named or gone).
+function pendingUnnamed(K, p) { if (!p.namingSpecies) return false; const c = (p.party || []).find(x => x.id === p.namingSpecies) || (K.cabinet || []).find(x => x.id === p.namingSpecies); if (!c) { p.namingSpecies = null; return false; } return !almanacEntry(K, c).nickname; }
+
+export const XP_PARTY = 1, XP_FOLLOW = 2, XP_PERIOD = 100, XP_PLANT = 1, XP_RARE_PLANT = 5, XP_MEAT_PER_LEVEL = 3, XP_EXPOSURE = 10, EXPOSURE_TICKS = 500;
+export function xpFor(G) { return 10 * G * G; }   // XP to reach growth level G
+const AXIS_FIELD = { Dune: 'prefArid', Marsh: 'prefArid', Ember: 'prefTemp', Frost: 'prefTemp', Sun: 'prefSL', Shade: 'prefSL', Peak: 'prefElev', Vale: 'prefElev' };
+const AXIS_HIGH = { Dune: true, Marsh: false, Ember: true, Frost: false, Sun: true, Shade: false, Peak: true, Vale: false };
+// Exposure: the biomes a type calls its own (20.1): 500 ticks carried through them is the evolution stone.
+export const HOME_BIOMES = {
+  Dune: [T.DESERT, T.MESA, T.STEPPE], Marsh: [T.WETLAND, T.JUNGLE], Ember: [T.VOLCANIC, T.DESERT], Frost: [T.ARCTIC, T.GLACIER, T.TUNDRA],
+  Sun: [T.SAVANNA, T.DESERT, T.STEPPE], Shade: [T.FOREST, T.JUNGLE], Peak: [T.MOUNTAIN, T.HILLS], Vale: [T.WETLAND, T.PLAINS],
+};
+
+export function growthLevel(c) { return c.growthLevel || 0; }
+export function growthXP(c) { return c.growthXP || 0; }
+export function xpToNext(c) { return xpFor(growthLevel(c) + 1) - growthXP(c); }
+
+function players(K) { const out = []; if (K.kevin) out.push(K.kevin); if (K.root && K.root.party && !K.root.away) out.push(K.root); return out; }
+
+// Add XP and apply every growth level it buys. Returns the events: [{ kind: 'grow' | 'evolve', ... }].
+export function addXP(K, p, c, amount, why) {
+  if (!c || !(amount > 0)) return [];
+  c.growthXP = growthXP(c) + amount;
+  const events = [];
+  while (c.growthXP >= xpFor(growthLevel(c) + 1)) {
+    const before = speciesKey(c), oldName = getSpeciesName(c);
+    c.growthLevel = growthLevel(c) + 1;
+    moveGenome(c);
+    events.push({ kind: 'grow', creature: c, level: c.growthLevel, why });
+    const after = speciesKey(c);
+    if (after !== before) events.push(evolve(K, p, c, before, oldName));
+  }
+  return events;
+}
+// One growth level on the genome (20.2).
+export function moveGenome(c) {
+  let typ = elementalType(c).typ;
+  if (typ === 'Plain') {   // it picks the axis it already leans most on (a tie goes to dryness); from dead centre four levels make a type
+    let best = null, bd = -1;
+    for (const [field, hi, lo] of [['prefArid', 'Dune', 'Marsh'], ['prefTemp', 'Ember', 'Frost'], ['prefSL', 'Sun', 'Shade'], ['prefElev', 'Peak', 'Vale']]) {
+      const v = c[field] === undefined ? 5 : c[field], d = Math.abs(v - 5);
+      if (d > bd) { bd = d; best = v >= 5 ? hi : lo; }
+    }
+    typ = best;
+  }
+  const field = AXIS_FIELD[typ], high = AXIS_HIGH[typ];
+  const v = c[field] === undefined ? 5 : c[field];
+  c[field] = high ? Math.min(10, v + 0.5) : Math.max(0, v - 0.5);
+  c.size = Math.min(2.2, (c.size === undefined ? 1 : c.size) + 0.04);
+  c.tolerance = Math.min(6.0, (c.tolerance || 0) + 0.1);
+  delete c._speciesName;   // the sim caches the binomial on the record; a moved genome may be a different species
+}
+// The species key changed: a new Almanac entry linked to the old species; the evolver's owner names it (20.3).
+function evolve(K, p, c, oldKey, oldName) {
+  const e = almanacEntry(K, c);
+  const old = K.almanac.species[oldKey];
+  if (!e.evolvedFrom) e.evolvedFrom = (old && (old.nickname || old.scientific)) || oldName || ('an unnamed ' + c.type + ' line');
+  if (old) { old.variants = old.variants || []; if (!old.variants.includes('evolved')) old.variants.push('evolved'); }
+  if (!e.scientific) e.scientific = getSpeciesName(c) || null;
+  if (!e.nickname && !pendingUnnamed(K, p)) p.namingSpecies = c.id;   // the first evolver names the new species; an earlier unnamed one keeps its turn
+  (K.fx || (K.fx = [])).push({ kind: 'evolve', start: tick, len: 24, id: c.id, x: p.x, y: p.y, name: e.scientific || '' });
+  return { kind: 'evolve', creature: c, from: e.evolvedFrom, to: e.scientific || speciesKey(c), named: !!e.nickname };
+}
+
+// Per tick: time in the party (1 per 100 ticks), following (2), exposure to its own type's biome (10 per 500).
+export function growthTick(K) {
+  const out = [];
+  for (const p of players(K)) {
+    const here = grid[idx(p.x, p.y)];
+    for (const c of p.party || []) {
+      const following = p.follower === c.id;
+      c.partyTicks = (c.partyTicks || 0) + 1;
+      if (c.partyTicks >= XP_PERIOD) { c.partyTicks = 0; out.push(...addXP(K, p, c, following ? XP_FOLLOW : XP_PARTY, following ? 'following' : 'time')); }
+      const typ = elementalType(c).typ, home = HOME_BIOMES[typ];
+      if (home && home.includes(here)) { c.biomeTicks = (c.biomeTicks || 0) + 1; if (c.biomeTicks >= EXPOSURE_TICKS) { c.biomeTicks = 0; out.push(...addXP(K, p, c, XP_EXPOSURE, 'exposure')); } }
+    }
+  }
+  return out;
+}
+// Every party creature present at a catch gains the caught creature's level (20.1).
+export function catchXP(K, p, caught, level) {
+  const L = level || levelOf(caught, populationOf(caught, fauna, speciesKey) + 1);   // the caught one has left the wild count already
+  const out = [];
+  for (const c of p.party || []) if (c !== caught) out.push(...addXP(K, p, c, L, 'catch'));
+  return out;
+}
+// Feed a party creature a plant from the pack (grazer, omnivore) or another party creature (meat eaters).
+export function feed(K, p, which, what) {
+  const w = String(which || '').toLowerCase();
+  const c = (p.party || []).find(x => (x.name ? x.name.toLowerCase() === w : x.type === w));
+  if (!c) return { ok: false, text: 'no "' + which + '" in the party' };
+  if (!what || String(what).toLowerCase() === 'plant') {
+    if (!(c.type === 'herbivore' || c.type === 'omnivore')) return { ok: false, text: (c.name || c.type) + ' does not eat plants' };
+    const k = (p.pack || []).findIndex(x => !x.potion); if (k < 0) return { ok: false, text: 'no plant in the pack' };
+    const f = p.pack.splice(k, 1)[0];
+    const rare = (f.gen || 0) >= 10 || [f.prefArid, f.prefTemp, f.prefSL].some(v => v !== undefined && (v <= 1 || v >= 9));
+    const ev = addXP(K, p, c, rare ? XP_RARE_PLANT : XP_PLANT, 'plant');
+    return { ok: true, text: '"' + (c.name || c.type) + '" eats a ' + (rare ? 'rare ' : '') + 'plant (+' + (rare ? XP_RARE_PLANT : XP_PLANT) + ' XP)' + eventsText(ev), events: ev };
+  }
+  if (!(c.type === 'carnivore' || c.type === 'apex' || c.type === 'scavenger' || c.type === 'omnivore')) return { ok: false, text: (c.name || c.type) + ' does not eat meat' };
+  const mw = String(what).toLowerCase();
+  const m = (p.party || []).find(x => x !== c && (x.name ? x.name.toLowerCase() === mw : x.type === mw));
+  if (!m) return { ok: false, text: 'no "' + what + '" in the party to feed it' };
+  const L = levelOf(m, populationOf(m, fauna, speciesKey));
+  p.party = p.party.filter(x => x !== m); if (p.follower === m.id) { p.follower = null; p.followerAt = null; } if (p.naming === m.id) p.naming = null; if (p.namingSpecies === m.id) p.namingSpecies = null;
+  const ev = addXP(K, p, c, XP_MEAT_PER_LEVEL * L, 'meat');
+  return { ok: true, text: '"' + (c.name || c.type) + '" eats "' + (m.name || m.type) + '" (+' + XP_MEAT_PER_LEVEL * L + ' XP)' + eventsText(ev), events: ev };
+}
+export function eventsText(events) {
+  return events.map(e => e.kind === 'grow' ? '; growth level ' + e.level : '; EVOLVED from ' + e.from + ' into ' + e.to + (e.named ? '' : ': name the species')).join('');
+}
+// Breeding (step 9) hooks in here: offspring are born from the parents' moved genomes.
+export function breedHook(a, b) { return { a, b, note: 'breeding arrives in step 9' }; }
+// A creature's growth line for cards and looks: "G2 40/90".
+export function growthText(c) { return 'G' + growthLevel(c) + ' ' + growthXP(c) + '/' + xpFor(growthLevel(c) + 1); }
+export { prefBucket };

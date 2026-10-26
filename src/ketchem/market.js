@@ -6,6 +6,7 @@ import { priceOf, levelOf, populationOf, abilitiesOf, elementalType } from './ru
 import { STONE_KEY, PARTY_CAP, PACK_CAP, partyAbilities, onStore, hasEffect } from './encounter.js';
 import { revealSquare } from './fog.js';
 import { bearingTo } from './controls.js';
+import { growthText } from './growth.js';
 
 export const STONE_PRICE = { Amber: 5, Geode: 25, Obsidian: 150 };
 export const RESTOCK_TICKS = 2000, RESTOCK_COUNT = 3;
@@ -66,7 +67,7 @@ export function plantPrice(f, p) {
 }
 export function creatureCard(c) {
   const N = populationOf(c, fauna, speciesKey), L = levelOf(c, N), ab = abilitiesOf(c, L).abilities;
-  return { name: c.name || c.type, type: c.type, elemental: elementalType(c).typ, level: L, abilities: ab.map(a => a.name + (a.strength > 1 ? ' ' + ['', 'I', 'II', 'III'][a.strength] : '')), price: priceOf(c, N, L, ab.length), species: getSpeciesName(c) || '' };
+  return { name: c.name || c.type, type: c.type, elemental: elementalType(c).typ, level: L, growth: growthText(c), abilities: ab.map(a => a.name + (a.strength > 1 ? ' ' + ['', 'I', 'II', 'III'][a.strength] : '')), price: priceOf(c, N, L, ab.length), species: getSpeciesName(c) || '' };
 }
 
 // ---------- the pack: plants and potions share its slots ----------
@@ -120,7 +121,7 @@ function findMine(K, p, which) {
   c = (K.cabinet || []).find(is); if (c) return { c, where: 'cabinet' };
   return null;
 }
-function leaving(p, c) { if (p.naming === c.id) p.naming = null; if (p.follower === c.id) { p.follower = null; p.followerAt = null; } }
+function leaving(p, c) { if (p.naming === c.id) p.naming = null; if (p.namingSpecies === c.id) p.namingSpecies = null; if (p.follower === c.id) { p.follower = null; p.followerAt = null; } }
 export function sell(K, p, which) {
   const s = storeAt(K, p); if (!s) return { ok: false, text: 'no store here' };
   const pm = /^plant (\d+)$/.exec(String(which || '').toLowerCase());
@@ -227,8 +228,8 @@ export function almanacText(K, p) {
   const species = Object.entries(K.almanac.species);
   out.push('Almanac: ' + species.length + ' species, ' + K.stores.filter(s => s.revealed).length + '/4 stores found');
   for (const [key, e] of species) {
-    const sci = e.scientific || 'unnamed ' + e.type + ' (the sim names a line once it is a few generations old)'; void key;
-    out.push((e.nickname ? '"' + e.nickname + '" ' : '') + sci + ' (' + e.type + '): seen ' + e.seen + ', caught ' + e.caught + ', best L' + e.bestLevel + (e.namedBy ? ', named by ' + e.namedBy : ''));
+    const sci = e.scientific || 'unnamed ' + e.type + ' line'; void key;
+    out.push((e.nickname ? '"' + e.nickname + '" ' : '') + sci + ' (' + e.type + '): seen ' + e.seen + ', caught ' + e.caught + ', best L' + e.bestLevel + (e.namedBy ? ', named by ' + e.namedBy : '') + (e.evolvedFrom ? ', evolved from ' + e.evolvedFrom : '') + (e.variants && e.variants.length ? ', ' + e.variants.join(', ') : ''));
   }
   for (const s of K.stores.filter(s => s.revealed)) out.push('store ' + s.name + ' at ' + s.x + ',' + s.y + (p ? ' ' + bearingTo(p.x, p.y, s.x, s.y) : ''));
   for (const l of K.landmarks || []) if (K.fog && isSeenTile(K, l)) out.push('landmark ' + l.name + ' at ' + l.x + ',' + l.y);
