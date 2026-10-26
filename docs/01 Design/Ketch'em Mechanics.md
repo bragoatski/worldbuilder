@@ -949,6 +949,30 @@ small icon beside the player's dot with a shrinking arc for time left; Root read
 Economy check: a first hour's 100-150 coins buys one Slumber and a few Fleetfoot, not a Survey; Smoke and Homeward
 are what a player with a valuable party saves for before hunting predators.
 
+Built 2026-10-25 (step 7, `src/ketchem/market.js`, `panel.js`; readings, overturnable):
+- Stones are never out of stock (price is the gate); potions are counted: the first six in every store, two of the
+  last six per store by store index (Survey in one store, Mirror in another), 3 each, restocked 2,000 ticks after the
+  last restock. A sold creature goes to the store's `held` list. Plant prices: common 1 / 2 / 3 by health (< 0.5,
+  < 0.8, else), rare 15 / 25 / 40 (gen >= 10 or a preference within 1 of an extreme); Forager doubles.
+- The cabinet is shared between the stores and the players (one list, `K.cabinet`); `box` works on a store tile.
+- `give` while adjacent: coins, stones, a potion, a plant (the first in the pack) or a party creature.
+- Potions: Fleetfoot (stride + 1 on every ground but steep, both players), Hawkeye (sight square 11x11 while
+  moving and at the drink), Slumber (`asleep` until tick + max(10, 40 - 3L): calm, held, odds + 30, no bolt, a growl ends; each
+  miss has a 25 % chance to wake it; a miss on a sleeper reads "sleeps on"), Hush (alert / wary / growl within 4
+  tiles go calm), Musk (one type within 8 tiles steps toward the drinker every 10 ticks for 100; predators L8+
+  ignore it), Smoke (predators within 5 tiles step one tile away and growls end; no growl and no attack on the drinker for
+  200 ticks: an attack "turns back in the smoke"), Decoy (a scent on the tile you face, the way you last walked,
+  or at a bearing for Root; growling predators within 8 tiles step toward it instead of the player while it lasts), Homeward (a 6-tick cast, then the nearest discovered store's doorstep; any
+  attack cancels the cast), Tonic (+10 `growthXP` on a party creature, for step 8), Survey (25x25 reveal), Spice (the
+  player's active baits draw from double range and feed twice as long), Mirror (the next attack is reflected: the
+  predator goes wary and loses 30 energy). Effects show in the HUD line as `fleetfoot 180`.
+- Kevin: E on a store tile opens the panel (BUY / SELL / BOX), C opens it on BOX, entering autosaves when the game
+  has a name; P then 1-9 drinks the Nth potion (thrown ones at the current target, Musk asks the type, Tonic goes to
+  the first party creature), I reads the pack, M opens the Almanac, G asks what to give. Root: `shop`, `buy`,
+  `sell`, `box`, `give`, `drink`, `almanac`, `pack`.
+- Not yet: the party row and store cards (step 10), Slumber thrown by click (P then the current target does it),
+  pens (step 9), Scrounge's carrion coins and "old sells at full price", Hawkeye's effect on the look's size.
+
 ## 22. Co-op controls on the keyboard (Kevin's character)
 
 Root plays the same verbs through the door. Kevin plays on the page.

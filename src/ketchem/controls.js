@@ -32,15 +32,16 @@ export function tryStep(K, p, dx, dy, budget = true) {
   if (!inb(nx, ny)) return { ok: false, why: 'the edge of the world' };
   const i = idx(nx, ny), g = groundOf(i);
   if (g.kind === 'blocked') return { ok: false, why: g.why };
+  const fleet = p.effects && p.effects.some(e => e.potion === 'Fleetfoot' && e.until > tick);   // stride +1 on every ground (21)
   if (budget) {
     if (tick - p.windowStart >= WINDOW_TICKS || tick < p.windowStart) { p.spent = 0; p.windowStart = tick; }
-    const cost = 1 / g.stride;
+    const cost = 1 / (g.stride + (fleet && g.kind !== 'steep' ? 1 : 0));
     if (p.spent + cost > 1 + 1e-9) return { ok: false, why: 'winded', kind: g.kind };
     p.spent += cost;
   }
-  p.x = nx; p.y = ny; p.boat = g.kind === 'water';
+  p.x = nx; p.y = ny; p.boat = g.kind === 'water'; p.facing = [dx, dy];
   if (p.trail) { p.trail.push([nx, ny]); if (p.trail.length > 400) p.trail.shift(); }
-  if (K && K.fog) revealSquare(K, nx, ny, SIGHT_HALF);
+  if (K && K.fog) revealSquare(K, nx, ny, p.effects && p.effects.some(e => e.potion === 'Hawkeye' && e.until > tick) ? SIGHT_HALF + 1 : SIGHT_HALF);
   return { ok: true, kind: g.kind };
 }
 
@@ -117,7 +118,7 @@ export function routeWalk(K, st, path) {
 // E: what is under the player. Stores open in a later step; for now the store names itself.
 export function interact(K, p) {
   const s = K.stores.find(o => o.x === p.x && o.y === p.y);
-  if (s) return { kind: 'store', text: s.name + ' (the store opens in a later step)' };
+  if (s) return { kind: 'store', text: s.name };
   const sp = K.signposts.find(o => o.x === p.x && o.y === p.y);
   if (sp) return { kind: 'signpost', text: sp.text || 'no stores this way' };
   const l = (K.landmarks || []).find(o => o.x === p.x && o.y === p.y);

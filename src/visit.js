@@ -15,6 +15,7 @@ import { MODES, MODE_IDS, DEFAULT_MODE, modeOf } from '../visit/modes.mjs';
 import { legWalk, routeWalk, lookLines, bearingTo, newPlayer } from './ketchem/controls.js';
 import { revealSquare, SIGHT_HALF } from './ketchem/fog.js';
 import { initPlayer, initEncounters, creatureTag, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall as recallFollower, markSeen, drainNews } from './ketchem/encounter.js';
+import { initStores, shopText, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary } from './ketchem/market.js';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
 export const MAX_STRIDE = 3;       // tiles per walk call
@@ -904,7 +905,7 @@ async function arriveHere(mode) {
     const mine = K.starts[1], other = K.starts[0];
     V.st.x = mine.x; V.st.y = mine.y; V.st.boat = false;
     revealSquare(K, mine.x, mine.y, SIGHT_HALF);
-    initEncounters(K);
+    initEncounters(K); initStores(K);
     K.root = initPlayer(K.root && K.root.party ? Object.assign(K.root, { x: mine.x, y: mine.y, boat: false }) : newPlayer(mine.x, mine.y), 'root');   // a loaded game or an earlier visit keeps Root's party and stones
     K.root.away = false; delete K.root.loaded;
     const post = K.signposts.find(p => p.x === mine.x && p.y === mine.y);
@@ -1021,10 +1022,10 @@ async function pump(hooks) {
           if (!K.root || !K.root.party) K.root = initPlayer(newPlayer(st.x, st.y), 'root');
           K.root.away = false;
           // a knock-down moved Root's body to a doorstep between actions: the visit state follows it
-          if (K.root.knockedDown && K.root.knockedDown.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; delete K.root.knockedDown.moved; }
-          K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat;
+          if (K.root.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; K.root.moved = false; }
+          K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat; st.effects = K.root.effects; st.facing = K.root.facing;   // potions act on the body that walks
         }
-        const syncRoot = () => { if (K && K.root) { if (K.root.knockedDown && K.root.knockedDown.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; delete K.root.knockedDown.moved; } else { K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat; } } };
+        const syncRoot = () => { if (K && K.root) { if (K.root.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; K.root.moved = false; } else { K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat; K.root.facing = st.facing; } } };
         const rootNews = () => { const n = K ? drainNews(K, 'root') : []; return n.length ? '\n' + n.join('\n') : ''; };
         // What a look is depends on the mode: a body sees its square, the sky sees the whole world coarsely.
         const look = () => (sky ? survey(st) : perceive(st, K)) + heardPoints() + friendNews() + rootNews();
@@ -1062,6 +1063,20 @@ async function pump(hooks) {
             syncRoot();
             text = r.text + '\n\n' + perceive(st, K) + heardPoints() + rootNews(); break;
           }
+          case 'shop': text = shopText(K, K.root) + heardPoints(); break;
+          case 'buy': { const r = buyItem(K, K.root, a.item, a.qty); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
+          case 'sell': { const r = sellItem(K, K.root, a.name); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
+          case 'box': { const r = boxItem(K, K.root, a.name, !!a.take); text = r.text + heardPoints(); break; }
+          case 'give': { const r = giveItem(K, K.root, a.what, a.amount); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
+          case 'drink': {
+            const near = targetsNear(K, K.root, 2); let tgt = a.target;
+            if (/^slumber$/i.test(a.potion || '')) { const want = String(a.target || '').toUpperCase(); const t = want ? tileAtBearing(st, want) : { error: 1 }; tgt = t.error ? near[0] : near.find(c => c.x === t.x && c.y === t.y); }
+            else if (/^tonic$/i.test(a.potion || '')) tgt = (K.root.party || []).find(c => (c.name || c.type).toLowerCase() === String(a.target || '').toLowerCase()) || null;
+            else if (/^decoy$/i.test(a.potion || '')) { const t = tileAtBearing(st, a.target || ''); tgt = t.error ? null : t; }
+            const r = usePotion(K, K.root, a.potion, tgt); logLine('s', 'Root: ' + r.text + '.'); syncRoot(); text = r.text + (r.ok ? '\n\n' + look() : heardPoints()); break;
+          }
+          case 'almanac': text = almanacText(K, K.root) + heardPoints(); break;
+          case 'pack': { const ps = packSummary(K.root); text = 'pack ' + ps.used + '/' + ps.cap + ': ' + ps.plants + ' plants' + (Object.keys(ps.potions).length ? ', ' + Object.entries(ps.potions).map(x => x[0] + ' x' + x[1]).join(', ') : '') + '; stones Amber ' + K.root.stones.amber + ' Geode ' + K.root.stones.geode + ' Obsidian ' + K.root.stones.obsidian + '; ' + K.root.wallet + ' coins; party ' + (K.root.party.map(c => '"' + (c.name || c.type) + '"').join(', ') || 'none') + heardPoints(); break; }
           case 'name': { const r = nameCatch(K, K.root, a.name, a.species); if (r.ok) logLine('s', 'Root names its catch ' + r.text + '.'); text = r.text + heardPoints(); break; }
           case 'follow': { const r = follow(K, K.root, a.name); text = r.text + heardPoints(); break; }
           case 'recall': { const r = recallFollower(K, K.root); text = r.text + heardPoints(); break; }

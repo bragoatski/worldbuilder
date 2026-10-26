@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-25 (d) - Ketch'em step 7: the market - DONE, GATE GREEN
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 8, `src/ketchem/growth.js`** (XP sources, growth levels, genome moves, evolution; acceptance in the handoff's step table).
+
+What the game does now: step onto a store and press E: the store panel opens with BUY (Amber 5, Geode 25, Obsidian 150, and the potions it stocks, three each, restocked every 2,000 ticks), SELL (every party and cabinet creature at its rules price, with species, level, type and abilities on the card; all the pack's plants in one line) and BOX (the shared cabinet; C opens there). Selling a catch pays into your wallet; coins buy stones and potions. P then a number drinks a potion: Fleetfoot (a stride more), Hawkeye (wider sight), Slumber (a creature within 2 tiles sleeps, shorter the higher its level, odds +30), Hush, Musk, Smoke (nothing attacks you), Decoy, Homeward (six ticks later you stand at the nearest store you have found), Tonic, Survey (the fog clears 25x25), Spice, Mirror. I reads the pack, M opens the Almanac (species seen and caught with nicknames, stores found with bearings, landmarks), G gives coins, a stone, a potion, a plant or a creature to Root beside you. Root does all of it through `shop`, `buy`, `sell`, `box`, `give`, `drink`, `almanac`, `pack`. Entering a store autosaves a named game. Screenshots: `docs/04 Handoffs/img/2026-10-25-ketchem-step7/`.
+
+Gate: typecheck clean, lint 0 errors (32 warnings), 190/190, build green. Critic: 5 blockers (potions dumped as plants, Root's potions not reaching its walk, a sleeper attacking, Musk's reach, Hawkeye's reveal) all taken plus the cheap risks; details in the handoff's Progress section. Rehearsal on the scratch relay; the keepalive restored the real one at 17:15 Pacific.
+
 ## Session 2026-10-25 (c) - Ketch'em step 6: encounters - DONE, GATE GREEN
 Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 7, `src/ketchem/market.js`** (stores, stock and restock, buy / sell / cabinet / give, potions, the Almanac with nicknames; acceptance in the handoff's step table).
 

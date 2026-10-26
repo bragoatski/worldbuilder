@@ -28,6 +28,8 @@ import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
 import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews } from './ketchem/encounter.js';
+import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary } from './ketchem/market.js';
+import { storePanel, textPanel, closePanel, panelOpen } from './ketchem/panel.js';
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
 import { saveMenu } from './ketchem/menu.js';
@@ -700,6 +702,14 @@ var _pendingKetchem=getKetchemParam();
 // the Hand's hotkeys are off; R, F, T and Ctrl+Z stay the page's.
 var _kPressed={},_kCamAt=null;
 var KEYDIR={w:[0,-1],a:[-1,0],s:[0,1],d:[1,0],arrowup:[0,-1],arrowleft:[-1,0],arrowdown:[0,1],arrowright:[1,0]};
+// After Kevin moves: the store panel closes off its tile; stepping onto a store autosaves a named game (18.2).
+var _kOnStore=false;
+function kevinMoved(){
+  var on=!!storeAt(K,K.kevin);
+  if(!on&&panelOpen())closePanel();
+  if(on&&!_kOnStore&&K.slot)saveGame();
+  _kOnStore=on;
+}
 function kevinSay(text){var p=K&&K.kevin;if(!p)return;p.msg=text;p.msgUntil=Date.now()+4000;}
 function kevinCamera(){
   if(!K||zoomLevel<=1)return;
@@ -710,6 +720,15 @@ function ketchemKey(e){
   var p=K.kevin;if(!p)return false;
   if(e.ctrlKey||e.metaKey||e.altKey)return false;   // browser and page chords (copy, undo, reload) stay theirs
   var k=String(e.key||'').toLowerCase();
+  if(e.repeat&&(k==='tab'||k===' '||e.code==='Space'||k==='f'||k==='n'||k==='b'||k==='p'||k==='g'||k==='m'||k==='c'||k==='e'||k==='i')){e.preventDefault();return true;}   // an act is one press, never an auto-repeat
+  if(_kPotion){   // P then a digit: the Nth potion in the pack; a thrown or creature potion wants the target
+    e.preventDefault();_kPotion=false;
+    if(/^[1-9]$/.test(k)){var names=Object.keys(packSummary(p).potions);var pn=names[+k-1];if(!pn){kevinSay('no potion '+k);draw();return true;}
+      var tgt=p.target?fauna.find(function(a){return a&&a.id===p.target;}):null;var kind=pn==='Tonic'?(p.party[0]||null):pn==='Musk'?(window.prompt('Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore')||''):tgt;
+      var rp=usePotion(K,p,pn,kind);kevinSay(rp.text);}
+    else kevinSay('potion: cancelled');
+    draw();return true;
+  }
   if(_kBait){   // B then a kind, then a direction (22.2)
     e.preventDefault();
     if(k==='escape'){_kBait=null;kevinSay('bait: cancelled');draw();return true;}
@@ -726,11 +745,15 @@ function ketchemKey(e){
     dx=Math.sign(dx);dy=Math.sign(dy);if(!dx&&!dy)return true;
     if(e.shiftKey){strideStep(K,p,dx,dy);}
     else{var r=tryStep(K,p,dx,dy);if(!r.ok&&r.why!=='winded')kevinSay(r.why);}
-    draw();return true;
+    kevinMoved();draw();return true;
   }
-  if(k==='e'){e.preventDefault();var pk=pickPlant(K,p);kevinSay(pk.ok?pk.text:interact(K,p).text);draw();return true;}
+  if(k==='e'){e.preventDefault();if(storeAt(K,p)){openStore();return true;}var pk=pickPlant(K,p);kevinSay(pk.ok?pk.text:interact(K,p).text);draw();return true;}
+  if(k==='c'){e.preventDefault();if(storeAt(K,p))openStore('box');else kevinSay('the cabinet is at a store');draw();return true;}
+  if(k==='p'){e.preventDefault();var ps=packSummary(p);var pl=Object.keys(ps.potions);if(!pl.length){kevinSay('no potions in the pack');draw();return true;}_kPotion=true;kevinSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));draw();return true;}
+  if(k==='i'){e.preventDefault();var pi=packSummary(p);kevinSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):''));draw();return true;}
+  if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else textPanel('Almanac',almanacText(K,p));return true;}
+  if(k==='g'){e.preventDefault();var gw=window.prompt('Give what? coins N, Amber N, a potion name, plant, or a party creature name','coins 10');if(gw===null)return true;var gm=/^(.*?)(?:\s+(\d+))?$/.exec(gw.trim());var rg=giveItem(K,p,gm[1],+gm[2]||1);kevinSay(rg.text);draw();return true;}
   if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
-  if(e.repeat&&(k==='tab'||k===' '||e.code==='Space'||k==='f'||k==='n'||k==='b')){e.preventDefault();return true;}   // an act is one press, never an auto-repeat
   if(k==='tab'){e.preventDefault();kevinCycleTarget();draw();return true;}
   if(k===' '||e.code==='Space'){e.preventDefault();kevinThrow();draw();return true;}
   if(k==='1'||k==='2'||k==='3'){e.preventDefault();p.stone=['Amber','Geode','Obsidian'][+k-1];kevinSay(p.stone+' in hand ('+p.stones[['amber','geode','obsidian'][+k-1]]+')');draw();return true;}
@@ -745,7 +768,14 @@ function ketchemKey(e){
 // Acting (22.2): Tab cycles the target among creatures within 2 tiles, a click picks one, Space throws the stone in
 // hand at it, 1 / 2 / 3 pick the stone, B then P / S / M / T then a direction baits, F lets the follower out or
 // recalls it, N names the last catch, E picks the plant underfoot (else reads what is there).
-var _kBait=null;
+var _kBait=null,_kPotion=false;
+// The store (E or C on a store tile): BUY / SELL / BOX; entering autosaves (18.2).
+function openStore(tab){
+  var p=K.kevin;if(!storeAt(K,p))return;
+  storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[]};}return shopLists(K,p,s);},buy:function(item,qty){kevinSay(buyItem(K,p,item,qty).text);},sell:function(name){kevinSay(sellItem(K,p,name).text);},
+    sellPlants:function(){kevinSay(sellItem(K,p,'plants').text);},box:function(name,take){kevinSay(boxItem(K,p,name,take).text);},onChange:draw},tab||'buy');
+  draw();
+}
 function dirOf(d){return (d[1]<0?'N':d[1]>0?'S':'')+(d[0]<0?'W':d[0]>0?'E':'');}
 function kevinCycleTarget(){
   var p=K.kevin,list=targetsNear(K,p,2);if(!list.length){p.target=null;kevinSay('nothing within 2 tiles');return;}
@@ -804,7 +834,7 @@ function loadGame(slot){
 // A board arriving from the Worker or from a save becomes the page's game.
 function adoptBoard(board){
   abandonBuild();followId=null;godCancelMark(null);
-  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_kBait=null;_kAutoAt=tick;
+  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);initStores(K);closePanel();if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_kBait=null;_kPotion=false;_kOnStore=false;_kAutoAt=tick;
   setHandTool('none');document.body.classList.add('ketchem');
   placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
   speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
@@ -1279,10 +1309,10 @@ function init(){
 function kevinHeld(){
   if(!K||!K.kevin)return;var dx=0,dy=0;
   for(var q in KEYDIR){if(_kPressed[q]!==undefined&&tick>_kPressed[q]+1){dx+=KEYDIR[q][0];dy+=KEYDIR[q][1];}}   // a tap moves once (the keydown); a hold repeats from the second tick
-  dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy)tryStep(K,K.kevin,dx,dy);
+  dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy){tryStep(K,K.kevin,dx,dy);kevinMoved();}
 }
 function kevinNews(){if(!K)return;var n=drainNews(K,'kevin');if(n.length)kevinSay(n[n.length-1]);}
-function loop(){try{if(running){step();if(K){encounterTick(K);kevinNews();}visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+function loop(){try{if(running){step();if(K){encounterTick(K);marketTick(K);kevinNews();if(K.kevin.moved){K.kevin.moved=false;_kCamAt=null;}}visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){

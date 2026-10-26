@@ -78,6 +78,14 @@ const KETCHEM_BODY = [
   tool('name', 'Name your latest catch (<= 24 chars); species: a nickname for its species if it has none (<= 16).', { name: { type: 'string' }, species: { type: 'string' } }, ['name']),
   tool('follow', 'Let a party creature out of its stone to walk beside you (one at a time). No name: the first.', { name: { type: 'string' } }),
   tool('recall', 'Put your follower back in its stone.'),
+  tool('shop', 'On a store tile: what it sells, what you can sell and for how much, the cabinet.'),
+  tool('buy', 'Buy at the store you stand on: a stone (Amber, Geode, Obsidian) or a potion, qty default 1.', { item: { type: 'string' }, qty: { type: 'integer', minimum: 1, maximum: 20 } }, ['item']),
+  tool('sell', 'Sell at the store you stand on: a creature by name (party or cabinet), or "plants" for every plant in the pack.', { name: { type: 'string' } }, ['name']),
+  tool('box', 'At a store: put a party creature into the cabinet (shared storage), or take one out with take: true.', { name: { type: 'string' }, take: { type: 'boolean' } }, ['name']),
+  tool('give', 'Give to Kevin while adjacent: what = coins / Amber / Geode / Obsidian / a potion / plant / a party creature name; amount for coins and stones.', { what: { type: 'string' }, amount: { type: 'integer', minimum: 1 } }, ['what']),
+  tool('drink', 'Use a potion from the pack. Slumber: target a creature (bearing in sight, default the nearest within 2). Tonic: a party creature name. Musk: target = a type (herbivore, carnivore, omnivore, scavenger, apex). Decoy: a bearing beside you.', { potion: { type: 'string' }, target: { type: 'string' } }, ['potion']),
+  tool('almanac', 'The Almanac: species seen and caught with nicknames, stores found, landmarks.'),
+  tool('pack', 'What you carry: plants, potions, stones, coins, the party.'),
 ];
 
 export const MODES = {

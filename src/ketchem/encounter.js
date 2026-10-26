@@ -3,7 +3,7 @@
 // Randomness draws on K's own stream (kRng), never the sim's, so the ecology stays the tuned one. Every function
 // that acts returns { ok, text, ... } with the words Root reads; the page turns the same results into bubbles and
 // animations (K.fx). Tick-driven work happens in encounterTick(K), called after every sim step while a board is up.
-import { T, grid, riverData, fauna, flora, road, tick, idx, inb, mulberry32, speciesKey } from '../sim.js';
+import { T, grid, riverData, fauna, flora, road, tick, idx, inb, mulberry32, speciesKey, getSpeciesName } from '../sim.js';
 import { levelOf, populationOf, abilitiesOf, oddsOf, elementalType, genomeHash } from './rules.js';
 import { groundOf, bearingTo } from './controls.js';
 
@@ -64,6 +64,7 @@ function landNear(x, y) {
   return null;
 }
 function ratio(f) { return f.maxEnergy ? f.energy / f.maxEnergy : 0.5; }
+export function hasEffect(p, potion) { return !!(p && p.effects && p.effects.some(e => e.potion === potion && e.until > tick)); }
 export function hungry(f) { return ratio(f) < 0.5; }
 export function fed(f) { return ratio(f) >= 0.8; }
 export function isPredator(f) { return f.type === 'carnivore' || f.type === 'apex'; }
@@ -104,8 +105,9 @@ export function oddsFor(K, p, f, stone = p.stone) {
   const a = aw(K, f), ab = partyAbilities(p);
   const bait = a.feeding ? BAIT[a.feeding].odds : null;
   const corral = corralFor(K, p, f);
-  let o = oddsOf(stone, factsOf(f).L, { aw: a.baitId ? 'calm' : a.state === 'fled' ? 'wary' : a.state, en: ratio(f), bait, lureIII: ab.Lure === 3, dreadIII: ab.Dread === 3, corral: corral === 'partner' });
+  let o = oddsOf(stone, factsOf(f).L, { aw: a.baitId || a.asleep ? 'calm' : a.state === 'fled' ? 'wary' : a.state, en: ratio(f), bait, lureIII: ab.Lure === 3, dreadIII: ab.Dread === 3, corral: corral === 'partner' });
   if (corral === 'follower' && o > 0 && o < 100) o = Math.min(99, o + 5);   // never lifts Amber on L10, never touches Obsidian
+  if (a.asleep && o > 0 && o < 100) o = Math.min(99, o + 30);               // Slumber (21)
   return o;
 }
 export function oddsVisible(K, p, f) { return dist(p, f) <= ((partyAbilities(p).Nose || 0) ? 4 : 2); }
@@ -114,7 +116,8 @@ export function oddsVisible(K, p, f) { return dist(p, f) <= ((partyAbilities(p).
 export function creatureTag(K, p, f) {
   const a = aw(K, f), facts = factsOf(f);
   let s = ' L' + facts.L + ' ' + facts.type;
-  if (a.state === 'growl') s += ' growls (' + (a.pulsesLeft || 0) + ')';
+  if (a.asleep) s += ' asleep';
+  else if (a.state === 'growl') s += ' growls (' + (a.pulsesLeft || 0) + ')';
   else if (a.feeding) s += ' feeding';
   else if (a.state !== 'calm') s += ' ' + a.state;
   if (p && a.state !== 'fled' && oddsVisible(K, p, f) && !p.boat) s += ' ' + oddsFor(K, p, f) + '%';
@@ -164,12 +167,13 @@ export function placeBait(K, p, kind, dir, which) {
   if (!walkable(x, y)) return { ok: false, text: 'nothing can stand there' };
   if (kind === 'plant' || kind === 'scatter') {
     const need = kind === 'scatter' ? 3 : 1;
-    if (p.pack.length < need) return { ok: false, text: need === 1 ? 'no plant in the pack' : 'scatter needs three plants' };
+    const plants = p.pack.filter(x => !x.potion);
+    if (plants.length < need) return { ok: false, text: need === 1 ? 'no plant in the pack' : 'scatter needs three plants' };
     if (kind === 'scatter' && (!d[0] && !d[1])) return { ok: false, text: 'scatter needs a direction' };
     clearPlayerBaits(K, p);
     const tiles = kind === 'plant' ? [[x, y]] : [1, 2, 3].map(k => [p.x + d[0] * k, p.y + d[1] * k]).filter(([tx, ty]) => walkable(tx, ty));
     if (!tiles.length) return { ok: false, text: 'no ground that way' };
-    for (const [tx, ty] of tiles) dropBait(K, p, kind, tx, ty, p.pack.shift());
+    for (const [tx, ty] of tiles) { const k = p.pack.findIndex(x => !x.potion); dropBait(K, p, kind, tx, ty, p.pack.splice(k, 1)[0]); }
     return { ok: true, text: 'bait set ' + bearingTo(p.x, p.y, x, y) + (kind === 'scatter' ? ' (' + tiles.length + ' plants)' : '') };
   }
   if (!d[0] && !d[1]) return { ok: false, text: kind + ' bait goes on a tile beside you' };
@@ -193,7 +197,7 @@ function baitTick(K) {
       for (const f of fauna) {
         if (!f || !spec.takers.includes(f.type) || fed(f) || f.held) continue;
         const a = aw(K, f); if (a.state === 'fled' || a.state === 'growl') continue;
-        const d = dist(b, f); if (d <= spec.range && d < bd) { bd = d; best = f; }
+        const d = dist(b, f); if (d <= spec.range * (b.spiced ? 2 : 1) && d < bd) { bd = d; best = f; }
       }
       if (!best) continue;
       b.creatureId = best.id; best.held = true; const a = aw(K, best); a.baitId = b.id; a.state = 'calm'; a.until = 0;
@@ -202,12 +206,13 @@ function baitTick(K) {
     }
     const a = aw(K, feeder);
     if (!a.feeding) {   // walking: 1 tile a tick straight at the bait
-      if (feeder.x === b.x && feeder.y === b.y) { a.feeding = b.kind; a.feedUntil = tick + spec.feed; b.until = a.feedUntil; fx(K, 'feeding', { id: feeder.id, len: spec.feed }); continue; }
+      if (a.asleep) continue;   // it sleeps where it lies
+      if (feeder.x === b.x && feeder.y === b.y) { a.feeding = b.kind; a.feedUntil = tick + spec.feed * (b.spiced ? 2 : 1); b.until = a.feedUntil; fx(K, 'feeding', { id: feeder.id, len: spec.feed }); continue; }
       const dx = Math.sign(b.x - feeder.x), dy = Math.sign(b.y - feeder.y);
       let moved = false;
       for (const [sx, sy] of [[dx, dy], [dx, 0], [0, dy]]) { if ((sx || sy) && walkable(feeder.x + sx, feeder.y + sy)) { feeder.x += sx; feeder.y += sy; moved = true; break; } }
       if (!moved) { releaseHold(K, feeder); b.creatureId = null; b.until = tick + BAIT_ROT; continue; }   // something in the way: it gives up, the bait waits for another
-      if (feeder.x === b.x && feeder.y === b.y) { a.feeding = b.kind; a.feedUntil = tick + spec.feed; b.until = a.feedUntil; fx(K, 'feeding', { id: feeder.id, len: spec.feed }); }   // it starts eating the tick it arrives
+      if (feeder.x === b.x && feeder.y === b.y) { a.feeding = b.kind; a.feedUntil = tick + spec.feed * (b.spiced ? 2 : 1); b.until = a.feedUntil; fx(K, 'feeding', { id: feeder.id, len: spec.feed }); }   // it starts eating the tick it arrives
       continue;
     }
     feeder.energy = Math.min(feeder.maxEnergy, feeder.energy + feeder.maxEnergy * 0.02);   // it eats
@@ -237,7 +242,7 @@ function awarenessTick(K) {
     if (!f) continue;
     const a = K.aw[f.id];
     const np = nearestPlayer(K, f);
-    if (!a && (!np || np[2] > ENCOUNTER_RANGE)) continue;   // far from everyone and never met: nothing to do
+    if (!a && (!np || np[2] > (K.musk ? 8 : ENCOUNTER_RANGE))) continue;   // far from everyone and never met: nothing to do (a musk reaches 8)
     const st = aw(K, f);
     // encounters: one per player within 6 tiles, continuous; 100 ticks beyond 6 resets the fail count
     for (const [id, p] of players(K)) {
@@ -253,6 +258,7 @@ function awarenessTick(K) {
       } else { delete st.bolt; f.held = false; }
       continue;
     }
+    if (st.asleep) { if (tick >= st.asleep) { delete st.asleep; f.held = !!st.baitId; } else { st.state = 'calm'; continue; } }   // Slumber: it lies still until it wakes
     if (st.baitId) { st.state = 'calm'; continue; }   // walking to bait or feeding: calm, and the bait moves it (the bait rules say no bolt)
     const near = np ? np[2] : Infinity, p = np ? np[1] : null, pid = np ? np[0] : null;
     const ab = p ? abilitiesOfPlayer(p) : {};
@@ -263,7 +269,7 @@ function awarenessTick(K) {
     if (st.state === 'calm' && near <= alertRange && !(ab.Stalk >= 1)) { st.state = 'alert'; st.until = tick + ALERT_CLEAR; fx(K, 'alert', { id: f.id, len: 10 }); }
     if (st.state === 'alert' || st.state === 'wary') {   // wary behaves as alert once its bolt is over (sec. 6)
       if (st.state === 'alert') { if (near <= 3) st.until = tick + ALERT_CLEAR; else if (tick >= st.until) { st.state = 'calm'; continue; } }
-      if (isPredator(f) && hungry(f) && near <= 1 && !(ab.Dread >= 1) && !onStore(K, p) && tick >= (st.cooldownUntil || 0) && !guarded(f, ab)) {
+      if (isPredator(f) && hungry(f) && near <= 1 && !(ab.Dread >= 1) && !onStore(K, p) && tick >= (st.cooldownUntil || 0) && !guarded(f, ab) && !hasEffect(p, 'Smoke')) {
         st.state = 'growl'; st.target = pid; st.pulsesLeft = pulsesFor(facts.L, rng); st.nextPulse = tick; st.stalker = isStalker(f, facts.L); delete st.pursueUntil;
         f.held = true; fx(K, 'growl', { id: f.id }); continue;   // the first pulse comes this tick: N pulses span 10N ticks (11.2)
       }
@@ -273,7 +279,8 @@ function awarenessTick(K) {
     if (st.state === 'growl') {
       const tp = playerById(K, st.target) || p, tab = abilitiesOfPlayer(tp); const d = dist(tp, f);
       const fol = followerOf(tp); const backedDown = fol && levelOf(fol, populationOf(fol, fauna, speciesKey)) > facts.L;
-      if (!hungry(f) || onStore(K, tp) || (tab.Dread >= 1) || backedDown || guarded(f, tab) || (K.root && tp === K.root && K.root.away)) { st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; continue; }
+      if (!hungry(f) || onStore(K, tp) || (tab.Dread >= 1) || backedDown || guarded(f, tab) || (K.root && tp === K.root && K.root.away) || hasEffect(tp, 'Smoke')) { st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; continue; }
+      if (K.decoy && dist(K.decoy, f) <= 8) { if (tick >= st.nextPulse) { stepToward(f, K.decoy); st.nextPulse = tick + 10; } continue; }   // a decoy's scent is chased instead
       if (d > 3) {   // the player left its reach
         if (st.stalker && (st.pursueUntil || (st.pursueUntil = tick + 60)) > tick) { if ((tick - (st.pursueAt || 0)) >= 16 && stalkerStep(K, f, tp)) st.pursueAt = tick; if (tick >= st.nextPulse) { fx(K, 'pulse', { id: f.id, len: 10 }); st.nextPulse = tick + 10; } continue; }
         st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; delete st.pursueUntil; continue;
@@ -287,6 +294,7 @@ function awarenessTick(K) {
     }
     // calm: Lure pulls it one tile toward the player every 10 ticks
     if (st.state === 'calm' && ab.Lure && near <= 6 && near > 1 && tick % 10 === 0) stepToward(f, p);
+    else if (K.musk && st.state === 'calm' && f.type === K.musk.type && tick % 10 === 0) { const mp = playerById(K, K.musk.pid); if (mp && dist(mp, f) <= 8 && dist(mp, f) > 1 && !(isPredator(f) && factsOf(f).L >= 8)) stepToward(f, mp); }   // Musk (21)
   }
 }
 function guarded(f, ab) { if (!ab.Guard) return false; if (f.type === 'carnivore') return true; return ab.Guard >= 2 && f.type === 'apex'; }
@@ -309,6 +317,9 @@ function stalkerStep(K, f, to) {
 export function attack(K, f, p) {
   const st = aw(K, f), facts = factsOf(f), ab = partyAbilities(p);
   st.state = 'alert'; st.until = tick + ALERT_CLEAR; st.cooldownUntil = tick + ATTACK_COOLDOWN; f.held = false;
+  if (p.cast) p.cast = null;   // a Homeward cast is interrupted (21)
+  if (hasEffect(p, 'Smoke')) return { ok: true, text: f.type + ' lunges and turns back in the smoke', taken: null };
+  if (hasEffect(p, 'Mirror')) { p.effects = p.effects.filter(e => e.potion !== 'Mirror'); st.state = 'wary'; st.until = tick + WARY_TICKS; f.energy = Math.max(1, f.energy - 30); fx(K, 'hardy', { x: p.x, y: p.y, len: 8 }); return { ok: true, text: f.type + ' attacks: the Mirror throws it back, wary', taken: null }; }
   if (ab.Hardy && tick >= (p.hardyAt || 0)) { p.hardyAt = tick + HARDY_COOLDOWN; fx(K, 'hardy', { x: p.x, y: p.y, len: 8 }); return { ok: true, text: (f.type) + ' attacks: Hardy absorbs it', taken: null }; }
   fx(K, 'attack', { id: f.id, x: p.x, y: p.y, len: 12 });
   const fol = followerOf(p);
@@ -326,11 +337,11 @@ export function attack(K, f, p) {
   const lost = Math.ceil(p.wallet / 2); p.wallet = Math.floor(p.wallet / 2);
   const spot = landNear(p.x, p.y) || [f.x, f.y];
   for (const c of p.party) { c.held = false; c.x = spot[0]; c.y = spot[1]; fauna.push(c); const a = aw(K, c); a.state = 'wary'; a.until = tick + WARY_TICKS; }
-  for (const pl of p.pack) { pl.x = spot[0]; pl.y = spot[1]; flora.push(pl); }
+  for (const pl of p.pack) if (!pl.potion) { pl.x = spot[0]; pl.y = spot[1]; flora.push(pl); }   // plants drop; potions are lost
   p.party = []; p.pack = []; p.follower = null; p.followerAt = null; p.stones = { amber: 0, geode: 0, obsidian: 0 };
   const s = nearestStore(K, p.x, p.y);
   fx(K, 'knockdown', { x: p.x, y: p.y, len: 6, lost });
-  p.x = s.door.x; p.y = s.door.y; p.boat = false; p.knockedDown = { at: tick, store: s.name, moved: true };   // moved: the page (Root's visit state) must follow
+  p.x = s.door.x; p.y = s.door.y; p.boat = false; p.knockedDown = { at: tick, store: s.name }; p.moved = true;   // moved: the page (Root's visit state) must follow
   return { ok: true, text: f.type + ' attacks: you wake at ' + s.name + ', ' + lost + ' coins lost, the pack and the party gone (the animals are wild again where it happened)', taken: null, knockedDown: true };
 }
 export function nearestStore(K, x, y) { let best = null, bd = Infinity; for (const s of K.stores) { const d = Math.max(Math.abs(s.x - x), Math.abs(s.y - y)); if (d < bd) { bd = d; best = s; } } return best; }
@@ -349,6 +360,7 @@ export function throwStone(K, p, f, stone = p.stone) {
   p.stones[key]--;
   const roll = Math.floor(K.rng() * 100) + 1;   // 1..100; caught when roll <= odds
   const caught = roll <= odds;
+  if (!caught && st.asleep && K.rng() < 0.25) { delete st.asleep; f.held = !!st.baitId; }   // Slumber: each throw at a sleeper has a 25% chance to wake it
   const wobbles = caught ? 3 : (odds - roll <= 15 && roll - odds <= 15 ? 3 : 1 + (K.rng() < 0.5 ? 1 : 0));
   fx(K, 'throw', { from: { x: p.x, y: p.y }, to: { x: f.x, y: f.y }, len: THROW_TICKS, wobbles, caught, stone });
   const enc = st.enc[p.id] || (st.enc[p.id] = { fails: 0, since: tick, last: tick });
@@ -362,7 +374,7 @@ export function throwStone(K, p, f, stone = p.stone) {
     const where = p.party.length < PARTY_CAP ? 'party' : 'cabinet';
     if (where === 'party') p.party.push(f); else K.cabinet.push(f);
     p.naming = f.id;
-    const entry = almanacEntry(K, f); entry.caught++; entry.bestLevel = Math.max(entry.bestLevel, facts.L);
+    const entry = almanacEntry(K, f); entry.caught++; entry.bestLevel = Math.max(entry.bestLevel, facts.L); if (!entry.seen) noteSeen(K, f);   // a catch is a sighting too
     return { ok: true, caught: true, text: 'caught ' + f.type + ' L' + facts.L + ' ' + facts.type + ' (' + where + '). name it', odds, roll, wobbles, where, creature: f, delay: THROW_TICKS };
   }
   enc.fails++;
@@ -380,6 +392,7 @@ export function throwStone(K, p, f, stone = p.stone) {
     return { ok: true, caught: false, text: 'broke free' + eaten + '; ' + f.type + ' flees out of sight (three failed throws)', odds, roll, wobbles, delay: THROW_TICKS };
   }
   const pab = partyAbilities(p);
+  if (st.asleep) return { ok: true, caught: false, text: 'broke free' + eaten + '; ' + f.type + ' sleeps on', odds, roll, wobbles, delay: THROW_TICKS };   // a sleeper cannot bolt or attack (21)
   const hungryPredator = isPredator(f) && hungry(f) && !(pab.Dread >= 1) && !onStore(K, p) && !guarded(f, pab) && tick >= (st.cooldownUntil || 0);   // "at once", but one strike per 50 ticks (11.6)
   if (hungryPredator) { const r = attack(K, f, p); return { ok: true, caught: false, text: 'broke free' + eaten + '; ' + r.text, odds, roll, wobbles, attack: r, delay: THROW_TICKS }; }
   st.state = 'wary'; st.until = tick + (pab.Stalk >= 2 ? WARY_TICKS / 2 : WARY_TICKS);
@@ -392,7 +405,7 @@ export function almanacEntry(K, f) {
   const key = speciesKey(f);
   return K.almanac.species[key] || (K.almanac.species[key] = { seen: 0, caught: 0, bestLevel: 0, nickname: null, namedBy: null, firstSeen: { tick, x: f.x, y: f.y }, type: f.type });
 }
-export function noteSeen(K, f) { const e = almanacEntry(K, f); e.seen++; return e; }
+export function noteSeen(K, f) { const e = almanacEntry(K, f); e.seen++; if (!e.scientific) e.scientific = getSpeciesName(f) || null; return e; }
 const NAME_OK = /^[A-Za-z0-9' ]+$/;
 export function nameCatch(K, p, raw, speciesNick) {
   const name = String(raw || '').trim().slice(0, 24);

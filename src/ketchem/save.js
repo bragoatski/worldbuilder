@@ -54,7 +54,7 @@ export function buildSave(K, slot) {
     coast: b64(new Uint8Array(coastTTL.buffer, coastTTL.byteOffset, coastTTL.byteLength)),   // shore tiles still turning to land (Int16 as bytes)
     genesis: { ringDone: b64(ringDone), adjCooldown: b64(new Uint8Array(adjCooldown.buffer, adjCooldown.byteOffset, adjCooldown.byteLength)),   // the terrain passes' bookkeeping, so the first tick after a load is the tick the world would have had
       hillDecay: b64(hillDecayCount), stability: b64(biomeStability), desired: b64(biomeDesiredNext) },
-    stores: K.stores.map(s => ({ x: s.x, y: s.y, i: s.i, q: s.q, name: s.name, door: s.door, revealed: !!s.revealed, stock: s.stock || { amber: 0, geode: 0, obsidian: 0, potions: {} }, restockAt: s.restockAt || 0, held: s.held || [] })),
+    stores: K.stores.map(s => ({ x: s.x, y: s.y, i: s.i, q: s.q, name: s.name, door: s.door, revealed: !!s.revealed, stock: s.stock || { potions: {} }, restockAt: s.restockAt || 0, held: s.held || [] })),
     signposts: K.signposts, landmarks: K.landmarks, starts: K.starts,
     cabinet: K.cabinet || [],
     players: [playerRecord('kevin', K.kevin || newPlayer(K.starts[0].x, K.starts[0].y))].concat(K.root ? [playerRecord('root', K.root)] : []),
@@ -122,7 +122,7 @@ export function applySave(raw) {
   // creatures held by a bait in the record keep their hold; a growl ends (it is alert again); everything else is free
   for (const f of fauna) if (f) f.held = false;
   for (const b of K.baits) if (b.creatureId) { const f = fauna.find(x => x && x.id === b.creatureId); if (f) f.held = true; else b.creatureId = null; }
-  for (const a of Object.values(K.aw)) if (a.state === 'growl') { a.state = 'alert'; a.until = tick + 50; }
+  for (const [id, a] of Object.entries(K.aw)) { if (a.state === 'growl') { a.state = 'alert'; a.until = tick + 50; } if (a.asleep) { const f = fauna.find(x => x && x.id === +id); if (f) f.held = true; } }
   if (!K.kevin && K.starts[0]) K.kevin = newPlayer(K.starts[0].x, K.starts[0].y);
   return K;
 }

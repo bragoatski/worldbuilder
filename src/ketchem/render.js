@@ -172,7 +172,8 @@ export function drawEncounters(ctx, PIX, K) {
   // the HUD line (22.3, minimal until step 10): wallet, stones, the stone in hand, the party
   ctx.textAlign = 'left'; ctx.font = Math.max(10, PIX * 1.6) + 'px "JetBrains Mono",monospace'; ctx.textBaseline = 'top';
   const party = (p.party || []).map(c => (c.name || c.type) + (p.follower === c.id ? '*' : '')).join(', ') || 'no party';
-  const line = p.wallet + ' coins | ' + (p.stone === 'Amber' ? '[' : '') + 'Amber ' + p.stones.amber + (p.stone === 'Amber' ? ']' : '') + ' ' + (p.stone === 'Geode' ? '[' : '') + 'Geode ' + p.stones.geode + (p.stone === 'Geode' ? ']' : '') + ' ' + (p.stone === 'Obsidian' ? '[' : '') + 'Obsidian ' + p.stones.obsidian + (p.stone === 'Obsidian' ? ']' : '') + ' | plants ' + (p.pack || []).length + ' | ' + party + (p.naming ? ' | N to name your catch' : '');
+  const fxs = (p.effects || []).filter(e => e.until > now).map(e => e.potion.toLowerCase() + ' ' + (e.until - now)).join(' ');
+  const line = (fxs ? fxs + ' | ' : '') + p.wallet + ' coins | ' + (p.stone === 'Amber' ? '[' : '') + 'Amber ' + p.stones.amber + (p.stone === 'Amber' ? ']' : '') + ' ' + (p.stone === 'Geode' ? '[' : '') + 'Geode ' + p.stones.geode + (p.stone === 'Geode' ? ']' : '') + ' ' + (p.stone === 'Obsidian' ? '[' : '') + 'Obsidian ' + p.stones.obsidian + (p.stone === 'Obsidian' ? ']' : '') + ' | plants ' + (p.pack || []).filter(x => !x.potion).length + ' | ' + party + (p.naming ? ' | N to name your catch' : '');
   const lw = ctx.measureText(line).width;
   ctx.fillStyle = 'rgba(8,11,16,0.75)'; ctx.fillRect(4, 4, lw + 10, Math.max(10, PIX * 1.6) + 6);
   ctx.fillStyle = '#e6edf3'; ctx.fillText(line, 9, 7);
