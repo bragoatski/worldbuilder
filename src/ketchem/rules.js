@@ -214,6 +214,10 @@ export function oddsOf(stone, L, m = {}) {
   return clamp(o, 1, 99);
 }
 
+// What a card draws of a creature (the sim's shape rules, render.js drawCreatureShape): the genes the drawing reads.
+// An Almanac entry keeps one from the first creature seen, so a species has a face after that creature is gone.
+export function glyphOf(f) { return { type: f.type, hue: f.hue, sat: f.sat, val: f.val, size: f.size === undefined ? 1 : f.size, vivid: !!f.vivid }; }
+
 // The whole card for one creature: what a look, a sell card or the Almanac shows.
 export function cardOf(f, N) {
   const e = elementalType(f), lv = levelTerms(f, N), ab = abilitiesOf(f, lv.L), r = rarity(N, e.typ);

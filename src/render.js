@@ -56,6 +56,26 @@ export function drawRivers(ctx, PIX){
   }
 }
 
+// One creature's glyph, dim pixels across, centred in a box x box square whose top-left is (px, py): the shape by
+// trophic type (solid square, hollow square, diamond, triangle, cross), the vivid halo one pixel around it, the
+// colour from the genes with bright scaling the value (energy on the map, 1 on a card). The shape and the halo are
+// each centred in the box by the same integer truncation the map always used, so the map draws byte for byte as
+// before; Ketch'em's cards (src/ketchem/hud.js) share it, so a creature looks the same in the party row as on the ground.
+export function drawCreatureShape(ctx,a,px,py,box,dim,bright){
+  if(bright===undefined)bright=1;
+  var doff=((box-dim)/2)|0;var x=px+doff,y=py+doff;
+  if(a.vivid){ctx.fillStyle=hsv2hex(a.hue,Math.min(1,a.sat*1.3),Math.min(1,a.val*1.2));var gsz=dim+2;var goff=((box-gsz)/2)|0;ctx.fillRect(px+goff,py+goff,gsz,gsz);}
+  ctx.fillStyle=hsv2hex(a.hue,a.sat,a.val*bright);
+  if(a.type==='herbivore'){ctx.fillRect(x,y,dim,dim);}
+  else if(a.type==='scavenger'){ // hollow square outline - distinct from the solid herbivore + the carnivore cross
+    ctx.fillRect(x,y,dim,1);ctx.fillRect(x,y+dim-1,dim,1);ctx.fillRect(x,y,1,dim);ctx.fillRect(x+dim-1,y,1,dim);}
+  else if(a.type==='apex'){ // solid diamond - the apex predator, distinct from square / hollow-square / cross
+    for(var dr=0;dr<dim;dr++){var half=Math.min(dr,dim-1-dr);var dw=half*2+1;ctx.fillRect(x+(((dim-dw)/2)|0),y+dr,dw,1);}}
+  else if(a.type==='omnivore'){ // upward solid triangle (wide base) - the generalist, distinct from the other four
+    for(var tr=0;tr<dim;tr++){var tw=tr+1;if(tw>dim)tw=dim;ctx.fillRect(x+(((dim-tw)/2)|0),y+tr,tw,1);}}
+  else{var mid=(dim/2)|0;ctx.fillRect(x+mid,y,1,1);ctx.fillRect(x,y+mid,dim,1);ctx.fillRect(x+mid,y+dim-1,1,1);if(dim>=3)ctx.fillRect(x+mid-1,y+1,3,1);}
+}
+
 // opts: { overlayMode: 'none' | 'elev' | 'clim-ar' | 'clim-te' | 'clim-su' | 'climate' | 'water',
 //         followId: the fauna id to ring, or null,
 //         ground: optional fn(ctx, PIX) drawn after terrain + rivers, before life (Ketch'em roads and stores),
@@ -91,20 +111,10 @@ export function drawWorld(ctx, PIX, opts){
   if(CFG.ecoRender){for(var fi=0;fi<flora.length;fi++){var f=flora[fi];if(!f)continue;var fw=riverData&&riverData[idx(f.x,f.y)];if(fw&&fw.lake)continue;var brightness=0.4+0.6*f.health;var fCol=hsv2hex(f.hue,f.sat*(0.3+0.7*f.health),f.val*brightness);ctx.fillStyle=fCol;var px=f.x*PIX,py=f.y*PIX;var sz=Math.max(1,PIX<6?1:2);var off=((PIX-sz)/2)|0;
     if(f.shape==='dot'){ctx.fillRect(px+off,py+off,sz,sz);}else if(f.shape==='plus'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='x'){ctx.fillRect(px+off-1,py+off-1,1,1);ctx.fillRect(px+off+sz,py+off-1,1,1);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off-1,py+off+sz,1,1);ctx.fillRect(px+off+sz,py+off+sz,1,1);}else if(f.shape==='ring'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='diamond'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,sz+2,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else{ctx.fillRect(px+off,py+off,sz,sz);}}}
   // Fauna render
-  if(CFG.ecoRender){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var isH=(a.type==='herbivore');var aBright=0.4+0.6*(a.energy/a.maxEnergy);var faunaCol=hsv2hex(a.hue,a.sat,a.val*aBright);var apx=a.x*PIX,apy=a.y*PIX;
+  if(CFG.ecoRender){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var aBright=0.4+0.6*(a.energy/a.maxEnergy);var apx=a.x*PIX,apy=a.y*PIX;
     // Heritable SIZE gene -> rendered marker dimension. This is the visible part of evolution; cosmetic only.
-    var dim=clamp(Math.round(Math.min(4,PIX-1)*(a.size||1)),2,Math.round(PIX*2.2));var doff=((PIX-dim)/2)|0;
-    // Vivid glow: bright halo behind vivid fauna (scaled with the creature)
-    if(a.vivid){ctx.fillStyle=hsv2hex(a.hue,Math.min(1,a.sat*1.3),Math.min(1,a.val*1.2));var gsz=dim+2;var goff=((PIX-gsz)/2)|0;ctx.fillRect(apx+goff,apy+goff,gsz,gsz);}
-    ctx.fillStyle=faunaCol;
-    if(isH){ctx.fillRect(apx+doff,apy+doff,dim,dim);}
-    else if(a.type==='scavenger'){ // hollow square outline - distinct from the solid herbivore + the carnivore cross
-      ctx.fillRect(apx+doff,apy+doff,dim,1);ctx.fillRect(apx+doff,apy+doff+dim-1,dim,1);ctx.fillRect(apx+doff,apy+doff,1,dim);ctx.fillRect(apx+doff+dim-1,apy+doff,1,dim);}
-    else if(a.type==='apex'){ // solid diamond - the apex predator, distinct from square / hollow-square / cross
-      for(var dr=0;dr<dim;dr++){var half=Math.min(dr,dim-1-dr);var dw=half*2+1;ctx.fillRect(apx+doff+(((dim-dw)/2)|0),apy+doff+dr,dw,1);}}
-    else if(a.type==='omnivore'){ // upward solid triangle (wide base) - the generalist, distinct from the other four
-      for(var tr=0;tr<dim;tr++){var tw=tr+1;if(tw>dim)tw=dim;ctx.fillRect(apx+doff+(((dim-tw)/2)|0),apy+doff+tr,tw,1);}}
-    else{var mid=(dim/2)|0;ctx.fillRect(apx+doff+mid,apy+doff,1,1);ctx.fillRect(apx+doff,apy+doff+mid,dim,1);ctx.fillRect(apx+doff+mid,apy+doff+dim-1,1,1);if(dim>=3)ctx.fillRect(apx+doff+mid-1,apy+doff+1,3,1);}
+    var dim=clamp(Math.round(Math.min(4,PIX-1)*(a.size||1)),2,Math.round(PIX*2.2));
+    drawCreatureShape(ctx,a,apx,apy,PIX,dim,aBright);
     // Follow highlight: an accent ring around the creature the camera is tracking.
     if(followId!=null&&a.id===followId){ctx.strokeStyle='#3b9eff';ctx.lineWidth=1;var rs=dim+4;var ro=((PIX-rs)/2)|0;ctx.strokeRect(apx+ro+0.5,apy+ro+0.5,rs-1,rs-1);}}}
   // Death particles

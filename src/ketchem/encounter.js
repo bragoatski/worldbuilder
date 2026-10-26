@@ -4,7 +4,7 @@
 // that acts returns { ok, text, ... } with the words Root reads; the page turns the same results into bubbles and
 // animations (K.fx). Tick-driven work happens in encounterTick(K), called after every sim step while a board is up.
 import { T, grid, riverData, fauna, flora, road, tick, idx, inb, mulberry32, speciesKey, getSpeciesName } from '../sim.js';
-import { levelOf, populationOf, abilitiesOf, oddsOf, elementalType, genomeHash } from './rules.js';
+import { levelOf, populationOf, abilitiesOf, oddsOf, elementalType, genomeHash, glyphOf } from './rules.js';
 import { groundOf, bearingTo } from './controls.js';
 
 export const ENCOUNTER_RANGE = 6, ENCOUNTER_RESET = 100, ALERT_RANGE = { carnivore: 3, apex: 3 }, ALERT_DEFAULT = 2;
@@ -404,9 +404,9 @@ export function throwStone(K, p, f, stone = p.stone) {
 // ---------- names and the Almanac (9 step 6, 18) ----------
 export function almanacEntry(K, f) {
   const key = speciesKey(f);
-  return K.almanac.species[key] || (K.almanac.species[key] = { seen: 0, caught: 0, bestLevel: 0, nickname: null, namedBy: null, firstSeen: { tick, x: f.x, y: f.y }, type: f.type });
+  return K.almanac.species[key] || (K.almanac.species[key] = { seen: 0, caught: 0, bestLevel: 0, nickname: null, namedBy: null, firstSeen: { tick, x: f.x, y: f.y }, type: f.type, glyph: glyphOf(f) });
 }
-export function noteSeen(K, f) { const e = almanacEntry(K, f); e.seen++; if (!e.scientific) e.scientific = getSpeciesName(f) || null; return e; }
+export function noteSeen(K, f) { const e = almanacEntry(K, f); e.seen++; if (!e.scientific) e.scientific = getSpeciesName(f) || null; if (!e.glyph) e.glyph = glyphOf(f); return e; }   // a save from before the glyphs gets one at the next sighting
 const NAME_OK = /^[A-Za-z0-9' ]+$/;
 // After an evolution the first evolver names the new species (20.3).
 export function nameSpecies(K, p, raw) {

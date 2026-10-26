@@ -1066,3 +1066,25 @@ boat hull under either player at sea. Root arrives on the second start's doorste
 the signpost and Kevin's start store with a bearing. Root is called through the launch card: the Ketch'em card shows a
 board setting and seed; Begin builds the board first when the page has none, then summons. Tab, Space, B, F, P, I, M,
 C, G, Enter, F5, F9, the HUD and the party row are later steps.
+
+Built 2026-10-25 (step 10, `src/ketchem/hud.js`, `panel.js`; readings of 22.3 and 5.6, overturnable):
+- The HUD is a DOM bar at the top left of the map: wallet, the three stones as `1 Amber 8` chips with the one in hand
+  lit, `pack 3/10` (hover: the plants and potions, and the keys), and one amber arc per active potion that empties as
+  its duration runs out (hover: ticks left), then the naming hint (`N to name your catch`). It redraws only when a
+  value changes; the arcs alone move every tick.
+- The party row is up to three cards at the bottom left: the creature drawn exactly as the map draws it (the same
+  shape routine, `render.js drawCreatureShape`, at card size), name, level, a type badge in the type's colour,
+  `herbivore · G1 12/40`, and one pip per ability (`Rivergait III`); hovering a pip shows its rule from 5.5 in one
+  line. The follower's card has an amber border and a collar dot. The store panel sits above the row.
+- Store cards (SELL, BOX, PEN) carry the same drawing; the SELL card adds the price breakdown under the line: the
+  base and every factor that is not 1, the abilities always (`2 abilities x1.96`), so the x1.4 of 5.7 is visible.
+- The Almanac (M) is a panel, not text: one row per species met with its drawing (kept from the first creature seen,
+  so a species keeps a face after that creature is gone), nickname in bold, binomial, type, who named it, what it
+  evolved from and its variants (`bred`, `evolved`), then `seen · caught · best L`; under it the stores found and the
+  landmarks seen, each with a bearing from Kevin. Root's `almanac` stays the text form.
+- Root's panel shows Root's party as the same cards under its status while it is on the board; the row empties
+  when Root leaves. Every look Root takes begins with a `party:` line once it carries creatures (5.6).
+- Not built: ability icons (the pip is the name and the strength), `C` drag between party and cabinet (the buttons
+  do it), the "odds number under the tag" was already on the canvas, sounds (deferred by the handoff). A species
+  seen in a saved game from before this step has no drawing until a creature of it is seen again (the card draws
+  blank, nothing breaks).

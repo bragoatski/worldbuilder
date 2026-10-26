@@ -143,3 +143,22 @@ describe('potions (21)', () => {
     expect(p.effects.some(e => e.potion === 'Mirror')).toBe(false);
   });
 });
+
+describe('cards and the Almanac lists (step 10)', () => {
+  it('a card carries the id, the glyph, the structured abilities and a price breakdown with the x1.4 per ability', () => {
+    const K = world(), p = K.kevin, c = caught(K, p, 'herbivore', 'Pip');
+    const k = M.creatureCard(c);
+    expect(k.id).toBe(c.id); expect(k.glyph).toEqual(R.glyphOf(c)); expect(k.glyph.type).toBe('herbivore');
+    expect(k.abilityList.length).toBe(k.abilities.length); expect(k.abilityList[0].strength).toBeGreaterThanOrEqual(1);
+    expect(k.breakdown).toMatch(/^base \d+/); expect(k.breakdown).toMatch(new RegExp(k.abilityList.length + ' abilit(y|ies) x1[.](4|96)'));
+  });
+  it('almanacLists mirrors almanacText: species with a glyph from the first sighting, stores found, landmarks seen', () => {
+    const K = world(), p = K.kevin;
+    const f = put('herbivore', 13, 13); E.markSeen(K, [f]);
+    const A = M.almanacLists(K, p);
+    expect(A.species.length).toBeGreaterThanOrEqual(1);
+    const e = A.species.find(s => s.type === 'herbivore'); expect(e.seen).toBeGreaterThanOrEqual(1); expect(e.glyph).toEqual(R.glyphOf(f)); expect(e.variants).toEqual([]);
+    expect(A.found).toBe(2); expect(A.total).toBe(4); expect(A.stores.map(s => s.name)).toEqual(['A', 'C']); expect(A.stores[0].bearing).toBeTruthy();
+    expect(M.almanacText(K, p)).toContain('2/4 stores found');
+  });
+});

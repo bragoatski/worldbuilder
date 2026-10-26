@@ -2,7 +2,7 @@
 // restock, buy / sell / cabinet / give, the potions and their effects, and the Almanac. Pure over the sim's arrays and
 // the board K, like encounter.js; the page and Root's door call it. Prices come from rules.js.
 import { W, H, grid as gridRef, fauna, tick, speciesKey, getSpeciesName } from '../sim.js';
-import { priceOf, levelOf, populationOf, abilitiesOf, elementalType } from './rules.js';
+import { priceOf, priceTerms, levelOf, populationOf, abilitiesOf, elementalType, glyphOf } from './rules.js';
 import { STONE_KEY, PARTY_CAP, PACK_CAP, partyAbilities, onStore, hasEffect } from './encounter.js';
 import { revealSquare } from './fog.js';
 import { bearingTo } from './controls.js';
@@ -65,9 +65,17 @@ export function plantPrice(f, p) {
   if (p && partyAbilities(p).Forager) price *= 2;
   return price;
 }
+// The price breakdown of 5.6: the base and every factor that is not 1, the abilities' x1.4 each always shown.
+const n2 = v => String(Math.round(v * 100) / 100);
+export function priceBreakdown(terms, nAbilities) {
+  const fx = (k, v) => (Math.abs(v - 1) > 0.005 ? k + ' x' + n2(v) : '');
+  return ['base ' + terms.base, fx('level', terms.levelF), fx('population', terms.populationF), fx('type', terms.typeF), fx('size', terms.sizeF),
+    nAbilities + (nAbilities === 1 ? ' ability' : ' abilities') + ' x' + n2(terms.abilityF), fx('condition', terms.conditionF), fx('elder', terms.elderF)].filter(Boolean).join(' · ');
+}
 export function creatureCard(c) {
-  const N = populationOf(c, fauna, speciesKey), L = levelOf(c, N), ab = abilitiesOf(c, L).abilities;
-  return { name: c.name || c.type, type: c.type, elemental: elementalType(c).typ, level: L, growth: growthText(c), abilities: ab.map(a => a.name + (a.strength > 1 ? ' ' + ['', 'I', 'II', 'III'][a.strength] : '')), price: priceOf(c, N, L, ab.length), species: getSpeciesName(c) || '' };
+  const N = populationOf(c, fauna, speciesKey), L = levelOf(c, N), ab = abilitiesOf(c, L).abilities, pr = priceTerms(c, N, L, ab.length);
+  return { id: c.id, name: c.name || c.type, type: c.type, elemental: elementalType(c).typ, level: L, growth: growthText(c), abilities: ab.map(a => a.name + (a.strength > 1 ? ' ' + ['', 'I', 'II', 'III'][a.strength] : '')),
+    abilityList: ab.map(a => ({ name: a.name, strength: a.strength })), price: pr.price, breakdown: priceBreakdown(pr.terms, ab.length), species: getSpeciesName(c) || '', glyph: glyphOf(c) };
 }
 
 // ---------- the pack: plants and potions share its slots ----------
@@ -238,6 +246,16 @@ export function almanacText(K, p) {
   for (const s of K.stores.filter(s => s.revealed)) out.push('store ' + s.name + ' at ' + s.x + ',' + s.y + (p ? ' ' + bearingTo(p.x, p.y, s.x, s.y) : ''));
   for (const l of K.landmarks || []) if (K.fog && isSeenTile(K, l)) out.push('landmark ' + l.name + ' at ' + l.x + ',' + l.y);
   return out.join('\n');
+}
+// The same Almanac as structured lists for the page's panel: species with their glyphs, the stores found, the
+// landmarks seen.
+export function almanacLists(K, p) {
+  const at = o => (p ? bearingTo(p.x, p.y, o.x, o.y) : '');
+  const species = Object.entries(K.almanac.species).map(([key, e]) => ({ key, nickname: e.nickname || null, scientific: e.scientific || null, type: e.type, seen: e.seen, caught: e.caught, bestLevel: e.bestLevel,
+    namedBy: e.namedBy || null, evolvedFrom: e.evolvedFrom || null, variants: e.variants || [], glyph: e.glyph || null }));
+  const stores = K.stores.filter(s => s.revealed).map(s => ({ name: s.name, x: s.x, y: s.y, bearing: at(s) }));
+  const landmarks = (K.landmarks || []).filter(l => K.fog && isSeenTile(K, l)).map(l => ({ name: l.name, kind: l.kind, x: l.x, y: l.y, bearing: at(l) }));
+  return { species, stores, landmarks, found: stores.length, total: K.stores.length };
 }
 function isSeenTile(K, t) { const i = t.y * W + t.x; return (K.fog[i >> 3] >> (i & 7)) & 1; }
 export function marketTick(K) { restockTick(K); effectsTick(K); }

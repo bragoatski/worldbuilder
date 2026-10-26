@@ -28,8 +28,9 @@ import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
 import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
-import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary } from './ketchem/market.js';
-import { storePanel, textPanel, closePanel, panelOpen } from './ketchem/panel.js';
+import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacLists, packSummary } from './ketchem/market.js';
+import { storePanel, almanacPanel, closePanel, panelOpen } from './ketchem/panel.js';
+import { hudTick } from './ketchem/hud.js';
 import { growthTick, catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
@@ -680,6 +681,7 @@ function draw(){
   drawWorld(ctx,PIX,{overlayMode:overlayMode,followId:followId,ground:K?_kGround:null,top:K?_kTop:null});
   if(K){kevinCamera();drawEncounters(ctx,PIX,K);drawPlayers(ctx,PIX,K);}   // tags, rings, baits and animations, then the characters, over the fog
   visitDraw(ctx,PIX);   // Root's body, sight and named places; no-op unless Root is here
+  hudTick(K);           // the HUD bar and the party rows (DOM); hidden without a board
   if(_kProgress)drawBoardProgress();
   drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
 }
@@ -752,7 +754,7 @@ function ketchemKey(e){
   if(k==='c'){e.preventDefault();if(storeAt(K,p))openStore('box');else kevinSay('the cabinet is at a store');draw();return true;}
   if(k==='p'){e.preventDefault();var ps=packSummary(p);var pl=Object.keys(ps.potions);if(!pl.length){kevinSay('no potions in the pack');draw();return true;}_kPotion=true;kevinSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));draw();return true;}
   if(k==='i'){e.preventDefault();var pi=packSummary(p);kevinSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):''));draw();return true;}
-  if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else textPanel('Almanac',almanacText(K,p));return true;}
+  if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else almanacPanel(almanacLists(K,p));return true;}
   if(k==='g'){e.preventDefault();var gw=window.prompt('Give what? coins N, Amber N, a potion name, plant, or a party creature name','coins 10');if(gw===null)return true;var gm=/^(.*?)(?:\s+(\d+))?$/.exec(gw.trim());var rg=giveItem(K,p,gm[1],+gm[2]||1);kevinSay(rg.text);draw();return true;}
   if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
   if(k==='tab'){e.preventDefault();kevinCycleTarget();draw();return true;}

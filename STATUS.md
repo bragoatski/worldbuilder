@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-25 (g) - Ketch'em step 10: polish - DONE, GATE GREEN; the campaign's ten steps are built
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **the owner playtest** (the step-10 acceptance). Suggested run, 15 minutes on `http://localhost:5173/worldbuilder/?ketchem=continent`: walk a road to the next store, catch two grazers (Tab, Space, N), let one follow (F), drink a potion (P 1) and watch the arc, sell one at a store (E, SELL), read the Almanac (M), call Root in as Ketch'em and breed through it. What to judge: whether the HUD and the cards read at a glance, whether the breakdown is worth its line, what the party card still lacks (an icon per ability, a drag between party and cabinet), and the economics flagged in the mechanics note before 20.4 (a bred young one sells for more than its fee). Sounds stay deferred. Nothing is pushed: pushing main deploys to Pages.
+
+What the game does now: a HUD bar at the top left shows the wallet, the three stones with the one in hand lit, the pack with its cap, one amber arc per active potion that empties as it runs out, and the naming hint. The party is a row of cards at the bottom left: the creature drawn as the map draws it, name, level, a type badge, growth, one pip per ability with its strength and the rule on hover, an amber collar on the follower. Store cards carry the same drawing and the SELL card its price breakdown (the x1.4 per ability visible). The Almanac (M) is a panel: each species with its drawing, nickname, binomial, who named it, what it evolved from, seen / caught / best, then the stores and landmarks found with bearings. Root's panel shows Root's party as cards under its status while it is on the board, and every look Root takes begins with a party line. Screenshots: `docs/04 Handoffs/img/2026-10-25-ketchem-step10/`.
+
+Gate: typecheck clean, lint 0 errors (32 warnings, baseline), 204/204 full suite, build green. Critic (2 blockers, 6 risks and nits, all but one taken) and the rehearsal (HUD, party row, arc, SELL card, Almanac, Root's row and party line, no page errors): see the Progress line.
+
 ## Session 2026-10-25 (f) - Ketch'em step 9: the pen - DONE, GATE GREEN
 Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 10, polish**: the HUD, the party row with drawings, the store cards, the Almanac panel, then an owner playtest; sounds stay deferred.
 

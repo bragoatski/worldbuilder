@@ -15,8 +15,9 @@ import { MODES, MODE_IDS, DEFAULT_MODE, modeOf } from '../visit/modes.mjs';
 import { legWalk, routeWalk, lookLines, bearingTo, newPlayer } from './ketchem/controls.js';
 import { revealSquare, SIGHT_HALF } from './ketchem/fog.js';
 import { initPlayer, initEncounters, creatureTag, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall as recallFollower, markSeen, drainNews } from './ketchem/encounter.js';
-import { initStores, shopText, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary } from './ketchem/market.js';
+import { initStores, shopText, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary, creatureCard } from './ketchem/market.js';
 import { catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
+import { STRENGTH } from './ketchem/rules.js';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
 export const MAX_STRIDE = 3;       // tiles per walk call
@@ -193,7 +194,12 @@ export function perceive(st, K = null) {
   const near = st.places.filter(p => Math.abs(p.x - sx) <= SIGHT && Math.abs(p.y - sy) <= SIGHT);
   if (near.length) tail.push('named ' + near.map(p => '"' + p.name + '" ' + bearing(p.x - sx, p.y - sy)).join(', '));
   out.push(tail.join(' · '));
-  if (K) out.push(...lookLines(K, sx, sy, SIGHT, 'root'));
+  if (K) {
+    out.push(...lookLines(K, sx, sy, SIGHT, 'root'));
+    // 5.6: a party line at the top of every look: "Tam" H L3 Furcoat II; "Ash" C L6 Guard III Hardy I
+    const party = K.root && !K.root.away ? (K.root.party || []) : [];
+    if (party.length) out.unshift('party: ' + party.map(c => { const k = creatureCard(c); return '"' + k.name + '" ' + k.type[0].toUpperCase() + ' L' + k.level + k.abilityList.map(a => ' ' + a.name + ' ' + STRENGTH[a.strength]).join(''); }).join('; '));
+  }
   return out.join('\n');
 }
 
@@ -568,6 +574,7 @@ function panel() {
   el.hidden = true;
   el.innerHTML = '<div class="vp-head"><span class="vp-dot"></span><span id="vpStatus"></span><span id="vpTok"></span>' +
     '<button type="button" id="vpClose" aria-label="Hide">&times;</button></div>' +
+    '<div id="vpParty"></div>' +   // Root's party row on a Ketch\'em board (hud.js fills it; empty otherwise)
     '<div id="vpLog"></div>' +
     '<form id="vpForm"><input id="vpInput" autocomplete="off" placeholder="Say something to Root"/></form>' +
     '<div class="vp-hint"><span>Shift+click the map to point</span><button type="button" id="vpHelpBtn">how this works</button></div>' +
