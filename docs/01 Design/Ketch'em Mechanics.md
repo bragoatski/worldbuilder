@@ -932,6 +932,20 @@ Built 2026-10-25 (step 8, `src/ketchem/growth.js`, readings, overturnable):
   cached binomial on a record is dropped when its genome moves, so the evolved species gets its own name.
   Breeding (step 9) hooks in through `breedHook`.
 
+Built 2026-10-25 (step 9, the pen, in `growth.js`; the spec gave only "two parents, fee, offspring in the cabinet
+with mixed genome", so these are readings, overturnable): the PEN tab of the store panel (Root: `breed a b` on a
+store tile) takes two of the player's creatures of one trophic kind, from the party or the cabinet; the fee is
+20 + 5 x (level a + level b) coins; the young one is born into the cabinet at age 0 with full energy, each
+preference the parents' midpoint plus a small drift (the board's stream, about the sim's mutation size), size and
+tolerance the means, the colour from one parent, vivid half the time if either parent is, generation one past the
+elder parent, the lineage of the first parent; it asks for a name; the Almanac marks its species `bred`; each
+parent rests 2,000 ticks. On any axis where both parents sit in one species bucket the child's preference is
+clamped into that bucket, so two parents of one species breed true; where they differ the midpoint plus drift decides.
+A newborn breeds once it has grown a level (otherwise a newborn and any third creature would be a coin loop: a
+bred L5 grazer sells for far more than its 70-coin fee; the economics of breeding are the owner's call). A pending
+catch name keeps its turn: the newborn queues for the naming prompt. The panel pairs creatures by id, so two unnamed
+ones of a kind can be bred. Not built: a pen fee that varies by store, selling at a pen, hatching time.
+
 ### 20.4 Alternatives considered
 | idea | verdict |
 |---|---|

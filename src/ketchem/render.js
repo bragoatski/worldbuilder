@@ -170,6 +170,7 @@ export function drawEncounters(ctx, PIX, K) {
     else if (e.kind === 'evolve' && f === null && e.x !== undefined) {   // a long white flash at the owner's dot and the new name typed out above it
       const u = t / e.len; ctx.fillStyle = 'rgba(255,255,255,' + (0.9 * (1 - u)).toFixed(2) + ')'; ctx.beginPath(); ctx.arc((e.x + 0.5) * PIX, (e.y + 0.5) * PIX, PIX * (1 + 2 * u), 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffffff'; ctx.fillText(String(e.name || 'a new species').slice(0, Math.ceil(String(e.name || 'a new species').length * Math.min(1, u * 1.5))), (e.x + 0.5) * PIX, (e.y - 1.2) * PIX); }
+    else if (e.kind === 'bred') { const u = t / e.len; ctx.strokeStyle = 'rgba(243,217,164,' + (1 - u).toFixed(2) + ')'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc((e.x + 0.5) * PIX, (e.y + 0.5) * PIX, PIX * (0.4 + u), 0, Math.PI * 2); ctx.stroke(); }
     else if (e.kind === 'baitDrop') { const u = t / e.len; ctx.fillStyle = e.baitKind === 'plant' || e.baitKind === 'scatter' ? '#58d27a' : '#f3e9d2'; ctx.fillRect((e.x + 0.4) * PIX, (e.y + 0.4 - 0.5 * (1 - u)) * PIX, PIX * 0.2, PIX * 0.2); }
   }
   // the HUD line (22.3, minimal until step 10): wallet, stones, the stone in hand, the party

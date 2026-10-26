@@ -30,7 +30,7 @@ import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js'
 import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
 import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary } from './ketchem/market.js';
 import { storePanel, textPanel, closePanel, panelOpen } from './ketchem/panel.js';
-import { growthTick, catchXP, feed as feedCreature, eventsText } from './ketchem/growth.js';
+import { growthTick, catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
 import { saveMenu } from './ketchem/menu.js';
@@ -774,8 +774,8 @@ var _kBait=null,_kPotion=false;
 // The store (E or C on a store tile): BUY / SELL / BOX; entering autosaves (18.2).
 function openStore(tab){
   var p=K.kevin;if(!storeAt(K,p))return;
-  storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[]};}return shopLists(K,p,s);},buy:function(item,qty){kevinSay(buyItem(K,p,item,qty).text);},sell:function(name){kevinSay(sellItem(K,p,name).text);},
-    sellPlants:function(){kevinSay(sellItem(K,p,'plants').text);},box:function(name,take){kevinSay(boxItem(K,p,name,take).text);},onChange:draw},tab||'buy');
+  storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[],pen:[],fee:function(){return 0;}};}return shopLists(K,p,s);},buy:function(item,qty){kevinSay(buyItem(K,p,item,qty).text);},sell:function(name){kevinSay(sellItem(K,p,name).text);},
+    sellPlants:function(){kevinSay(sellItem(K,p,'plants').text);},box:function(name,take){kevinSay(boxItem(K,p,name,take).text);},breed:function(a,b){kevinSay(breedPair(K,p,a,b).text);},onChange:draw},tab||'buy');
   draw();
 }
 function dirOf(d){return (d[1]<0?'N':d[1]>0?'S':'')+(d[0]<0?'W':d[0]>0?'E':'');}

@@ -33,7 +33,7 @@ function cfgDiff() { const d = {}; for (const k of Object.keys(DEFAULT_CFG)) if 
 function playerRecord(id, p) {
   return { id, x: p.x, y: p.y, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones || { amber: 10, geode: 0, obsidian: 0 }, stone: p.stone || 'Amber',
     pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null,
-    naming: p.naming || null, namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, away: !!p.away };
+    naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, away: !!p.away };
 }
 
 // The whole game in memory. slot = the record's name (the player's, default the seed).
@@ -116,7 +116,7 @@ export function applySave(raw) {
     kevin: null, root: null, cam: 'kevin',
   };
   for (const p of data.players || []) {
-    const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0 });
+    const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0 });
     if (p.id === 'kevin') K.kevin = pl; else if (p.id === 'root') { K.root = pl; K.root.loaded = true; K.root.away = true; }   // Root is away until it arrives
   }
   // creatures held by a bait in the record keep their hold; a growl ends (it is alert again); everything else is free

@@ -29,7 +29,7 @@ export function panelOpen() { return !!el && !el.hidden; }
 export function storePanel(acts, tab = 'buy') {
   ensure(); mode = 'store';
   const L = acts.lists();
-  const tabs = ['buy', 'sell', 'box'].map(t => '<button type="button" data-tab="' + t + '" class="' + (t === tab ? 'on' : '') + '">' + t.toUpperCase() + '</button>').join('');
+  const tabs = ['buy', 'sell', 'box', 'pen'].map(t => '<button type="button" data-tab="' + t + '" class="' + (t === tab ? 'on' : '') + '">' + t.toUpperCase() + '</button>').join('');
   let body;
   if (tab === 'buy') {
     body = '<table>' + L.buy.map(b => '<tr><td class="n">' + esc(b.item) + '</td><td class="m">' + esc(b.blurb || (b.item + ' stone')) + (b.left === Infinity ? '' : ' (' + b.left + ' in stock)') + '</td><td class="r">' + b.price + ' <button class="b" data-buy="' + esc(b.item) + '">Buy</button><button class="b" data-buy="' + esc(b.item) + '" data-qty="5">x5</button></td></tr>').join('') + '</table>';
@@ -38,6 +38,9 @@ export function storePanel(acts, tab = 'buy') {
     const plants = L.plants.map((x, i) => '<tr><td class="n">plant ' + (i + 1) + '</td><td class="m">gen ' + x.gen + ', health ' + Math.round((x.health || 0) * 100) + '%</td><td class="r">' + x.price + ' <button class="b" data-sellplant="' + (i + 1) + '">Sell</button></td></tr>').join('') +
       (L.plants.length > 1 ? '<tr><td class="n">all plants</td><td class="m"></td><td class="r">' + L.plants.reduce((a, x) => a + x.price, 0) + ' <button class="b" data-sellplants="1">Sell all</button></td></tr>' : '');
     body = rows || plants ? '<table>' + rows + plants + '</table>' : '<div class="kp-empty">Nothing to sell: the party and the pack are empty.</div>';
+  } else if (tab === 'pen') {
+    const rows = L.pen.map(c => '<tr><td class="n"><label><input type="checkbox" data-pen="' + c.id + '" data-type="' + esc(c.type) + '"' + (c.cooldown || c.newborn ? ' disabled' : '') + '> ' + esc(c.name) + '</label></td><td class="m">' + esc(c.type) + ' L' + c.level + ' ' + esc(c.elemental) + (c.cooldown ? ', rests ' + c.cooldown + ' ticks' : c.newborn ? ', newborn' : '') + '</td><td class="r"></td></tr>').join('');
+    body = (rows ? '<table>' + rows + '</table>' : '<div class="kp-empty">Nothing to breed: catch two of one kind.</div>') + '<div class="km-row" style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;align-items:center;color:var(--fg-dim)"><span id="kpFee">pick two of one kind</span><button class="b" id="kpBreed" disabled>Breed</button></div>';
   } else {
     const party = L.party.map(c => '<tr><td class="n">' + esc(c.name) + '</td><td class="m">party, L' + c.level + ' ' + esc(c.elemental) + '</td><td class="r"><button class="b" data-box="' + esc(c.name) + '">To cabinet</button></td></tr>').join('');
     const cab = L.box.map(c => '<tr><td class="n">' + esc(c.name) + '</td><td class="m">cabinet, L' + c.level + ' ' + esc(c.elemental) + '</td><td class="r"><button class="b" data-take="' + esc(c.name) + '">To party</button></td></tr>').join('');
@@ -54,6 +57,10 @@ export function storePanel(acts, tab = 'buy') {
   el.querySelectorAll('[data-sellplant]').forEach(b => b.addEventListener('click', () => { acts.sell('plant ' + b.dataset.sellplant); redo('sell'); }));
   el.querySelectorAll('[data-box]').forEach(b => b.addEventListener('click', () => { acts.box(b.dataset.box, false); redo('box'); }));
   el.querySelectorAll('[data-take]').forEach(b => b.addEventListener('click', () => { acts.box(b.dataset.take, true); redo('box'); }));
+  const picks = () => [...el.querySelectorAll('[data-pen]:checked')];
+  const feeEl = el.querySelector('#kpFee'), breedBtn = el.querySelector('#kpBreed');
+  el.querySelectorAll('[data-pen]').forEach(c => c.addEventListener('change', () => { const ps = picks(); if (ps.length > 2) { c.checked = false; return; } const two = ps.length === 2, same = two && ps[0].dataset.type === ps[1].dataset.type; breedBtn.disabled = !same; feeEl.textContent = same ? 'fee ' + L.fee(ps[0].dataset.pen, ps[1].dataset.pen) + ' coins' : two ? 'two of one kind' : 'pick two of one kind'; }));
+  if (breedBtn) breedBtn.addEventListener('click', () => { const ps = picks(); if (ps.length === 2) { acts.breed(ps[0].dataset.pen, ps[1].dataset.pen); redo('pen'); } });
 }
 
 export function textPanel(title, text) {

@@ -6,7 +6,7 @@ import { priceOf, levelOf, populationOf, abilitiesOf, elementalType } from './ru
 import { STONE_KEY, PARTY_CAP, PACK_CAP, partyAbilities, onStore, hasEffect } from './encounter.js';
 import { revealSquare } from './fog.js';
 import { bearingTo } from './controls.js';
-import { growthText } from './growth.js';
+import { growthText, breedFee } from './growth.js';
 
 export const STONE_PRICE = { Amber: 5, Geode: 25, Obsidian: 150 };
 export const RESTOCK_TICKS = 2000, RESTOCK_COUNT = 3;
@@ -85,7 +85,10 @@ export function shopLists(K, p, s) {
     .concat(Object.entries(s.stock.potions).filter(([, n]) => n > 0).map(([name, n]) => ({ item: name, price: POTIONS[name].price, left: n, blurb: POTIONS[name].blurb })));
   const sell = (p.party || []).map(c => ({ ...creatureCard(c), where: 'party' })).concat((K.cabinet || []).map(c => ({ ...creatureCard(c), where: 'cabinet' })));
   const plants = (p.pack || []).filter(x => !x.potion).map(f => ({ plant: true, gen: f.gen || 0, health: f.health, price: plantPrice(f, p) }));
-  return { store: s.name, wallet: p.wallet, buy, sell, plants, box: (K.cabinet || []).map(c => creatureCard(c)), party: (p.party || []).map(c => creatureCard(c)) };
+  const mine = (p.party || []).concat(K.cabinet || []);
+  return { store: s.name, wallet: p.wallet, buy, sell, plants, box: (K.cabinet || []).map(c => creatureCard(c)), party: (p.party || []).map(c => creatureCard(c)),
+    pen: mine.map(c => ({ ...creatureCard(c), id: c.id, cooldown: c.bredAt !== undefined ? Math.max(0, 2000 - (tick - c.bredAt)) : 0, newborn: c.bornAt !== undefined && !(c.growthLevel >= 1) })),
+    fee: (x, y) => { const A = mine.find(c => c.id === +x), B = mine.find(c => c.id === +y); return A && B ? breedFee(A, B) : 0; } };
 }
 export function shopText(K, p) {
   const s = storeAt(K, p); if (!s) return 'no store here';
@@ -95,6 +98,7 @@ export function shopText(K, p) {
   out.push('sell: ' + (L.sell.length ? L.sell.map(c => '"' + c.name + '" L' + c.level + ' ' + c.elemental + ' ' + c.price + (c.where === 'cabinet' ? ' (cabinet)' : '')).join(', ') : 'nothing'));
   if (L.plants.length) out.push('plants: ' + L.plants.map(x => x.price).join(' + ') + ' = ' + L.plants.reduce((a, x) => a + x.price, 0) + ' coins');
   out.push('cabinet: ' + (L.box.length ? L.box.map(c => '"' + c.name + '"').join(', ') : 'empty'));
+  out.push('pen: breed <a> <b> (two of one type; fee 20 + 5 x their levels; each parent once per 2,000 ticks)');
   return out.join('\n');
 }
 export function buy(K, p, item, qty = 1) {

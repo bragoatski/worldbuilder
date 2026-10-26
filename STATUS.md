@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-25 (f) - Ketch'em step 9: the pen - DONE, GATE GREEN
+Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 10, polish**: the HUD, the party row with drawings, the store cards, the Almanac panel, then an owner playtest; sounds stay deferred.
+
+What the game does now: the store panel has a PEN tab. Pick two of your creatures of one kind (party or cabinet), the fee shows (20 coins plus 5 per level of each), press Breed: a young one is born into the cabinet with a genome mixed from both parents (each preference the midpoint with a little drift, size and tolerance the means, one parent's colour), you name it, the Almanac marks its species as bred, and each parent rests 2,000 ticks. Trained genes are inherited, so two evolved parents breed in their bucket. Root does it with `breed a b` on a store tile. Screenshots: `docs/04 Handoffs/img/2026-10-25-ketchem-step9/`.
+
+Gate: typecheck clean, lint 0 errors (32 warnings), 199/199 full suite, build green. Critic (2 blockers, 3 risks, all taken) and the rehearsal (page pen + Root's breed through the door, no page errors): see the Progress line.
+
 ## Session 2026-10-25 (e) - Ketch'em step 8: growth and evolution - DONE, GATE GREEN
 Campaign handoff: **`docs/04 Handoffs/2026-10-24 Ketch'em build handoff.md`** (Progress section). Next: **step 9, pens (the Breeder)**: two parents, a fee, offspring in the cabinet with a mixed genome; `breedHook` in growth.js is the seam.
 

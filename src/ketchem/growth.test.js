@@ -90,7 +90,7 @@ describe('evolution (20.3)', () => {
     expect(c.name).toBe('Edge');                                   // the individual keeps its name
     expect(G.eventsText(ev)).toMatch(/EVOLVED from Hopper into .*: name the species/);
     expect(K.fx.some(e => e.kind === 'evolve')).toBe(true);
-    expect(G.breedHook(c, c).note).toMatch(/step 9/);
+    expect(G.breedHook(c, c).note).toMatch(/breed/);
   });
 
   it('an evolved species gets its own binomial, not the cached old one, and the Almanac text shows the link', async () => {
@@ -105,5 +105,49 @@ describe('evolution (20.3)', () => {
     expect(M.almanacText(K, p)).toContain('evolved from ' + oldName);
     expect(E.nameCatch(K, p, 'Dusty').text).toBe('the new species is "Dusty"');
     expect(E.nameCatch(K, p, 'Again').text).toMatch(/no new species to name|nothing to name/);
+  });
+});
+
+describe('the pen (step 9)', () => {
+  it('breeds two of one kind at a store for a fee: a young one with a mixed genome in the cabinet, parents rest 2,000 ticks', () => {
+    const K = world(), p = K.kevin; p.x = 2; p.y = 24; p.wallet = 500;
+    const a = mine(K, p, 'herbivore', 'Ma', { prefArid: 8, prefTemp: 4, prefSL: 5, prefElev: 5, size: 1.2, tolerance: 4, gen: 3 });
+    const b = mine(K, p, 'herbivore', 'Pa', { prefArid: 6, prefTemp: 6, prefSL: 5, prefElev: 5, size: 1.0, tolerance: 3, gen: 2 });
+    const wolf = mine(K, p, 'carnivore', 'Wolf');
+    expect(G.breed(K, p, 'Ma', 'Wolf').text).toMatch(/do not breed/);
+    expect(G.breed(K, p, 'Ma', 'Ma').text).toMatch(/two different/);
+    expect(G.breed(K, p, 'Ma', 'Nobody').text).toMatch(/no "Nobody"/);
+    const fee = G.breedFee(a, b); p.wallet = fee - 1;
+    expect(G.breed(K, p, 'Ma', 'Pa').text).toMatch(/the fee is/);
+    p.wallet = 500;
+    const r = G.breed(K, p, 'Ma', 'Pa');
+    expect(r.ok).toBe(true); expect(p.wallet).toBe(500 - fee); expect(r.text).toMatch(/in the cabinet\. name it/);
+    const c = r.child;
+    expect(K.cabinet).toContain(c); expect(c.type).toBe('herbivore'); expect(c.age).toBe(0); expect(c.gen).toBe(4);
+    expect(c.prefArid).toBeGreaterThan(5); expect(c.prefArid).toBeLessThan(9);       // around the midpoint 7
+    expect(c.prefTemp).toBeGreaterThan(3.5); expect(c.prefTemp).toBeLessThan(6.5);   // around 5
+    expect(c.size).toBeGreaterThan(0.9); expect(c.size).toBeLessThan(1.3);
+    expect(c.parents).toEqual(['Ma', 'Pa']); expect(p.naming).toBe(c.id);
+    expect(E.almanacEntry(K, c).variants).toContain('bred');
+    expect(G.breed(K, p, 'Ma', 'Pa').text).toMatch(/bred 0 ticks ago/);
+    p.x = 10; expect(G.breed(K, p, 'Ma', 'Pa').text).toMatch(/at a store/);
+    void wolf;
+  });
+});
+
+describe('the pen, after the critic', () => {
+  it('pairs two unnamed creatures of one kind, keeps a shared bucket, queues the naming, and rests newborns', () => {
+    const K = world(), p = K.kevin; p.x = 2; p.y = 24; p.wallet = 500;
+    const a = mine(K, p, 'herbivore', undefined, { prefArid: 7.6, prefTemp: 5, prefSL: 5, prefElev: 5 });
+    const b = mine(K, p, 'herbivore', undefined, { prefArid: 7.7, prefTemp: 5, prefSL: 5, prefElev: 5 });
+    const z = mine(K, p, 'herbivore', undefined, {});
+    p.naming = z.id;                                            // a catch still waiting for its name
+    for (let k = 0; k < 20; k++) { const g = G.offspringGenome(a, b, K.rng); expect(R.prefBucket(g.prefArid)).toBe(3); expect(R.prefBucket(g.prefTemp)).toBe(2); }
+    const r = G.breed(K, p, 'herbivore', 'herbivore');
+    expect(r.ok).toBe(true); expect(r.child).not.toBe(a); expect(a.bredAt).toBeDefined(); expect(b.bredAt).toBeDefined();
+    expect(p.naming).toBe(z.id); expect(p.namingQueue).toEqual([r.child.id]);
+    expect(E.nameCatch(K, p, 'Zed').ok).toBe(true); expect(p.naming).toBe(r.child.id);
+    expect(G.breed(K, p, String(r.child.id), String(z.id)).text).toMatch(/newborn/);
+    expect(G.breed(K, p, String(z.id), String(a.id)).text).toMatch(/bred 0 ticks ago/);
   });
 });

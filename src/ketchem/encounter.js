@@ -44,7 +44,7 @@ function aw(K, f) { return K.aw[f.id] || (K.aw[f.id] = { state: 'calm', until: 0
 // Players present in the world: Kevin, and Root while it is inside (K.root stays between visits, marked away).
 function players(K) { const out = []; if (K.kevin) out.push(['kevin', K.kevin]); if (K.root && K.root.party && !K.root.away) out.push(['root', K.root]); return out; }
 function dist(a, b) { return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)); }
-function fx(K, kind, o) { K.fx.push({ kind, start: tick, ...o }); K.fxCount = K.fxCount || {}; K.fxCount[kind] = (K.fxCount[kind] || 0) + 1; }
+export function fx(K, kind, o) { K.fx.push({ kind, start: tick, ...o }); K.fxCount = K.fxCount || {}; K.fxCount[kind] = (K.fxCount[kind] || 0) + 1; }
 // News for a player from tick-driven events (an attack that came when the pulses ran out): the page shows Kevin's as
 // a bubble, Root's ride on its next result.
 export function news(K, pid, text) { (K.news || (K.news = [])).push({ pid, text, tick }); }
@@ -425,7 +425,7 @@ export function nameCatch(K, p, raw, speciesNick) {
   if (!name || !NAME_OK.test(name)) return { ok: false, text: 'a name is letters, digits, spaces and apostrophes, up to 24' };
   const c = p.naming ? (p.party.find(x => x.id === p.naming) || K.cabinet.find(x => x.id === p.naming)) : null;
   if (!c) return { ok: false, text: 'nothing to name' };
-  c.name = name; p.naming = null;
+  c.name = name; p.naming = (p.namingQueue || []).shift() || null;   // the next unnamed one, if any, takes the prompt
   const e = almanacEntry(K, c);
   let text = '"' + name + '" it is';
   if (speciesNick) { const n = String(speciesNick).trim().slice(0, 16); if (NAME_OK.test(n)) { e.nickname = n; e.namedBy = p.id; text += '; the species is "' + n + '"'; } }

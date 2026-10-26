@@ -2,9 +2,10 @@
 // level moves the creature's REAL genome (its type axis toward the ideal, size, tolerance); when a preference crosses
 // one of the sim's species buckets the species key changes and that is the evolution: a new Almanac entry linked to
 // the old one, which the first evolver names. Pure over the player records and K; the page loop calls growthTick.
-import { T, grid, tick, idx, speciesKey, getSpeciesName, fauna } from '../sim.js';
+import { T, grid, tick, idx, speciesKey, getSpeciesName, fauna, makeFauna } from '../sim.js';
+import { onStore } from './encounter.js';
 import { elementalType, levelOf, populationOf, prefBucket } from './rules.js';
-import { almanacEntry } from './encounter.js';
+import { almanacEntry, fx } from './encounter.js';
 // An evolved species still waiting for its name from this player (the HUD keeps asking until it is named or gone).
 function pendingUnnamed(K, p) { if (!p.namingSpecies) return false; const c = (p.party || []).find(x => x.id === p.namingSpecies) || (K.cabinet || []).find(x => x.id === p.namingSpecies); if (!c) { p.namingSpecies = null; return false; } return !almanacEntry(K, c).nickname; }
 
@@ -65,7 +66,7 @@ function evolve(K, p, c, oldKey, oldName) {
   if (old) { old.variants = old.variants || []; if (!old.variants.includes('evolved')) old.variants.push('evolved'); }
   if (!e.scientific) e.scientific = getSpeciesName(c) || null;
   if (!e.nickname && !pendingUnnamed(K, p)) p.namingSpecies = c.id;   // the first evolver names the new species; an earlier unnamed one keeps its turn
-  (K.fx || (K.fx = [])).push({ kind: 'evolve', start: tick, len: 24, id: c.id, x: p.x, y: p.y, name: e.scientific || '' });
+  fx(K, 'evolve', { len: 24, id: c.id, x: p.x, y: p.y, name: e.scientific || '' });
   return { kind: 'evolve', creature: c, from: e.evolvedFrom, to: e.scientific || speciesKey(c), named: !!e.nickname };
 }
 
@@ -116,8 +117,48 @@ export function feed(K, p, which, what) {
 export function eventsText(events) {
   return events.map(e => e.kind === 'grow' ? '; growth level ' + e.level : '; EVOLVED from ' + e.from + ' into ' + e.to + (e.named ? '' : ': name the species')).join('');
 }
-// Breeding (step 9) hooks in here: offspring are born from the parents' moved genomes.
-export function breedHook(a, b) { return { a, b, note: 'breeding arrives in step 9' }; }
+// ---------- the pen (step 9, the Breeder): two of yours, a fee, an offspring in the cabinet ----------
+export const BREED_COOLDOWN = 2000, BREED_FEE_BASE = 20, BREED_FEE_PER_LEVEL = 5;
+export function breedFee(a, b) { const L = c => levelOf(c, populationOf(c, fauna, speciesKey)); return BREED_FEE_BASE + BREED_FEE_PER_LEVEL * (L(a) + L(b)); }
+// A creature of the player's by id (the panel), by name, or, unnamed, by type; `not` keeps two picks distinct.
+function mine(K, p, which, not) {
+  const w = String(which || '').toLowerCase(), all = (p.party || []).concat(K.cabinet || []);
+  if (/^\d+$/.test(w)) return all.find(x => x.id === +w && x !== not) || null;
+  return all.find(x => x !== not && (x.name ? x.name.toLowerCase() === w : x.type === w)) || null;
+}
+// The offspring's genome: each preference the parents' midpoint with a small drift from the board's stream, size
+// and tolerance the mean, the colour from one parent, vivid half the time if either parent is, a generation on.
+export function offspringGenome(a, b, rng) {
+  const drift = () => (rng() + rng() + rng() - 1.5) * 0.6;   // roughly normal, sd ~0.3, like the sim's mutation magnitude
+  const mid = f => ((a[f] === undefined ? 5 : a[f]) + (b[f] === undefined ? 5 : b[f])) / 2;
+  // A preference stays inside any bucket both parents share, so two parents of one species breed true (20.3).
+  const clamp10 = (v, f) => { const ba = prefBucket(a[f] === undefined ? 5 : a[f]), bb = prefBucket(b[f] === undefined ? 5 : b[f]); if (ba === bb) return Math.max(ba * 2.5, Math.min(ba === 3 ? 10 : ba * 2.5 + 2.49, v)); return Math.max(0, Math.min(10, v)); };
+  const col = rng() < 0.5 ? a : b;
+  const vivid = (a.vivid || b.vivid) ? rng() < 0.5 : rng() < 0.02;
+  return { prefArid: clamp10(mid('prefArid') + drift(), 'prefArid'), prefTemp: clamp10(mid('prefTemp') + drift(), 'prefTemp'), prefSL: clamp10(mid('prefSL') + drift(), 'prefSL'), prefElev: clamp10(mid('prefElev') + drift(), 'prefElev'),
+    tolerance: Math.max(1, Math.min(6, ((a.tolerance || 3) + (b.tolerance || 3)) / 2 + drift() * 0.3)), size: Math.max(0.5, Math.min(2.2, ((a.size || 1) + (b.size || 1)) / 2 + drift() * 0.1)),
+    hue: col.hue, sat: col.sat, val: col.val, vivid, lineageId: a.lineageId || a.id, gen: Math.max(a.gen || 0, b.gen || 0) + 1 };
+}
+export function breed(K, p, aName, bName) {
+  if (!onStore(K, p)) return { ok: false, text: 'the pen is at a store' };
+  const a = mine(K, p, aName), b = mine(K, p, bName, a);
+  if (!a || !b) return { ok: false, text: 'no "' + (a ? bName : aName) + '" in the party or the cabinet' + (a && String(aName).toLowerCase() === String(bName).toLowerCase() ? ' (two different creatures)' : '') };
+  if (a === b) return { ok: false, text: 'two different creatures' };
+  for (const c of [a, b]) if (c.bornAt !== undefined && !(c.growthLevel >= 1)) return { ok: false, text: '"' + (c.name || c.type) + '" is a newborn: it breeds once it has grown a level' };
+  if (a.type !== b.type) return { ok: false, text: 'a ' + a.type + ' and a ' + b.type + ' do not breed' };
+  for (const c of [a, b]) if (c.bredAt !== undefined && tick - c.bredAt < BREED_COOLDOWN) return { ok: false, text: '"' + (c.name || c.type) + '" bred ' + (tick - c.bredAt) + ' ticks ago; ' + (BREED_COOLDOWN - (tick - c.bredAt)) + ' to wait' };
+  const fee = breedFee(a, b);
+  if (p.wallet < fee) return { ok: false, text: 'the fee is ' + fee + ' coins (you have ' + p.wallet + ')' };
+  p.wallet -= fee; a.bredAt = tick; b.bredAt = tick;
+  const child = makeFauna(p.x, p.y, a.type, offspringGenome(a, b, K.rng));
+  child.age = 0; child.energy = child.maxEnergy; child.bornAt = tick; child.by = p.id; child.parents = [a.name || a.type, b.name || b.type]; delete child._speciesName;
+  K.cabinet.push(child);
+  const e = almanacEntry(K, child); e.variants = e.variants || []; if (!e.variants.includes('bred')) e.variants.push('bred'); if (!e.scientific) e.scientific = getSpeciesName(child) || null;
+  if (p.naming) (p.namingQueue || (p.namingQueue = [])).push(child.id); else p.naming = child.id;   // a pending catch name keeps its turn
+  fx(K, 'bred', { len: 12, x: p.x, y: p.y });
+  return { ok: true, text: 'bred "' + (a.name || a.type) + '" and "' + (b.name || b.type) + '" for ' + fee + ' coins: a young ' + child.type + ' L' + levelOf(child, populationOf(child, fauna, speciesKey)) + ' ' + elementalType(child).typ + ' in the cabinet. name it', child, fee };
+}
+export function breedHook(a, b) { return { a, b, note: 'use breed(K, p, aName, bName)' }; }
 // A creature's growth line for cards and looks: "G2 40/90".
 export function growthText(c) { return 'G' + growthLevel(c) + ' ' + growthXP(c) + '/' + xpFor(growthLevel(c) + 1); }
 export { prefBucket };

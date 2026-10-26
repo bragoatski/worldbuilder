@@ -86,6 +86,7 @@ const KETCHEM_BODY = [
   tool('drink', 'Use a potion from the pack. Slumber: target a creature (bearing in sight, default the nearest within 2). Tonic: a party creature name. Musk: target = a type (herbivore, carnivore, omnivore, scavenger, apex). Decoy: a bearing beside you.', { potion: { type: 'string' }, target: { type: 'string' } }, ['potion']),
   tool('almanac', 'The Almanac: species seen and caught with nicknames, stores found, landmarks.'),
   tool('pack', 'What you carry: plants, potions, stones, coins, the party.'),
+  tool('breed', 'At a store: breed two of your creatures of one kind (party or cabinet) for a fee (20 + 5 x their levels); the young one is born into the cabinet with a mixed genome, and each parent rests 2,000 ticks.', { a: { type: 'string' }, b: { type: 'string' } }, ['a', 'b']),
   tool('feed', 'Feed a party creature: what = "plant" (the first plant in the pack; grazers and omnivores) or another party creature\'s name (meat eaters; it is eaten). Feeding is XP; XP moves the genome; a genome that crosses a species bucket is a new species.', { name: { type: 'string' }, what: { type: 'string' } }, ['name']),
 ];
 
