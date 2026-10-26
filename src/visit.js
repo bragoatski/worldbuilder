@@ -914,7 +914,7 @@ async function arriveHere(mode) {
     V.st.x = mine.x; V.st.y = mine.y; V.st.boat = false;
     revealSquare(K, mine.x, mine.y, SIGHT_HALF);
     initEncounters(K); initStores(K);
-    K.root = initPlayer(K.root && K.root.party ? Object.assign(K.root, { x: mine.x, y: mine.y, boat: false }) : newPlayer(mine.x, mine.y), 'root');   // a loaded game or an earlier visit keeps Root's party and stones
+    K.root = initPlayer(K.root && K.root.party ? Object.assign(K.root, { x: mine.x, y: mine.y, boat: false, followerAt: K.root.follower ? { x: mine.x, y: mine.y } : null }) : newPlayer(mine.x, mine.y), 'root');   // a loaded game or an earlier visit keeps Root's party and stones
     K.root.away = false; delete K.root.loaded;
     const post = K.signposts.find(p => p.x === mine.x && p.y === mine.y);
     V.here = true;

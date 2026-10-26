@@ -1060,7 +1060,8 @@ Root plays the same verbs through the door. Kevin plays on the page.
 Built 2026-10-25 (step 4, movement only): WASD / arrows (two keys for a diagonal), Shift for a stride, E reads the
 signpost, store or landmark under Kevin (the store answers "opens in a later step"), V swaps the camera between Kevin
 and Root (the camera follows only when zoomed in; at zoom 1 the whole board is on screen). On a board the Hand's
-hotkeys (1-6, [, ], E) and Space are the game's; R, F, T, Esc and Ctrl+Z stay the page's. The Hand rail is hidden.
+hotkeys (1-6, [, ], E), Space, R, F and T are the game's (R is swallowed: it would reset the world under both players); Esc and Enter
+stay the page's; browser chords (Ctrl+R, Ctrl+F) stay the browser's; Ctrl+Z, the Hand's undo, is off on a board like the Hand. The Hand rail is hidden.
 Kevin's last message shows as a bubble at his character for 4 s. Root's character is the visit's amber dot, with a
 boat hull under either player at sea. Root arrives on the second start's doorstep and its first look names its store,
 the signpost and Kevin's start store with a bearing. Root is called through the launch card: the Ketch'em card shows a
@@ -1088,3 +1089,39 @@ Built 2026-10-25 (step 10, `src/ketchem/hud.js`, `panel.js`; readings of 22.3 an
   do it), the "odds number under the tag" was already on the canvas, sounds (deferred by the handoff). A species
   seen in a saved game from before this step has no drawing until a creature of it is seen again (the card draws
   blank, nothing breaks).
+
+Adversarial run 2026-10-25 (three critics on the seams, a scripted hostile playthrough and a key fuzz on the live
+page; the rulings below are readings, overturnable):
+- Naming: catches queue behind a pending prompt like bred young ones do (N names them in catch order); a creature
+  that leaves the player's hands (sold, given, eaten, taken by an attack, fed away) drops out of the prompts and the
+  queue moves up, every tick; boxing keeps the prompt (still owned), and a knock-down keeps it for cabinet creatures;
+  an unnamed creature given away is the receiver's to name; a species nickname already set is never overwritten by a
+  later catch (`name Tam Zorp` says it is already "Hopper"); the store's and the pack's words are not names
+  (`plants`, `plant 1`, `coins`, the stones, the types, the potions).
+- The store panel acts by creature id, never by name: two creatures may share a name or have none. Taking out of the
+  cabinet by type searches the cabinet first.
+- A sleeper keeps its hold when its bait is cleared or a throw misses it; Slumber will not bring back a creature that
+  has fled (the three-throw cap holds); Decoy lands only on an adjacent target, else the way you last walked;
+  Homeward on a store is refused and kept; Tonic applies its growth level at once; F with no name lets the first
+  party creature out; `give` refuses amounts under 1; a bait kind must be one of the four (a prototype key crashed
+  the loop).
+- The Almanac counts what Kevin sees: a creature entering his sight square is seen once (it was Root's looks and
+  catches only). When one player's miss gets the other's staked creature eaten, or their catch of the hunter returns
+  it, the owner gets the news.
+- Saves: the sim's creature-id counter is reserved past every creature carried out of the fauna list (party, cabinet,
+  a store's cupboard, a bait's payload), or the next wild birth after a load reused a carried id and the wrong
+  creature got named or followed; the record is a snapshot (`structuredClone`), not live references; a Homeward
+  cast, a Musk, a Decoy, Root's pending news, the follower's tile and the facing are carried; a damaged record leaves
+  the tab's settings as they were; the relay's mirror accepts records up to 8 MB (a 96x96 board passes 2 MB after a
+  minute of flora growth; 18.4's "about 600 KB" was wrong).
+- The page shell: on a board, browser chords (Ctrl+R, Ctrl+F) are the browser's (they reset the world under both
+  players before); a focused preset select or speed slider hands the keys back to the game; scenario Start and Load
+  JSON take the board down first (they regenerated the world under it); the god deck (Meteor, Drought, Bloom, Rivers,
+  the spawn buttons) is hidden under a board like the Hand.
+- Known and left: a load while Root is on the board marks Root away until its next action (its dot waits); a
+  knock-down or Homeward moves Root's record at once and its dot on its next action; Reset while Root is in strands
+  Root until a new board (the launch card is closed while Root is here); the Almanac shows no "usual pool" and no
+  big / vivid / tolerant variants (never recorded); a pack can sit over its cap after the Pack creature leaves (no
+  further picking); names are not unique; `window.prompt` (N, G, T, Musk) freezes the loop and Root's door while open
+  (an inline input is the polish for it); a load during Root's 48-tick throw delay lets that one result read the old
+  board.

@@ -84,3 +84,17 @@ describe('save and load (18)', () => {
     expect(F.revealedCount(K2.fog, 48 * 48)).toBe(n);
   });
 });
+
+describe('carried creatures keep their ids after a load (adversarial run 2026-10-25)', () => {
+  it('the next wild birth after a load never reuses the id of a creature in the cabinet or a party', () => {
+    const kid = sim.makeFauna(K.kevin.x, K.kevin.y, 'herbivore', null);   // the newest id, carried, not in the fauna list
+    K.cabinet = [kid]; const pet = sim.makeFauna(K.kevin.x, K.kevin.y, 'carnivore', null); K.kevin.party = [pet];
+    expect(sim.fauna.some(f => f && f.id === kid.id)).toBe(false);
+    const json = S.exportSave(S.buildSave(K, 'ids'));
+    sim.setWorldSize(32); sim.initWorld(1);
+    const K2 = S.importSave(json);
+    const born = sim.makeFauna(1, 1, 'herbivore', null);
+    expect(born.id).toBeGreaterThan(pet.id); expect(born.id).toBeGreaterThan(kid.id);
+    expect(K2.cabinet[0].id).toBe(kid.id); expect(K2.kevin.party[0].id).toBe(pet.id);
+  });
+});

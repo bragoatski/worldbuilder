@@ -2039,6 +2039,10 @@ function setDeathParticles(v){ deathParticles=v; }
 // of importJSON so headless tooling / the shell can deserialize a saved world without the DOM download
 // path (mirrors the buildSnapshot/exportJSON split). Reassigns sim state + re-derives fields; the DOM
 // sync (seed/preset inputs, sliders, canvas resize, redraw) stays in the shell's importJSON wrapper.
+// Ketch'em (2026-10-25): creatures carried in a party, the cabinet or a store's cupboard are out of the fauna list, so
+// a loaded world's id reconcile (below) cannot see them; the loader reserves their ids after applySnapshot or the next
+// wild birth would reuse one and collide with a carried creature (targets, awareness and names are keyed by id).
+export function reserveFaunaIds(maxId){if(maxId>faunaIdCounter)faunaIdCounter=maxId;}
 function applySnapshot(data){
   if(!data||!data.meta||(data.meta.version!=='wb-land-base-1'&&data.meta.version!=='wb-eco-1'))throw new Error('Invalid snapshot format');
   if(data.meta.W!==W||data.meta.H!==H){W=data.meta.W;H=data.meta.H;}

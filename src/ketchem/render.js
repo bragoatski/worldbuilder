@@ -140,7 +140,7 @@ export function drawEncounters(ctx, PIX, K) {
   }
   // the follower: itself, with an amber collar, one tile behind
   for (const q of [K.kevin, K.root]) {
-    if (!q || !q.follower || !q.followerAt) continue;
+    if (!q || q.away || !q.follower || !q.followerAt) continue;   // an away player's follower is not in the world
     const c = (q.party || []).find(x => x.id === q.follower); if (!c) continue;
     const cx = (q.followerAt.x + 0.5) * PIX, cy = (q.followerAt.y + 0.5) * PIX, d = Math.max(2, Math.min(4, PIX - 1)) * (c.size || 1);
     ctx.fillStyle = hsv2hex(c.hue, c.sat, c.val); ctx.fillRect(cx - d / 2, cy - d / 2, d, d);

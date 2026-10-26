@@ -595,6 +595,9 @@
      Lives INSIDE .canvas-wrap, deliberately not in .deck-setup, so it survives Viewer mode - the whole
      point is that a visitor can touch the world without first finding the Developer toggle. */
   body.ketchem .hand-rail { display:none; }   /* a Ketch'em board: the Hand is off (mechanics sec. 16) */
+  body.ketchem #btnMeteor, body.ketchem #btnDrought, body.ketchem #btnBloom, body.ketchem #btnRivers,
+  body.ketchem #btnSpawnFlora, body.ketchem #btnSpawnHerb, body.ketchem #btnSpawnCarn, body.ketchem #btnSpawnScav,
+  body.ketchem #btnSpawnApex, body.ketchem #btnSpawnOmni { display:none; }   /* nor the god deck: nothing edits the world under the fog */
   .hand-rail {
     position:absolute; left:14px; top:50%; transform:translateY(-50%); z-index:6;
     display:flex; flex-direction:column; gap:6px; padding:7px;

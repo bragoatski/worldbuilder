@@ -6,7 +6,7 @@ import { priceOf, priceTerms, levelOf, populationOf, abilitiesOf, elementalType,
 import { STONE_KEY, PARTY_CAP, PACK_CAP, partyAbilities, onStore, hasEffect } from './encounter.js';
 import { revealSquare } from './fog.js';
 import { bearingTo } from './controls.js';
-import { growthText, breedFee } from './growth.js';
+import { growthText, breedFee, addXP, eventsText } from './growth.js';
 
 export const STONE_PRICE = { Amber: 5, Geode: 25, Obsidian: 150 };
 export const RESTOCK_TICKS = 2000, RESTOCK_COUNT = 3;
@@ -125,24 +125,29 @@ export function buy(K, p, item, qty = 1) {
   p.wallet -= price;
   return { ok: true, text: 'bought ' + qty + ' ' + (stone || potion) + ' for ' + price + ' coins (' + p.wallet + ' left)' };
 }
-// A creature by its name, or, unnamed, by its type ("herbivore"); the party first, then the cabinet.
-function findMine(K, p, which) {
-  const w = String(which || '').toLowerCase();
-  const is = x => (x.name ? x.name.toLowerCase() === w : x.type === w);
-  let c = (p.party || []).find(is); if (c) return { c, where: 'party' };
-  c = (K.cabinet || []).find(is); if (c) return { c, where: 'cabinet' };
+// A creature by its id (a number: the panel's buttons), or by its name, or, unnamed, by its type ("herbivore"); the
+// party first, then the cabinet, unless cabinetFirst (taking out of the cabinet).
+function findMine(K, p, which, cabinetFirst = false) {
+  const byId = typeof which === 'number';
+  const w = byId ? which : String(which || '').toLowerCase();
+  const is = byId ? (x => x.id === w) : (x => (x.name ? x.name.toLowerCase() === w : x.type === w));
+  const lists = cabinetFirst ? [[K.cabinet || [], 'cabinet'], [p.party || [], 'party']] : [[p.party || [], 'party'], [K.cabinet || [], 'cabinet']];
+  for (const [list, where] of lists) { const c = list.find(is); if (c) return { c, where }; }
   return null;
 }
-function leaving(p, c) { if (p.naming === c.id) p.naming = null; if (p.namingSpecies === c.id) p.namingSpecies = null; if (p.follower === c.id) { p.follower = null; p.followerAt = null; } }
+// A creature leaving the player's hands altogether: the naming prompts and the follower let go (pruneNaming in
+// encounter.js does the same every tick; this keeps the reply exact).
+function leaving(p, c) { if (p.naming === c.id) p.naming = (p.namingQueue || []).shift() || null; if (p.namingQueue) p.namingQueue = p.namingQueue.filter(id => id !== c.id); if (p.namingSpecies === c.id) p.namingSpecies = null; unfollow(p, c); }
+function unfollow(p, c) { if (p.follower === c.id) { p.follower = null; p.followerAt = null; } }
 export function sell(K, p, which) {
   const s = storeAt(K, p); if (!s) return { ok: false, text: 'no store here' };
-  const pm = /^plant (\d+)$/.exec(String(which || '').toLowerCase());
+  const pm = typeof which === 'number' ? null : /^plant (\d+)$/.exec(String(which || '').toLowerCase());
   if (pm) {   // one plant, the Nth in the pack
     const plants = (p.pack || []).filter(x => !x.potion), f = plants[+pm[1] - 1]; if (!f) return { ok: false, text: 'no plant ' + pm[1] };
     const coins = plantPrice(f, p); p.pack.splice(p.pack.indexOf(f), 1); p.wallet += coins;
     return { ok: true, text: 'sold a plant for ' + coins + ' coins (' + p.wallet + ')' };
   }
-  if (String(which || '').toLowerCase() === 'plants' && !findMine(K, p, which)) {
+  if (typeof which === 'string' && which.toLowerCase() === 'plants') {   // a creature cannot be named "plants" (a reserved word), so this is always the pack
     const plants = (p.pack || []).filter(x => !x.potion); if (!plants.length) return { ok: false, text: 'no plants in the pack' };
     const coins = plants.reduce((a, f) => a + plantPrice(f, p), 0);
     p.pack = p.pack.filter(x => x.potion); p.wallet += coins;
@@ -159,14 +164,14 @@ export function sell(K, p, which) {
 // Cabinet: a party creature into storage, or one out of it, at a store.
 export function box(K, p, which, take = false) {
   if (!onStore(K, p)) return { ok: false, text: 'the cabinet is at a store' };
-  const m = findMine(K, p, which); if (!m) return { ok: false, text: 'no "' + which + '"' };
+  const m = findMine(K, p, which, take); if (!m) return { ok: false, text: 'no "' + which + '"' };
   if (take) {
     if (m.where !== 'cabinet') return { ok: false, text: '"' + which + '" is already in the party' };
     if (p.party.length >= PARTY_CAP) return { ok: false, text: 'the party is full (' + PARTY_CAP + ')' };
     K.cabinet = K.cabinet.filter(x => x !== m.c); p.party.push(m.c); return { ok: true, text: '"' + (m.c.name || m.c.type) + '" joins the party' };
   }
   if (m.where !== 'party') return { ok: false, text: '"' + which + '" is already in the cabinet' };
-  p.party = p.party.filter(x => x !== m.c); leaving(p, m.c);
+  p.party = p.party.filter(x => x !== m.c); unfollow(p, m.c);   // still owned: a pending name keeps its turn
   K.cabinet.push(m.c); return { ok: true, text: '"' + (m.c.name || m.c.type) + '" goes into the cabinet' };
 }
 // Give to the other player while adjacent: coins, a stone, a potion, a plant or a party creature.
@@ -174,7 +179,8 @@ export function give(K, p, what, amount) {
   const other = p === K.kevin ? K.root : K.kevin;
   if (!other || other.away || !other.party) return { ok: false, text: 'nobody to give to' };
   if (Math.max(Math.abs(other.x - p.x), Math.abs(other.y - p.y)) > 1) return { ok: false, text: 'not adjacent' };
-  const w = String(what || '').toLowerCase(), n = Math.max(1, amount | 0);
+  const w = String(what || '').toLowerCase(), n = amount === undefined ? 1 : amount | 0;
+  if (!(n >= 1)) return { ok: false, text: 'how many? a whole number, 1 or more' };
   if (w === 'coins' || w === 'coin') { if (p.wallet < n) return { ok: false, text: 'not that many coins' }; p.wallet -= n; other.wallet += n; return { ok: true, text: 'gave ' + n + ' coins' }; }
   const stone = Object.keys(STONE_PRICE).find(s => s.toLowerCase() === w);
   if (stone) { const k = STONE_KEY[stone]; if (p.stones[k] < n) return { ok: false, text: 'not that many ' + stone }; p.stones[k] -= n; other.stones[k] += n; return { ok: true, text: 'gave ' + n + ' ' + stone }; }
@@ -182,7 +188,9 @@ export function give(K, p, what, amount) {
   if (potion) { if ((other.pack || []).length >= packCap(other)) return { ok: false, text: 'their pack is full' }; const it = takePotion(p, potion); if (!it) return { ok: false, text: 'no ' + potion + ' in the pack' }; other.pack.push(it); return { ok: true, text: 'gave a ' + potion }; }
   if (w === 'plant') { const k = (p.pack || []).findIndex(x => !x.potion); if (k < 0) return { ok: false, text: 'no plant in the pack' }; if ((other.pack || []).length >= packCap(other)) return { ok: false, text: 'their pack is full' }; other.pack.push(p.pack.splice(k, 1)[0]); return { ok: true, text: 'gave a plant' }; }
   const c = (p.party || []).find(x => (x.name ? x.name.toLowerCase() === w : x.type === w));
-  if (c) { if (other.party.length >= PARTY_CAP) return { ok: false, text: 'their party is full' }; p.party = p.party.filter(x => x !== c); leaving(p, c); other.party.push(c); return { ok: true, text: 'gave "' + (c.name || c.type) + '"' }; }
+  if (c) { if (other.party.length >= PARTY_CAP) return { ok: false, text: 'their party is full' }; p.party = p.party.filter(x => x !== c); leaving(p, c); other.party.push(c);
+    if (!c.name) { if (other.naming) (other.namingQueue || (other.namingQueue = [])).push(c.id); else other.naming = c.id; }   // an unnamed one is theirs to name now
+    return { ok: true, text: 'gave "' + (c.name || c.type) + '"' }; }
   return { ok: false, text: 'nothing called "' + what + '" to give' };
 }
 
@@ -212,6 +220,7 @@ export function usePotion(K, p, name, target) {
     case 'Fleetfoot': case 'Hawkeye': case 'Mirror': effect(p, potion, spec.duration); text = potion + ' for ' + spec.duration + ' ticks'; if (potion === 'Hawkeye') revealSquare(K, p.x, p.y, 5); break;
     case 'Slumber': {
       if (!target || Math.max(Math.abs(target.x - p.x), Math.abs(target.y - p.y)) > 2) return { ok: false, text: 'Slumber wants a creature within 2 tiles' };
+      if ((K.aw[target.id] || {}).state === 'fled') return { ok: false, text: 'it has fled you: Slumber will not bring it back' };   // the three-throw cap holds (8)
       const N = populationOf(target, fauna, speciesKey), L = levelOf(target, N), len = Math.max(10, 40 - 3 * L);
       const a = aw(target.id); a.state = 'calm'; a.asleep = tick + len; a.pulsesLeft = 0; delete a.bolt; target.held = true;
       text = target.type + ' sleeps for ' + len + ' ticks'; break;
@@ -219,13 +228,15 @@ export function usePotion(K, p, name, target) {
     case 'Hush': { let n = 0; for (const f of near(4)) { const a = aw(f.id); if (a.state === 'alert' || a.state === 'wary' || a.state === 'growl') { a.state = 'calm'; a.until = 0; f.held = !!a.baitId || !!a.asleep || !!a.bolt; n++; } } text = 'hush: ' + n + ' creatures calm'; break; }
     case 'Musk': { const type = String(target || '').toLowerCase(); if (!['herbivore', 'carnivore', 'omnivore', 'scavenger', 'apex'].includes(type)) return { ok: false, text: 'Musk wants a type: herbivore, carnivore, omnivore, scavenger, apex' }; K.musk = { pid: p.id, type, until: tick + spec.duration }; text = type + ' musk for ' + spec.duration + ' ticks'; break; }
     case 'Smoke': { effect(p, 'Smoke', spec.duration); let n = 0; for (const f of near(5)) if (f.type === 'carnivore' || f.type === 'apex') { const a = aw(f.id); if (a.state === 'growl') { a.state = 'alert'; a.until = tick + 50; f.held = false; delete a.pursueUntil; } if (!a.asleep && !a.baitId) { const dx = Math.sign(f.x - p.x), dy = Math.sign(f.y - p.y); for (const [sx, sy] of [[dx, dy], [dx, 0], [0, dy]]) if ((sx || sy) && canStand(f.x + sx, f.y + sy)) { f.x += sx; f.y += sy; n++; break; } } } text = 'smoke: ' + n + ' predators move away; nothing attacks you for ' + spec.duration + ' ticks'; break; }
-    case 'Decoy': { const d = target && target.x !== undefined ? target : p.facing ? { x: p.x + p.facing[0], y: p.y + p.facing[1] } : null; if (!d || (d.x === p.x && d.y === p.y)) return { ok: false, text: 'Decoy goes on a tile beside you (a bearing, or the way you last walked)' }; K.decoy = { x: d.x, y: d.y, until: tick + spec.duration }; text = 'decoy set ' + bearingTo(p.x, p.y, d.x, d.y); break; }
+    case 'Decoy': {   // a tile beside you (21): the target only if adjacent, else the way you last walked
+      const adj = target && target.x !== undefined && Math.max(Math.abs(target.x - p.x), Math.abs(target.y - p.y)) <= 1; const d = adj ? target : p.facing ? { x: p.x + p.facing[0], y: p.y + p.facing[1] } : null; if (!d || (d.x === p.x && d.y === p.y)) return { ok: false, text: 'Decoy goes on a tile beside you (a bearing, or the way you last walked)' }; K.decoy = { x: d.x, y: d.y, until: tick + spec.duration }; text = 'decoy set ' + bearingTo(p.x, p.y, d.x, d.y); break; }
     case 'Homeward': {
+      if (storeAt(K, p)) return { ok: false, text: 'you are at a store already' };
       const found = K.stores.filter(s => s.revealed); if (!found.length) return { ok: false, text: 'no store discovered yet' };
       let best = null, bd = Infinity; for (const s of found) { const d = Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y)); if (d < bd) { bd = d; best = s; } }
       p.cast = { until: tick + spec.duration, store: best }; text = 'homeward: ' + best.name + ' in ' + spec.duration + ' ticks (an attack interrupts it)'; break;
     }
-    case 'Tonic': { const c = target && target.id !== undefined ? (p.party || []).find(x => x.id === target.id) : null; if (!c) return { ok: false, text: 'Tonic wants a party creature (by name)' }; c.growthXP = (c.growthXP || 0) + 10; text = '"' + (c.name || c.type) + '" +10 XP'; break; }
+    case 'Tonic': { const c = target && target.id !== undefined ? (p.party || []).find(x => x.id === target.id) : null; if (!c) return { ok: false, text: 'Tonic wants a party creature (by name)' }; const ev = addXP(K, p, c, 10, 'tonic'); text = '"' + (c.name || c.type) + '" +10 XP' + eventsText(ev); break; }   // the level applies at once (20.2)
     case 'Survey': revealSquare(K, p.x, p.y, 12); text = 'survey: the fog clears 25x25 around you'; break;
     case 'Spice': { const b = (K.baits || []).filter(x => x.by === p.id); if (!b.length) return { ok: false, text: 'no bait of yours to spice' }; for (const x of b) x.spiced = true; text = 'bait spiced'; break; }
     default: return { ok: false, text: potion + ' is not usable yet' };

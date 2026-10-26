@@ -89,7 +89,8 @@ export function legWalk(K, st, dir, steps) {
 export function parseRoute(path) {
   const legs = [], re = /(\d*)\s*(NE|NW|SE|SW|N|E|S|W)/gi;
   let m, total = 0;
-  while ((m = re.exec(String(path || ''))) && total < PATH_MAX) {
+  const text = String(path || '').slice(0, 64);   // a route is a few legs; a long string is not one
+  while ((m = re.exec(text)) && total < PATH_MAX) {
     const n = Math.min(m[1] ? parseInt(m[1], 10) : 1, PATH_MAX - total);
     if (n > 0) { legs.push([m[2].toUpperCase(), n]); total += n; }
   }

@@ -190,3 +190,16 @@ describe('awareness, bait and the rest', () => {
     expect(E.recall(K, p).text).toMatch(/back in its stone/);
   });
 });
+
+describe('the Almanac sees what Kevin sees (adversarial run 2026-10-25)', () => {
+  it('a creature inside his sight square is noted once, not every tick', () => {
+    const K = world(), p = K.kevin;
+    const f = put('herbivore', p.x + 3, p.y);
+    E.encounterTick(K); E.encounterTick(K); E.encounterTick(K);
+    const e = K.almanac.species[sim.speciesKey(f)];
+    expect(e).toBeTruthy(); expect(e.seen).toBe(1); expect(e.glyph.type).toBe('herbivore');
+    const far = put('carnivore', p.x + 5, p.y + 5);
+    E.encounterTick(K);
+    expect(K.almanac.species[sim.speciesKey(far)]).toBeUndefined();
+  });
+});

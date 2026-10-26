@@ -630,8 +630,9 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 
 // Hotkeys
 window.addEventListener('keydown',function(e){
-  if(/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'')){if(K&&(e.key==='F5'||e.key==='F9')){e.target.blur();ketchemKey(e);}return;}   // F5 must never reload an unsaved game because a slider had focus
-  if(K&&ketchemKey(e))return;   // a board is up: the keys are Kevin's character's
+  var tag=(e.target||{}).tagName||'';
+  if(/INPUT|SELECT|TEXTAREA/.test(tag)){if(K&&(e.key==='F5'||e.key==='F9'||((tag==='SELECT'||(e.target||{}).type==='range')&&e.key!=='Tab'&&!/^(Shift|Control|Alt|Meta)$/.test(e.key)))){e.target.blur();ketchemKey(e);}return;}   // F5 must never reload an unsaved game because a slider had focus; on a board a focused select or slider gives the keys back to the game
+  if(K){if(ketchemKey(e))return;if(e.ctrlKey||e.metaKey||e.altKey)return;}   // a board is up: the keys are Kevin's character's, and a browser chord (Ctrl+R, Ctrl+F) is the browser's, never the page's reset
   if(e.code==='Space'){e.preventDefault();running=!running;if(running)loop();}
   else if(e.key==='s'||e.key==='S'){e.preventDefault();running=false;step();draw();}
   else if(e.key==='r'||e.key==='R'){e.preventDefault();running=false;init();buildSliders();applyElevationIntensity();draw();}
@@ -691,6 +692,8 @@ function draw(){
 // Worker on a copy of the sim and arrives as a snapshot; while it builds, the page shows a progress line on the canvas.
 // Reached for now through ?ketchem=<setting>[&kseed=N][&ksize=96]; the launch card entry is step 4.
 var K=null,_kWorker=null,_kProgress=null;
+// Anything that regenerates the world under a board takes the board down first (a scenario, a JSON load; init() does its own).
+function leaveBoard(){if(!K&&!_kProgress)return;abandonBuild();K=null;document.body.classList.remove('ketchem');closePanel();hudTick(null);}
 function _kGround(c,p){drawKetchemGround(c,p,K);}
 function _kTop(c,p){drawFog(c,p,K);}
 function getKetchemParam(){
@@ -947,7 +950,8 @@ function exportPNG(){try{var url=canvas.toDataURL('image/png');var a=document.cr
 // produce a loadable world snapshot without the DOM download path.
 function exportJSON(){try{var snapshot=buildSnapshot();var json=JSON.stringify(snapshot,null,2);var blob=new Blob([json],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='worldbuilder_'+W+'x'+H+'_tick'+tick+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Export error: '+e.message;}}}
 function importJSON(data){try{
-  applySnapshot(data);                    // pure state load (validates + reassigns sim state, DOM-free)
+  applySnapshot(data);                    // a bad file throws here, before the board is touched
+  leaveBoard();                    // pure state load (validates + reassigns sim state, DOM-free)
   followId=null;                          // the loaded world has its own ids; drop any follow from the prior world
   resize();
   var hSeedEl=document.getElementById('hSeed');if(hSeedEl)hSeedEl.textContent=_seed;
@@ -1208,6 +1212,7 @@ function renderObjective(){
 var _scenWarmTimer=null;
 function startScenario(id){
   var def=SCENARIOS[id]; if(!def) return;
+  leaveBoard();
   if(_scenWarmTimer){ clearTimeout(_scenWarmTimer); _scenWarmTimer=null; }
   followId=null; // this launch path bypasses init(); initWorld below re-issues ids from 1, so drop any stale follow
   running=false;

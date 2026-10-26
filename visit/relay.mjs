@@ -80,7 +80,7 @@ function body(req) {
   return new Promise((resolve, reject) => {
     let s = '';
     req.setEncoding('utf8');   // never split a multibyte character across chunks
-    req.on('data', c => { s += c; if (s.length > 2e6) { reject(new Error('body too large')); req.destroy(); } });
+    req.on('data', c => { s += c; if (s.length > 8e6) { reject(new Error('body too large')); req.destroy(); } });
     req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}); } catch (e) { reject(e); } });
     req.on('error', reject);
   });

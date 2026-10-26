@@ -83,7 +83,7 @@ const CARD_TICKS = 6;
 function cheapSig(p) { return (p.follower || '') + '|' + (p.party || []).map(c => c.id + ':' + (c.name || '')).join(','); }
 function partyFor(p, slot) {
   const cs = cheapSig(p);
-  if (slot.cards && cs === slot.cheap && tick - slot.at < CARD_TICKS) return slot.cards;
+  if (slot.cards && cs === slot.cheap && tick >= slot.at && tick - slot.at < CARD_TICKS) return slot.cards;   // a load to an earlier tick rebuilds at once
   slot.cards = partyCards(p); slot.cheap = cs; slot.at = tick; return slot.cards;
 }
 

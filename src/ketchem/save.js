@@ -2,7 +2,7 @@
 // applySave / export / import / migrations) is DOM-free and gate-tested; the IndexedDB slot store below runs only
 // in a browser. The page mirrors every save to the relay (visit.js mirrorSave), which keeps ~/root/ketchem/slots.
 import { CFG, DEFAULT_CFG, T, W, H, _seed, tick, grid, road, fauna, volcActive, volcAge, volcLife, volcanoRing, peakVolcano, volcanoCenters, coastTTL,
-  ringDone, adjCooldown, hillDecayCount, biomeStability, biomeDesiredNext, reclassTerrain, buildSnapshot, applySnapshot } from '../sim.js';
+  ringDone, adjCooldown, hillDecayCount, biomeStability, biomeDesiredNext, reclassTerrain, buildSnapshot, applySnapshot, reserveFaunaIds } from '../sim.js';
 import { newPlayer } from './controls.js';
 
 export const SAVE_VERSION = 1;
@@ -33,14 +33,15 @@ function cfgDiff() { const d = {}; for (const k of Object.keys(DEFAULT_CFG)) if 
 function playerRecord(id, p) {
   return { id, x: p.x, y: p.y, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones || { amber: 10, geode: 0, obsidian: 0 }, stone: p.stone || 'Amber',
     pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null,
-    naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, away: !!p.away };
+    naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, away: !!p.away,
+    cast: p.cast && p.cast.store ? { until: p.cast.until, store: p.cast.store.name } : null, followerAt: p.followerAt || null, facing: p.facing || null };
 }
 
 // The whole game in memory. slot = the record's name (the player's, default the seed).
 export function buildSave(K, slot) {
   const now = stamp();
   if (!K.created) K.created = now;   // the game's birth sticks to the board, so every later record agrees
-  return {
+  return structuredClone({   // a snapshot, not live references: IndexedDB clones and the relay stringifies later, after more ticks
     version: SAVE_VERSION,
     meta: { slot: String(slot || K.seed), seed: K.seed, setting: K.setting, size: [W, H], created: K.created || now, lastSaved: now,
       ticksPlayed: tick - (K.tick0 || 0), worldKey: worldKey() },
@@ -60,7 +61,8 @@ export function buildSave(K, slot) {
     players: [playerRecord('kevin', K.kevin || newPlayer(K.starts[0].x, K.starts[0].y))].concat(K.root ? [playerRecord('root', K.root)] : []),
     almanac: K.almanac || { species: {}, places: { stores: [], landmarks: [] } },
     baits: K.baits || [], encounters: awarenessRecords(K.aw), pulses: {}, nextId: K.nextId || 1,
-  };
+    musk: K.musk || null, decoy: K.decoy || null, news: K.news || [],
+  });
 }
 
 export function migrate(data) {
@@ -92,8 +94,9 @@ function decode(data) {
 export function applySave(raw) {
   const data = migrate(raw);
   const d = decode(data);
+  const cfg0 = { ...CFG };
   Object.assign(CFG, DEFAULT_CFG, data.cfg || {});
-  applySnapshot(data.sim);
+  try { applySnapshot(data.sim); } catch (e) { Object.assign(CFG, cfg0); throw e; }   // a damaged record leaves the tab's configuration as it was
   road.set(d.road);
   if (d.ringDone) { ringDone.set(d.ringDone); adjCooldown.set(new Uint16Array(d.adjCooldown.buffer, d.adjCooldown.byteOffset, W * H)); hillDecayCount.set(d.hillDecay); biomeStability.set(d.stability); biomeDesiredNext.set(d.desired); }
   for (const v of data.vents || []) if (v.i >= 0 && v.i < W * H) { volcActive[v.i] = 1; volcAge[v.i] = v.age | 0; volcLife[v.i] = v.life | 0; }
@@ -114,15 +117,21 @@ export function applySave(raw) {
     stores: data.stores.map(s => ({ ...s })), signposts: data.signposts || [], landmarks: data.landmarks || [], starts: data.starts || [],
     fog: d.fog, cabinet: data.cabinet || [], almanac: data.almanac, baits: data.baits || [], aw: data.encounters || {}, pulses: data.pulses || {}, nextId: data.nextId || 1,
     kevin: null, root: null, cam: 'kevin',
+    musk: data.musk || null, decoy: data.decoy || null, news: data.news || [],
   };
   for (const p of data.players || []) {
-    const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0 });
+    const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, followerAt: p.followerAt || null, facing: p.facing || null,
+      cast: p.cast && K.stores.some(s => s.name === p.cast.store) ? { until: p.cast.until, store: K.stores.find(s => s.name === p.cast.store) } : null });
     if (p.id === 'kevin') K.kevin = pl; else if (p.id === 'root') { K.root = pl; K.root.loaded = true; K.root.away = true; }   // Root is away until it arrives
   }
   // creatures held by a bait in the record keep their hold; a growl ends (it is alert again); everything else is free
   for (const f of fauna) if (f) f.held = false;
   for (const b of K.baits) if (b.creatureId) { const f = fauna.find(x => x && x.id === b.creatureId); if (f) f.held = true; else b.creatureId = null; }
   for (const [id, a] of Object.entries(K.aw)) { if (a.state === 'growl') { a.state = 'alert'; a.until = tick + 50; } if (a.asleep) { const f = fauna.find(x => x && x.id === +id); if (f) f.held = true; } }
+  // creatures carried out of the fauna list keep their ids; the sim's counter must sit past them or a wild birth reuses one
+  let maxId = 0;
+  for (const list of [K.cabinet, K.baits.map(b => b.payload)].concat([K.kevin, K.root].map(p => (p && p.party) || []), K.stores.map(s => s.held || []))) for (const c of list) if (c && c.id > maxId) maxId = c.id;
+  reserveFaunaIds(maxId);
   if (!K.kevin && K.starts[0]) K.kevin = newPlayer(K.starts[0].x, K.starts[0].y);
   return K;
 }
