@@ -1217,3 +1217,36 @@ and Root on the public site stay the owner's call). Readings, overturnable.
   binomial. An exported file of the old game is the player's own backup and can still be imported: that is not
   guarded.
 - Root has no send: the saves are Kevin's.
+
+## 25. A guest in the second seat
+
+Built 2026-10-26 (owner ask "build the next step", repeated after the remaining steps were named as needing the owner's
+decision). Of the handoff's "second human player", this is the form that needs no server: a second person at the same
+keyboard. Networked play (a second device or a friend elsewhere) needs hosting and stays the owner's call, as does
+Root on the public site (model calls paid for strangers). Readings, overturnable.
+- The game was built for two players, so the guest takes the second seat, the character Root plays when it is called
+  in, rather than becoming a third. The seat holds one occupant: a guest cannot sit while Root plays, and Call Root
+  says the seat is taken while a guest holds it. A game loaded with a guest seated while Root plays seats Root.
+- Belongings stay apart: Root's party, stones, coins and gear wait while a guest plays, and the guest's wait while
+  they are away. Each has their own player id, so a bait, a growl, a payload or a message stays with its own player
+  across a swap (a creature Root staked comes back to Root even if a guest sat down meanwhile). Saves carry both.
+- Joining: the "+ guest" chip in Kevin's bar asks a name; "<name> leaves" gets up. The guest starts on the second
+  start's doorstep with ten Amber, like Kevin. A guest still at the keyboard sits down in a new board or a loaded game.
+- Keys (right hand; Kevin keeps WASD and his letters, and the arrows become the guest's while they play):
+
+| key | guest's action |
+|---|---|
+| arrows | move (held arrows repeat within the stride budget) |
+| . | next creature within 2 tiles |
+| / | throw the stone in hand |
+| [ ] | previous / next stone |
+| ' | name the catch (or the new species) |
+| ; | pick the plant underfoot, read a signpost, or open the store on a store tile |
+| , | let the first party creature follow, or recall it |
+| L then a digit | drink a potion or use a shard (Tonic and shards ask which creature) |
+| K | what the guest carries |
+
+- The guest has their own bar (top right, in green) and party row (bottom right); their character is a green dot with
+  a green sight square. Their questions use the same bar as Kevin's; a second question waits for the first.
+- Not built for the guest: bait (B), give (G), feed (T) and breeding (the PEN tab works for them at a store; G and T
+  are Kevin's); sending to another save (the saves are Kevin's); a gamepad.

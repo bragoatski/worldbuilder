@@ -1,9 +1,10 @@
 // An inline question bar for Kevin (names, give, feed, Musk's type, a game's name), in place of window.prompt: a
 // browser prompt is modal, so while it was open the world stopped and Root's door timed out (adversarial run
-// 2026-10-25). The bar sits above the party row; Enter answers, Esc or the X declines. One question at a time: a new
-// one replaces an open one (the old one answers null). Keys typed into it never reach the game (the page's keydown
-// skips inputs). ask() resolves to the trimmed text, or null.
+// 2026-10-25). The bar sits above the party row; Enter answers, Esc or the X declines. One question at a time: a
+// second question waits until the first is answered, so Kevin's and a guest's never cancel each other. Keys typed
+// into it never reach the game (the page's keydown skips the bar). ask() resolves to the trimmed text, or null.
 let bar = null, pending = null;
+const queue = [];   // questions asked while one is open wait their turn (Kevin's and the guest's never cancel each other)
 function css() {
   const s = document.createElement('style');
   s.textContent = '#kAsk{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);z-index:75;width:min(560px,calc(100vw - 32px));box-sizing:border-box;' +
@@ -34,15 +35,18 @@ function finish(v) {
   const cb = pending; pending = null;
   const input = bar.querySelector('input'); input.blur();
   if (cb) cb(v === null ? null : String(v).trim());
+  if (!pending && queue.length) { const q = queue.shift(); show(q.question, q.initial, q.resolve); }
+}
+function show(question, initial, resolve) {
+  bar.querySelector('label').textContent = question;
+  const input = bar.querySelector('input'); input.value = initial;
+  bar.hidden = false; pending = resolve;
+  setTimeout(() => { input.focus(); input.select(); }, 0);
 }
 export function ask(question, initial = '') {
   if (typeof document === 'undefined') return Promise.resolve(null);
   ensure();
-  if (pending) finish(null);
-  bar.querySelector('label').textContent = question;
-  const input = bar.querySelector('input'); input.value = initial;
-  bar.hidden = false;
-  return new Promise(resolve => { pending = resolve; setTimeout(() => { input.focus(); input.select(); }, 0); });
+  return new Promise(resolve => { if (pending) queue.push({ question, initial, resolve }); else show(question, initial, resolve); });
 }
 export function asking() { return !!pending; }
-export function closeAsk() { if (pending) finish(null); }
+export function closeAsk() { while (queue.length) queue.shift().resolve(null); if (pending) finish(null); }   // a board change answers every open question with null

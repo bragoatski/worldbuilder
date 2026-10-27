@@ -73,15 +73,15 @@ function partySig(p, cards) { return JSON.stringify([p.follower, cards.map(k => 
 function glyphMap(cards) { const m = {}; for (const k of cards) m[k.id] = k.glyph; return m; }
 
 const STONES = [['Amber', 'amber'], ['Geode', 'geode'], ['Obsidian', 'obsidian']];
-function hudHTML(p) {
+function hudHTML(p, guestChip = '', guest = false) {
   const ps = packSummary(p), potions = Object.keys(ps.potions);
-  const stones = STONES.map(([n, k], i) => '<span class="kh-stone' + (p.stone === n ? ' on' : '') + '" title="' + (i + 1) + ' picks ' + n + '"><i>' + (i + 1) + '</i>' + n + ' ' + p.stones[k] + '</span>').join('');
-  const packTip = ps.plants + ' plants' + (potions.length ? ', ' + potions.map(n => n + ' x' + ps.potions[n]).join(', ') : '') + (ps.gear.length ? '; worn: ' + ps.gear.join(', ') : '') + '. I for the pack, P for a potion or a shard';
+  const stones = STONES.map(([n, k], i) => '<span class="kh-stone' + (p.stone === n ? ' on' : '') + '" title="' + (guest ? '[ and ] change the stone' : (i + 1) + ' picks ' + n) + '">' + (guest ? '' : '<i>' + (i + 1) + '</i>') + n + ' ' + p.stones[k] + '</span>').join('');
+  const packTip = ps.plants + ' plants' + (potions.length ? ', ' + potions.map(n => n + ' x' + ps.potions[n]).join(', ') : '') + (ps.gear.length ? '; worn: ' + ps.gear.join(', ') : '') + (guest ? '. K for the pack, L for a potion or a shard' : '. I for the pack, P for a potion or a shard');
   const fx = (p.effects || []).filter(e => e.until > tick).map(e => '<span class="kh-arc" data-potion="' + esc(e.potion) + '" title="' + esc(e.potion) + '"><b>' + esc(e.potion[0]) + '</b></span>').join('');
-  const hint = p.naming ? 'N to name your catch' : p.namingSpecies ? 'N to name the new species' : p.cast ? 'homeward' : '';
+  const nk = guest ? "'" : 'N', hint = p.naming ? nk + ' to name your catch' : p.namingSpecies ? nk + ' to name the new species' : p.cast ? 'homeward' : '';
   const over = ps.used > ps.cap;   // a Pack creature left the party: nothing more fits until the pack is lighter
   return '<span class="kh-wallet">' + p.wallet + ' coins</span>' + stones + '<span class="kh-pack' + (over ? ' over' : '') + '" title="' + esc(packTip + (over ? '. Over the cap: nothing more fits until the pack is lighter or a Pack creature rejoins the party' : '')) + '">pack ' + ps.used + '/' + ps.cap + '</span>' + (fx ? '<span class="kh-fx">' + fx + '</span>' : '') + (hint ? '<span class="kh-hint">' + hint + '</span>' : '') +
-    '<button type="button" class="kh-sound' + (soundOn() ? '' : ' off') + '" title="Sound ' + (soundOn() ? 'on' : 'off') + ' (O)" aria-label="Sound">' + (soundOn() ? 'sound' : 'muted') + '</button>';
+    '<button type="button" class="kh-sound' + (soundOn() ? '' : ' off') + '" title="Sound ' + (soundOn() ? 'on' : 'off') + ' (O)" aria-label="Sound">' + (soundOn() ? 'sound' : 'muted') + '</button>' + guestChip;
 }
 function hudSig(p) { return JSON.stringify([p.wallet, p.stone, p.stones, (p.pack || []).length, packSummary(p).cap, (p.pack || []).filter(x => x.potion).map(x => x.potion), (p.effects || []).filter(e => e.until > tick).map(e => e.potion), !!p.naming, !!p.namingSpecies, !!p.cast, soundOn(), Object.keys(p.gear || {})]); }
 // The arcs: the fraction of each potion's duration left, as a conic sweep; the sweep moves every tick, the hover
@@ -105,23 +105,24 @@ function partyFor(p, slot) {
   slot.cards = partyCards(p); slot.cheap = cs; slot.at = tick; return slot.cards;
 }
 
-let hudEl = null, partyEl = null, lastHud = '', lastParty = '', lastRoot = '';
+let hudEl = null, partyEl = null, hud2El = null, party2El = null, lastHud = '', lastParty = '', lastRoot = '', lastHud2 = '', lastParty2 = '';
 const kevinSlot = {}, rootSlot = {};
 function css() {
   const s = document.createElement('style');
-  s.textContent = '#kHud{position:absolute;left:14px;top:12px;z-index:6;display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 28px);padding:6px 8px;' +
+  s.textContent = '#kHud,#kHud2{position:absolute;left:14px;top:12px;z-index:6;display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 28px);padding:6px 8px;' +
     'background:rgba(13,17,23,.82);border:1px solid var(--border-hi);border-radius:9px;backdrop-filter:blur(6px);color:var(--fg);font:12px/1.3 "JetBrains Mono",monospace;}' +
-    '#kHud[hidden],#kParty[hidden]{display:none;}' +
-    '#kHud .kh-wallet{font-weight:600;padding:2px 6px;}' +
-    '#kHud .kh-stone{padding:2px 7px;border:1px solid transparent;border-radius:6px;color:var(--fg-dim);} #kHud .kh-stone i{font-style:normal;color:var(--fg-faint);margin-right:5px;}' +
-    '#kHud .kh-stone.on{border-color:#e8a83899;background:rgba(232,168,56,.1);color:var(--fg);} #kHud .kh-stone.on i{color:#e8a838;}' +
-    '#kHud .kh-pack{padding:2px 7px;color:var(--fg-dim);border-left:1px solid var(--border);}' +
-    '#kHud .kh-fx{display:flex;gap:4px;margin-left:2px;} .kh-arc{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;position:relative;}' +
+    '#kHud[hidden],#kParty[hidden],#kHud2[hidden],#kParty2[hidden]{display:none;}' +
+    '.kh-bar .kh-wallet{font-weight:600;padding:2px 6px;}' +
+    '.kh-bar .kh-stone{padding:2px 7px;border:1px solid transparent;border-radius:6px;color:var(--fg-dim);} .kh-bar .kh-stone i{font-style:normal;color:var(--fg-faint);margin-right:5px;}' +
+    '.kh-bar .kh-stone.on{border-color:#e8a83899;background:rgba(232,168,56,.1);color:var(--fg);} .kh-bar .kh-stone.on i{color:#e8a838;}' +
+    '.kh-bar .kh-pack{padding:2px 7px;color:var(--fg-dim);border-left:1px solid var(--border);}' +
+    '.kh-bar .kh-fx{display:flex;gap:4px;margin-left:2px;} .kh-arc{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;position:relative;}' +
     '.kh-arc b{width:14px;height:14px;border-radius:50%;background:var(--bg-panel);display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:#f3d9a4;}' +
-    '#kHud .kh-hint{color:#f3d9a4;padding:2px 7px;border-left:1px solid var(--border);}' +
-    '#kHud .kh-pack.over{color:#ff7a7a;} #kHud .kh-sound{background:none;border:1px solid var(--border);border-radius:6px;color:var(--fg-dim);font:inherit;font-size:11px;padding:1px 6px;cursor:pointer;} #kHud .kh-sound.off{color:var(--fg-faint);text-decoration:line-through;}' +
+    '.kh-bar .kh-hint{color:#f3d9a4;padding:2px 7px;border-left:1px solid var(--border);}' +
+    '.kh-bar .kh-pack.over{color:#ff7a7a;} .kh-bar .kh-sound{background:none;border:1px solid var(--border);border-radius:6px;color:var(--fg-dim);font:inherit;font-size:11px;padding:1px 6px;cursor:pointer;} .kh-bar .kh-sound.off{color:var(--fg-faint);text-decoration:line-through;}' +
     '.kc-ic{vertical-align:-1px;margin-right:3px;}' +
-    '#kParty{position:absolute;left:14px;bottom:12px;z-index:6;display:flex;gap:8px;width:calc(100% - 28px);max-width:640px;}' +
+    '.kh-bar .kh-guest{background:none;border:1px solid var(--border);border-radius:6px;color:var(--fg-dim);font:inherit;font-size:11px;padding:1px 6px;cursor:pointer;} .kh-bar .kh-guest.on{border-color:#58d27a99;color:#58d27a;}' +
+    '#kParty,#kParty2{position:absolute;left:14px;bottom:12px;z-index:6;display:flex;gap:8px;width:calc(100% - 28px);max-width:640px;}' +
     '.kc{display:flex;gap:8px;align-items:flex-start;flex:1 1 0;min-width:0;max-width:200px;box-sizing:border-box;padding:7px 9px;background:rgba(13,17,23,.86);border:1px solid var(--border-hi);border-radius:9px;backdrop-filter:blur(6px);color:var(--fg);font:11px/1.35 "JetBrains Mono",monospace;}' +
     '.kc.out{border-color:#e8a83899;} .kc .kc-g{flex:none;width:30px;height:30px;image-rendering:pixelated;background:rgba(255,255,255,.04);border-radius:6px;}' +
     '.kc .kc-body{min-width:0;flex:1;} .kc .kc-top{display:flex;gap:5px;align-items:center;min-width:0;} .kc .kc-top b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
@@ -130,34 +131,46 @@ function css() {
     '.kc .kc-sub{color:var(--fg-dim);font-size:10px;margin-top:1px;} .kc .kc-ab{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;}' +
     '.kc .kc-pip{font-size:9px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;color:var(--fg-dim);cursor:help;} .kc .kc-pip i{font-style:normal;color:#f3d9a4;}' +
     '#vpParty{display:flex;flex-direction:column;gap:5px;padding:6px 10px;border-bottom:1px solid var(--border);} #vpParty:empty{display:none;} #vpParty .kc{width:auto;background:transparent;backdrop-filter:none;padding:4px 6px;}' +
-    'body.ketchem #kPanel{bottom:104px;}';
+    'body.ketchem #kPanel{bottom:104px;}' +
+    '#kHud2{left:auto;right:14px;border-color:#58d27a66;} #kHud2 .kh-who{color:#58d27a;font-weight:600;padding:2px 6px;} #kParty2{left:auto;right:14px;justify-content:flex-end;} #kParty2 .kc{border-color:#58d27a55;}';
   document.head.appendChild(s);
 }
 function ensure() {
   if (hudEl) return;
   css();
   const host = document.querySelector('.canvas-wrap') || document.body;
-  hudEl = document.createElement('div'); hudEl.id = 'kHud'; host.appendChild(hudEl);
+  hudEl = document.createElement('div'); hudEl.id = 'kHud'; hudEl.className = 'kh-bar'; host.appendChild(hudEl);
   partyEl = document.createElement('div'); partyEl.id = 'kParty'; host.appendChild(partyEl);
+  hud2El = document.createElement('div'); hud2El.id = 'kHud2'; hud2El.className = 'kh-bar'; hud2El.hidden = true; host.appendChild(hud2El);
+  party2El = document.createElement('div'); party2El.id = 'kParty2'; party2El.hidden = true; host.appendChild(party2El);
 }
 // Called from draw(): with no board, hide everything; with one, refresh what changed.
 export function hudTick(K) {
   if (typeof document === 'undefined') return;
   const vp = document.getElementById('vpParty');
   if (!K || !K.kevin) {
-    if (hudEl) { hudEl.hidden = true; partyEl.hidden = true; }
+    if (hudEl) { hudEl.hidden = true; partyEl.hidden = true; hud2El.hidden = true; party2El.hidden = true; }
     if (vp && vp.innerHTML) vp.innerHTML = '';
-    lastHud = lastParty = lastRoot = ''; kevinSlot.cards = rootSlot.cards = null; return;
+    lastHud = lastParty = lastRoot = lastHud2 = lastParty2 = ''; kevinSlot.cards = rootSlot.cards = null; return;
   }
   ensure();
   const p = K.kevin;
-  const hs = hudSig(p); if (hs !== lastHud) { lastHud = hs; hudEl.innerHTML = hudHTML(p); hudEl.hidden = false; const sb = hudEl.querySelector('.kh-sound'); if (sb) sb.addEventListener('click', () => { toggleSound(); hudTick(K); }); }
+  const g = K.root && K.root.human && !K.root.away ? K.root : null;
+  const chip = '<button type="button" class="kh-guest' + (g ? ' on' : '') + '" title="' + (g ? 'The guest gets up; what they carry waits' : 'A second player on this keyboard: arrows, . / [ ] \' ; , L K') + '">' + (g ? esc(g.display || 'Guest') + ' leaves' : '+ guest') + '</button>';
+  const hs = hudSig(p) + chip; if (hs !== lastHud) { lastHud = hs; hudEl.innerHTML = hudHTML(p, chip); hudEl.hidden = false; const sb = hudEl.querySelector('.kh-sound'); if (sb) sb.addEventListener('click', () => { toggleSound(); hudTick(K); }); }
   soundTick(K);
   arcs(hudEl, p);
   const cards = partyFor(p, kevinSlot), sig = partySig(p, cards);
   if (sig !== lastParty) { lastParty = sig; partyEl.innerHTML = rowHTML(p, cards); partyEl.hidden = !cards.length; drawGlyphs(partyEl, glyphMap(cards), 16); }
+  // the guest's own bar (top right) and party row (bottom right)
+  if (g) {
+    const hs2 = hudSig(g) + (g.display || ''); if (hs2 !== lastHud2) { lastHud2 = hs2; hud2El.innerHTML = '<span class="kh-who">' + esc(g.display || 'Guest') + '</span>' + hudHTML(g, '', true).replace(/<button[^>]*kh-sound[^>]*>[^<]*<\/button>/, ''); hud2El.hidden = false; }
+    arcs(hud2El, g);
+    const gc = partyFor(g, rootSlot), gs = partySig(g, gc);
+    if (gs !== lastParty2) { lastParty2 = gs; party2El.innerHTML = rowHTML(g, gc); party2El.hidden = !gc.length; drawGlyphs(party2El, glyphMap(gc), 16); }
+  } else if (lastHud2 || lastParty2) { hud2El.hidden = true; party2El.hidden = true; lastHud2 = lastParty2 = ''; }
   if (vp) {
-    const r = K.root, rc = r && !r.away ? partyFor(r, rootSlot) : [], rs = rc.length ? partySig(r, rc) : '';
+    const r = K.root, rc = r && !r.away && !r.human ? partyFor(r, rootSlot) : [], rs = rc.length ? partySig(r, rc) : '';
     if (rs !== lastRoot) { lastRoot = rs; vp.innerHTML = rc.length ? rowHTML(r, rc) : ''; if (rc.length) drawGlyphs(vp, glyphMap(rc), 16); }
   }
 }

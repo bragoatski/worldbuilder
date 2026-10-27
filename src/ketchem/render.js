@@ -54,7 +54,7 @@ export function drawKetchemGround(ctx, PIX, K) {
   }
 }
 
-export const KEVIN = '#3b9eff', HULL = '#7a5a3a';
+export const KEVIN = '#3b9eff', GUEST = '#58d27a', HULL = '#7a5a3a';
 function hull(ctx, x, y, PIX) {
   ctx.fillStyle = HULL;
   ctx.beginPath(); ctx.ellipse((x + 0.5) * PIX, (y + 0.62) * PIX, PIX * 0.75, PIX * 0.4, 0, 0, Math.PI * 2); ctx.fill();
@@ -65,15 +65,17 @@ function hull(ctx, x, y, PIX) {
 export function drawPlayers(ctx, PIX, K) {
   if (!K) return;
   ctx.save();
-  if (K.root && K.root.boat && !K.root.away) hull(ctx, K.root.x, K.root.y, PIX);
-  const p = K.kevin;
-  if (p) {
-    ctx.strokeStyle = 'rgba(59,158,255,0.45)'; ctx.lineWidth = Math.max(1, PIX / 4);
+  const guest = K.root && K.root.human && !K.root.away ? K.root : null;   // a guest in the second seat is drawn here; Root's own dot is the visit's
+  if (K.root && K.root.boat && !K.root.away && !guest) hull(ctx, K.root.x, K.root.y, PIX);
+  for (const p of [guest, K.kevin]) {
+    if (!p) continue;
+    const col = p === guest ? GUEST : KEVIN;
+    ctx.strokeStyle = p === guest ? 'rgba(88,210,122,0.45)' : 'rgba(59,158,255,0.45)'; ctx.lineWidth = Math.max(1, PIX / 4);
     ctx.strokeRect((p.x - 4) * PIX, (p.y - 4) * PIX, 9 * PIX, 9 * PIX);
     if (p.boat) hull(ctx, p.x, p.y, PIX);
     const cx = (p.x + 0.5) * PIX, cy = (p.y + 0.5) * PIX, r = Math.max(3, PIX * 0.9);
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = KEVIN; ctx.fill(); ctx.lineWidth = Math.max(1.5, PIX / 3); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = Math.max(1.5, PIX / 3); ctx.strokeStyle = '#ffffff'; ctx.stroke();
     if (p.msg && p.msgUntil > Date.now()) {
       const font = Math.max(9, PIX * 1.6);
       ctx.font = font + 'px "JetBrains Mono",monospace'; ctx.textBaseline = 'bottom';

@@ -32,6 +32,7 @@ import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sel
 import { storePanel, almanacPanel, closePanel, panelOpen } from './ketchem/panel.js';
 import { hudTick } from './ketchem/hud.js';
 import { ask, closeAsk } from './ketchem/ask.js';
+import { guestSeated, seatGuest, unseatGuest } from './ketchem/guest.js';
 import { toggleSound } from './ketchem/sound.js';
 import { growthTick, catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
@@ -635,7 +636,7 @@ window.addEventListener('keydown',function(e){
   if((e.target||{}).id==='kAskIn')return;   // keys typed into the question bar are the bar's (Enter answers, Esc declines), F5 and F9 included
   var tag=(e.target||{}).tagName||'';
   if(/INPUT|SELECT|TEXTAREA/.test(tag)){if(K&&(e.key==='F5'||e.key==='F9'||((tag==='SELECT'||(e.target||{}).type==='range')&&e.key!=='Tab'&&!/^(Shift|Control|Alt|Meta)$/.test(e.key)))){e.target.blur();ketchemKey(e);}return;}   // F5 must never reload an unsaved game because a slider had focus; on a board a focused select or slider gives the keys back to the game
-  if(K){if(ketchemKey(e))return;if(e.ctrlKey||e.metaKey||e.altKey)return;}   // a board is up: the keys are Kevin's character's, and a browser chord (Ctrl+R, Ctrl+F) is the browser's, never the page's reset
+  if(K){if(guestKey(e))return;if(ketchemKey(e))return;if(e.ctrlKey||e.metaKey||e.altKey)return;}   // a board is up: the keys are Kevin's character's, and a browser chord (Ctrl+R, Ctrl+F) is the browser's, never the page's reset
   if(e.code==='Space'){e.preventDefault();running=!running;if(running)loop();}
   else if(e.key==='s'||e.key==='S'){e.preventDefault();running=false;step();draw();}
   else if(e.key==='r'||e.key==='R'){e.preventDefault();running=false;init();buildSliders();applyElevationIntensity();draw();}
@@ -715,7 +716,7 @@ var KEYDIR={w:[0,-1],a:[-1,0],s:[0,1],d:[1,0],arrowup:[0,-1],arrowleft:[-1,0],ar
 var _kOnStore=false;
 function kevinMoved(){
   var on=!!storeAt(K,K.kevin);
-  if(!on&&panelOpen())closePanel();
+  if(!on&&panelOpen()&&_kPanelOwner===K.kevin)closePanel();
   if(on&&!_kOnStore&&K.slot)saveGame();
   _kOnStore=on;
 }
@@ -764,7 +765,7 @@ function ketchemKey(e){
   if(k==='c'){e.preventDefault();if(storeAt(K,p))openStore('box');else kevinSay('the cabinet is at a store');draw();return true;}
   if(k==='p'){e.preventDefault();var ps=packSummary(p);var pl=Object.keys(ps.potions);if(!pl.length){kevinSay('no potions in the pack');draw();return true;}_kPotion=true;kevinSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));draw();return true;}
   if(k==='i'){e.preventDefault();var pi=packSummary(p);kevinSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):'')+(pi.gear.length?'; worn: '+pi.gear.join(', '):''));draw();return true;}
-  if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else almanacPanel(almanacLists(K,p));return true;}
+  if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else{_kPanelOwner=K.kevin;almanacPanel(almanacLists(K,p));}return true;}
   if(k==='g'){e.preventDefault();ask('Give Root what? coins N, Amber N, a potion name, plant, or a party creature name','coins 10').then(function(gw){if(gw===null||!K)return;var gm=/^(.*?)(?:\s+(\d+))?$/.exec(gw);kevinSay(giveItem(K,K.kevin,gm[1],gm[2]?+gm[2]:undefined).text);draw();});return true;}
   if(k==='o'){e.preventDefault();kevinSay('sound '+(toggleSound()?'on':'off'));draw();return true;}
   if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
@@ -785,10 +786,11 @@ function ketchemKey(e){
 // recalls it, N names the last catch, E picks the plant underfoot (else reads what is there).
 var _kBait=null,_kPotion=false;
 // The store (E or C on a store tile): BUY / SELL / BOX; entering autosaves (18.2).
-function openStore(tab){
-  var p=K.kevin;if(!storeAt(K,p))return;
-  storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[],pen:[],fee:function(){return 0;}};}return shopLists(K,p,s);},buy:function(item,qty){var r=buyItem(K,p,item,qty);kevinSay(r.text);return r;},sell:function(name){var r=sellItem(K,p,name);kevinSay(r.text);return r;},
-    sellPlants:function(){var r=sellItem(K,p,'plants');kevinSay(r.text);return r;},box:function(name,take){var r=boxItem(K,p,name,take);kevinSay(r.text);return r;},breed:function(a,b){var r=breedPair(K,p,a,b);kevinSay(r.text);return r;},send:sendCreature,onChange:draw},tab||'buy');
+var _kPanelOwner=null;   // whose store panel is open: Kevin's moves close only his, the guest's only theirs
+function openStore(tab,who){
+  var p=who||K.kevin;if(!storeAt(K,p))return;var say=p===K.kevin?kevinSay:guestSay;_kPanelOwner=p;
+  storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[],pen:[],fee:function(){return 0;}};}return shopLists(K,p,s);},buy:function(item,qty){var r=buyItem(K,p,item,qty);say(r.text);return r;},sell:function(name){var r=sellItem(K,p,name);say(r.text);return r;},
+    sellPlants:function(){var r=sellItem(K,p,'plants');say(r.text);return r;},box:function(name,take){var r=boxItem(K,p,name,take);say(r.text);return r;},breed:function(a,b){var r=breedPair(K,p,a,b);say(r.text);return r;},send:p===K.kevin?sendCreature:null,onChange:draw},tab||'buy');   // the saves are Kevin's: only he sends
   draw();
 }
 // Trading between saves (mechanics 24): a cabinet creature goes to another saved game's cabinet. Everything that can
@@ -830,32 +832,90 @@ function sendCreature(id){
   }).catch(function(e){showErr('Send failed: '+e.message);draw();}).finally(function(){_kSending=false;});
 }
 function dirOf(d){return (d[1]<0?'N':d[1]>0?'S':'')+(d[0]<0?'W':d[0]>0?'E':'');}
-function kevinCycleTarget(){
-  var p=K.kevin,list=targetsNear(K,p,2);if(!list.length){p.target=null;kevinSay('nothing within 2 tiles');return;}
+// Acting for either seat: p is K.kevin or the guest in K.root; say is that player's bubble.
+function cycleTargetFor(p,say){
+  var list=targetsNear(K,p,2);if(!list.length){p.target=null;say('nothing within 2 tiles');return;}
   var i=list.findIndex(function(f){return f.id===p.target;});p.target=list[(i+1)%list.length].id;
 }
-function kevinThrow(){
-  var p=K.kevin,f=p.target?fauna.find(function(a){return a&&a.id===p.target;}):null;
+function throwFor(p,say,hint){
+  var f=p.target?fauna.find(function(a){return a&&a.id===p.target;}):null;
   if(f&&Math.max(Math.abs(f.x-p.x),Math.abs(f.y-p.y))>1)f=null;   // the target has moved off: the nearest adjacent creature instead
   if(!f){var near=targetsNear(K,p,1);if(near.length){f=near[0];p.target=f.id;}}
-  if(!f){kevinSay('no target: Tab or click a creature within 2 tiles');return;}
-  var r=throwStone(K,p,f,p.stone);var ev=r.caught?catchXP(K,p,r.creature,r.level):[];kevinSay(r.text+eventsText(ev));if(r.caught){p.target=null;}
+  if(!f){say('no target: '+hint);return;}
+  var r=throwStone(K,p,f,p.stone);var ev=r.caught?catchXP(K,p,r.creature,r.level):[];say(r.text+eventsText(ev));if(r.caught){p.target=null;}
 }
-function kevinName(){
-  var p=K.kevin;
-  if(!p.naming&&p.namingSpecies){ask('Your creature evolved into a new species. Name the species','').then(function(sn){if(sn===null||!K)return;kevinSay(nameCatch(K,K.kevin,sn).text);draw();});return;}
-  if(!p.naming){kevinSay('nothing to name');return;}
-  var c=p.party.concat(K.cabinet).find(function(x){return x.id===p.naming;}),nid=p.naming,K0=K;
-  ask('Name your '+(c?c.type:'catch')+(p.namingQueue&&p.namingQueue.length?' ('+(p.namingQueue.length+1)+' waiting)':'')+'; after a comma, a nickname for its species','').then(function(name){if(name===null||K!==K0)return;if(K.kevin.naming!==nid){kevinSay('that one left your hands before you named it; N names the next');draw();return;}var parts=name.split(',');kevinSay(nameCatch(K,K.kevin,parts[0],parts[1]&&parts[1].trim()).text);draw();});
+function nameFor(p,say,key){
+  var K0=K;
+  if(!p.naming&&p.namingSpecies){ask((p===K.kevin?'':(p.display||'Guest')+': ')+'your creature evolved into a new species. Name the species','').then(function(sn){if(sn===null||K!==K0)return;say(nameCatch(K,p,sn).text);draw();});return;}
+  if(!p.naming){say('nothing to name');return;}
+  var c=p.party.concat(K.cabinet).find(function(x){return x.id===p.naming;}),nid=p.naming;
+  ask((p===K.kevin?'':(p.display||'Guest')+': ')+'name your '+(c?c.type:'catch')+(p.namingQueue&&p.namingQueue.length?' ('+(p.namingQueue.length+1)+' waiting)':'')+'; after a comma, a nickname for its species','').then(function(name){if(name===null||K!==K0)return;if(p.naming!==nid){say('that one left your hands before you named it; '+key+' names the next');draw();return;}var parts=name.split(',');say(nameCatch(K,p,parts[0],parts[1]&&parts[1].trim()).text);draw();});
 }
+function kevinCycleTarget(){cycleTargetFor(K.kevin,kevinSay);}
+function kevinThrow(){throwFor(K.kevin,kevinSay,'Tab or click a creature within 2 tiles');}
+function kevinName(){nameFor(K.kevin,kevinSay,'N');}
+
+// ===== The guest in the second seat (mechanics 25): the arrows and the keys on the right of the keyboard =====
+// arrows move (held keys repeat), . next target, / throw, [ ] the stone, ' name, ; pick / read / the store,
+// , follow or recall, L then a digit a potion or a shard, K the pack. Kevin keeps WASD and his letters.
+var GKEYDIR={arrowup:[0,-1],arrowleft:[-1,0],arrowdown:[0,1],arrowright:[1,0]};
+var _gPressed={},_gPotion=false,_guestCarry=null;   // _guestCarry: the seated guest's name, so a new board or a load seats them again
+function guestSay(text){var g=K&&K.root;if(!g)return;g.msg=text;g.msgUntil=Date.now()+4000;}
+function guestMoved(){var g=K.root;if(!storeAt(K,g)&&panelOpen()&&_kPanelOwner===g){closePanel();_kPanelOwner=null;}}
+function guestHeld(){
+  if(!guestSeated(K))return;var dx=0,dy=0;
+  for(var q in GKEYDIR){if(_gPressed[q]!==undefined&&tick>_gPressed[q]+1){dx+=GKEYDIR[q][0];dy+=GKEYDIR[q][1];}}
+  dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy){tryStep(K,K.root,dx,dy);guestMoved();}
+}
+var STONES3=['Amber','Geode','Obsidian'];
+function guestKey(e){
+  if(!K||!guestSeated(K))return false;
+  if(e.ctrlKey||e.metaKey||e.altKey)return false;
+  var k=String(e.key||'').toLowerCase(),g=K.root;
+  if(_gPotion){
+    if(/^[1-9]$/.test(k)){e.preventDefault();_gPotion=false;var names=Object.keys(packSummary(g).potions),pn=names[+k-1];
+      if(!pn){guestSay('no potion '+k);draw();return true;}
+      if(POTIONS[pn]&&POTIONS[pn].kind==='creature'){if(!g.party.length){guestSay(pn+' wants a party creature');draw();return true;}
+        ask((g.display||'Guest')+': '+pn+' on which party creature? '+g.party.map(function(c){return c.name||c.type;}).join(', '),g.party[0].name||g.party[0].type).then(function(w){if(w===null||!guestSeated(K))return;var c=K.root.party.find(function(x){return (x.name||x.type).toLowerCase()===w.toLowerCase();});guestSay(c?usePotion(K,K.root,pn,c).text:'no "'+w+'" in the party');draw();});return true;}
+      if(pn==='Musk'){ask((g.display||'Guest')+': Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore').then(function(t){if(t===null||!guestSeated(K))return;guestSay(usePotion(K,K.root,'Musk',t).text);draw();});return true;}
+      var tgt=g.target?fauna.find(function(a){return a&&a.id===g.target;}):null;guestSay(usePotion(K,g,pn,tgt).text);draw();return true;}
+    if(tick-_gPotion>60){_gPotion=false;guestSay('potion: cancelled');}   // only the guest's own pause cancels it; Kevin's keys pass through
+  }
+  if(GKEYDIR[k]){
+    e.preventDefault();if(e.repeat)return true;_gPressed[k]=tick;
+    var dx=0,dy=0;for(var q in GKEYDIR){if(_gPressed[q]!==undefined){dx+=GKEYDIR[q][0];dy+=GKEYDIR[q][1];}}
+    dx=Math.sign(dx);dy=Math.sign(dy);if(!dx&&!dy)return true;
+    var r=tryStep(K,g,dx,dy);if(!r.ok&&r.why!=='winded')guestSay(r.why);guestMoved();draw();return true;
+  }
+  var act={
+    '.':function(){cycleTargetFor(g,guestSay);},
+    '/':function(){throwFor(g,guestSay,'. picks a creature within 2 tiles');},
+    '[':function(){g.stone=STONES3[(STONES3.indexOf(g.stone)+2)%3];guestSay(g.stone+' in hand ('+g.stones[g.stone.toLowerCase()]+')');},
+    ']':function(){g.stone=STONES3[(STONES3.indexOf(g.stone)+1)%3];guestSay(g.stone+' in hand ('+g.stones[g.stone.toLowerCase()]+')');},
+    "'":function(){nameFor(g,guestSay,"'");},
+    ';':function(){if(storeAt(K,g)){openStore('buy',g);return;}var pk=pickPlant(K,g);guestSay(pk.ok?pk.text:interact(K,g).text);},
+    ',':function(){guestSay((g.follower?recall(K,g):follow(K,g,null)).text);},
+    'l':function(){var ps=packSummary(g),pl=Object.keys(ps.potions);if(!pl.length){guestSay('no potions in the pack');return;}_gPotion=tick||1;guestSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));},
+    'k':function(){var pi=packSummary(g);guestSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):'')+(pi.gear.length?'; worn: '+pi.gear.join(', '):''));}
+  }[k];
+  if(act){e.preventDefault();if(e.repeat)return true;act();draw();return true;}
+  return false;
+}
+// The guest button in the HUD: sit down (refused while Root plays) or get up.
+function toggleGuest(){
+  if(!K)return;
+  if(guestSeated(K)){var gp=K.root,r=unseatGuest(K);_gPressed={};_gPotion=false;_guestCarry=null;if(_kPanelOwner===gp&&panelOpen()){closePanel();_kPanelOwner=null;}kevinSay(r.text);draw();return;}
+  ask('Who joins? A name for the second player','Guest').then(function(n){if(n===null||!K)return;var r=seatGuest(K,rootPlaying(),n);if(r.ok){_guestCarry=K.root.display;guestSay(r.text);}else kevinSay(r.text);draw();});
+}
+document.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('.kh-guest');if(b){e.preventDefault();toggleGuest();}});
 canvas.addEventListener('click',function(ev){
   if(!K||!K.kevin||ev.shiftKey)return;
   var t=screenToTile(ev.clientX,ev.clientY);if(!inb(t.x,t.y))return;
   var f=targetsNear(K,K.kevin,2).find(function(a){return a.x===t.x&&a.y===t.y;});
   if(f){K.kevin.target=f.id;draw();}
 });
-window.addEventListener('keyup',function(e){delete _kPressed[String(e.key||'').toLowerCase()];});
-window.addEventListener('blur',function(){_kPressed={};});
+window.addEventListener('keyup',function(e){var k=String(e.key||'').toLowerCase();delete _kPressed[k];delete _gPressed[k];});
+window.addEventListener('blur',function(){_kPressed={};_gPressed={};});
 // F9 outside a board too: load a saved game onto a plain page.
 window.addEventListener('keydown',function(e){if(!K&&e.key==='F9'&&!/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'')){e.preventDefault();_kMenu().toggle();}});
 
@@ -889,12 +949,14 @@ function loadGame(slot){
 // A board arriving from the Worker or from a save becomes the page's game.
 function adoptBoard(board){
   abandonBuild();followId=null;godCancelMark(null);
-  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);initStores(K);closePanel();if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_kBait=null;_kPotion=false;_kOnStore=false;_kAutoAt=tick;
+  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);initStores(K);closePanel();if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_gPressed={};_gPotion=false;_kBait=null;_kPotion=false;_kOnStore=false;_kAutoAt=tick;
   setHandTool('none');document.body.classList.add('ketchem');
   placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
   speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
   var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
   closeAsk();boardAdopted(K);   // Root, if it is playing, stands in the new board at once
+  if(guestSeated(K))_guestCarry=K.root.display;
+  else if(_guestCarry&&!rootPlaying()){var rs=seatGuest(K,false,_guestCarry);if(rs.ok)guestSay(rs.text);}   // the guest is still at the keyboard: they sit down in the new board or the loaded game
   running=!_kHold;draw();refreshUndoBtn();
 }
 var _kHold=false;   // debug only (window.__wb.ketchem.pause): a held world lets a rehearsal compare a save with its load exactly
@@ -1374,8 +1436,8 @@ function kevinHeld(){
   dx=Math.sign(dx);dy=Math.sign(dy);if(dx||dy){tryStep(K,K.kevin,dx,dy);kevinMoved();}
 }
 function kevinNews(){if(!K)return;var n=drainNews(K,'kevin');if(n.length)kevinSay(n[n.length-1]);}
-function growthNews(){var ev=growthTick(K);for(var i=0;i<ev.length;i++){var e=ev[i],owner=(K.kevin&&K.kevin.party.indexOf(e.creature)>=0)?'kevin':'root';var line=(e.creature.name||e.creature.type)+(e.kind==='grow'?' reaches growth level '+e.level:' EVOLVED from '+e.from+' into '+e.to+(e.named?'':(owner==='kevin'?': name the species (N)':': name the species (name)')));if(owner==='kevin')kevinSay(line);else pushNews(K,'root',line);}}
-function loop(){try{if(running){step();if(K){encounterTick(K);marketTick(K);growthNews();kevinNews();if(K.kevin.moved){K.kevin.moved=false;_kCamAt=null;}}visitTick();kevinHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+function growthNews(){var ev=growthTick(K);for(var i=0;i<ev.length;i++){var e=ev[i],owner=(K.kevin&&K.kevin.party.indexOf(e.creature)>=0)?'kevin':((K.root&&K.root.id)||'root');var line=(e.creature.name||e.creature.type)+(e.kind==='grow'?' reaches growth level '+e.level:' EVOLVED from '+e.from+' into '+e.to+(e.named?'':(owner==='kevin'?': name the species (N)':guestSeated(K)?": name the species (')":': name the species (name)')));if(owner==='kevin')kevinSay(line);else pushNews(K,owner,line);}}
+function loop(){try{if(running){step();if(K){encounterTick(K);marketTick(K);growthNews();kevinNews();if(K.kevin.moved){K.kevin.moved=false;_kCamAt=null;}if(guestSeated(K)){var gn=drainNews(K,K.root.id);if(gn.length)guestSay(gn[gn.length-1]);if(K.root.moved){K.root.moved=false;guestMoved();}}}visitTick();kevinHeld();guestHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){
@@ -1427,7 +1489,7 @@ if(typeof location!=='undefined'&&/[?&]debug(\b|=)/.test(location.search)){
       step:function(dx,dy){if(!K||!K.kevin)return null;var r=tryStep(K,K.kevin,dx,dy);draw();return r;},interact:function(){return K&&K.kevin?interact(K,K.kevin):null;},
       // saves (step 5): the record as the page would write it, a save without the prompt, a load by slot or from a record
       saveJSON:function(){return K?exportSave(buildSave(K,K.slot||String(K.seed))):null;},save:function(slot){if(K){K.slot=slot||K.slot||String(K.seed);}return saveGame();},
-      load:loadGame,loadData:function(data){adoptBoard(applySave(data));},slots:listSlots,pause:function(on){_kHold=!!on;running=!_kHold;if(running)loop();}}};
+      load:loadGame,loadData:function(data){adoptBoard(applySave(data));},guest:function(on,name){if(!K)return null;var r=on?seatGuest(K,rootPlaying(),name):unseatGuest(K);draw();return r;},slots:listSlots,pause:function(on){_kHold=!!on;running=!_kHold;if(running)loop();}}};
 }
 
 // ===== Snapshot / restore (headless A/B: warm the slow terrain once, replay ecology many times) =====

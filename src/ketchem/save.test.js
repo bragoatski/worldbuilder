@@ -143,3 +143,15 @@ describe('trading: names and ids in the other save (critic 2026-10-26)', () => {
     expect(S.addToRecordCabinet(other, c, 'mine').name).toBe('Rex 3');
   });
 });
+
+describe('the second seat survives a save (25)', () => {
+  it('a seated guest stays seated with their name; the record Root left waiting comes back as a stash', async () => {
+    const Gst = await import('./guest.js'); const E = await import('./encounter.js');
+    K.root = E.initPlayer(C.newPlayer(K.starts[1].x, K.starts[1].y), 'root'); K.root.wallet = 77; K.root.away = true;
+    Gst.seatGuest(K, false, 'Sam'); K.root.wallet = 12;
+    const K2 = S.importSave(S.exportSave(S.buildSave(K, 'seat')));
+    expect(Gst.guestSeated(K2)).toBe(true); expect(K2.root.display).toBe('Sam'); expect(K2.root.wallet).toBe(12);
+    expect(K2.rootStash.wallet).toBe(77); expect(K2.rootStash.away).toBe(true);
+    Gst.unseatGuest(K2); expect(K2.root.wallet).toBe(77); expect(K2.guestStash.display).toBe('Sam');
+  });
+});

@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-26 (l) - Ketch'em guest in the second seat - DONE, GATE GREEN
+Owner ask: "build the next step", repeated after the remaining items were named as the owner's calls. Built the form of "a second human player" that needs no server: a guest at the same keyboard takes the second seat (the character Root plays) whenever Root is not playing. Mechanics section 25. **Still the owner's calls:** networked play for a guest on another device (hosting), Root on the public site (model calls paid for strangers), the playtest. **Not deployed.**
+
+What the game does now: "+ guest" in Kevin's bar asks a name; the guest appears on the second doorstep as a green character with their own bar (top right) and party row (bottom right); they play on the arrows and the right-hand keys (. target, / throw, [ ] stone, ' name, ; pick / store, , follow, L potion, K pack) while Kevin keeps WASD; their questions queue behind Kevin's in the same bar. Root's belongings wait apart while a guest plays and come back when Root is called; Call Root says the seat is taken while a guest holds it; saves keep the guest seated; a guest still at the keyboard sits down in a new board or a loaded game.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 256/256 (new `src/ketchem/guest.test.js`, 7), build green. Critic: 4 blockers, all from one design flaw (Root and the guest shared a player id, so a bait, a growl, a payload or news followed the seat to the wrong player; a load or an arrival could merge the two records) -> the guest has its own id and owners are found across the seat and both waiting records; plus the questions queue instead of cancelling, the panel owner, the guest carried to a new board, the guest's own key hints, names unique across the waiting records. Rehearsals: the guest 19/19 (including the bar and party row positions, caught from a screenshot); finishing pass and item pass with Root unchanged; adversary 0 findings; fuzz seed 131, 0 violations, 0 page errors. Screenshots: `docs/04 Handoffs/img/2026-10-26-ketchem-guest/`.
+
 ## Session 2026-10-26 (k) - Ketch'em trading between saves - DONE, GATE GREEN
 Owner ask: "once you are done start on the next step". The owner's build order ended with the item pass, so the next step came from the campaign handoff's "not in this campaign" list: trading between saves is the one with no hosting or running cost. **A second human player and Root on the public site remain, and both are the owner's call** (hosting, and model calls paid for strangers). Mechanics section 24. **Not deployed.**
 

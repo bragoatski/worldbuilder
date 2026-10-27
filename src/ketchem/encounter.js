@@ -42,7 +42,7 @@ export function initPlayer(p, id) {
 }
 function aw(K, f) { return K.aw[f.id] || (K.aw[f.id] = { state: 'calm', until: 0, enc: {} }); }
 // Players present in the world: Kevin, and Root while it is inside (K.root stays between visits, marked away).
-function players(K) { const out = []; if (K.kevin) out.push(['kevin', K.kevin]); if (K.root && K.root.party && !K.root.away) out.push(['root', K.root]); return out; }
+function players(K) { const out = []; if (K.kevin) out.push(['kevin', K.kevin]); if (K.root && K.root.party && !K.root.away) out.push([K.root.id || 'root', K.root]); return out; }   // the second seat is Root ('root') or a guest ('guest')
 function dist(a, b) { return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)); }
 export function fx(K, kind, o) { K.fx.push({ kind, start: tick, ...o }); K.fxCount = K.fxCount || {}; K.fxCount[kind] = (K.fxCount[kind] || 0) + 1; }
 // News for a player from tick-driven events (an attack that came when the pulses ran out): the page shows Kevin's as
@@ -222,7 +222,8 @@ function baitTick(K) {
     }
   }
 }
-function playerById(K, id) { return id === 'kevin' ? K.kevin : K.root; }
+// Whoever owns an id, seated or waiting: a bait, a growl or a payload stays with its own player across a seat swap.
+function playerById(K, id) { return [K.kevin, K.root, K.rootStash, K.guestStash].find(q => q && (q.id || 'root') === id) || null; }
 
 // ---------- awareness (6) and the predator's warning (11) ----------
 function pulsesFor(L, rng) { return L >= 10 ? 1 : L >= 8 ? 1 + (rng() < 0.5 ? 1 : 0) : L >= 7 ? 2 + (rng() < 0.5 ? 1 : 0) : L >= 6 ? 3 + (rng() < 0.5 ? 1 : 0) : 4 + (rng() < 0.5 ? 1 : 0); }
@@ -281,7 +282,7 @@ function awarenessTick(K) {
     if (st.state === 'growl') {
       const tp = playerById(K, st.target) || p, tab = abilitiesOfPlayer(tp); const d = dist(tp, f);
       const fol = followerOf(tp); const backedDown = fol && levelOf(fol, populationOf(fol, fauna, speciesKey)) > facts.L;
-      if (!hungry(f) || onStore(K, tp) || (tab.Dread >= 1) || backedDown || guarded(f, tab) || (K.root && tp === K.root && K.root.away) || hasEffect(tp, 'Smoke')) { st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; continue; }
+      if (!hungry(f) || onStore(K, tp) || (tab.Dread >= 1) || backedDown || guarded(f, tab) || tp.away || hasEffect(tp, 'Smoke')) { st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; continue; }
       if (K.decoy && dist(K.decoy, f) <= 8) { if (tick >= st.nextPulse) { stepToward(f, K.decoy); st.nextPulse = tick + 10; } continue; }   // a decoy's scent is chased instead
       if (d > 3) {   // the player left its reach
         if (st.stalker && (st.pursueUntil || (st.pursueUntil = tick + 60)) > tick) { if ((tick - (st.pursueAt || 0)) >= 16 && stalkerStep(K, f, tp)) st.pursueAt = tick; if (tick >= st.nextPulse) { fx(K, 'pulse', { id: f.id, x: f.x, y: f.y, len: 10 }); st.nextPulse = tick + 10; } continue; }
@@ -370,7 +371,7 @@ export function throwStone(K, p, f, stone = p.stone) {
     const k = fauna.indexOf(f); if (k >= 0) fauna.splice(k, 1);
     f.held = false; f.caughtAt = tick; f.by = p.id;
     // a staked creature is recovered if its hunter is the one caught; a set-down one too (the meal never ended)
-    for (const b of K.baits.filter(b => b.creatureId === f.id && (b.kind === 'stake' || b.kind === 'meat'))) { if (b.payload) { const owner = playerById(K, b.by); if (owner) { giveBack(K, owner, b.payload); if (owner !== p) news(K, owner.id, '"' + (b.payload.name || b.payload.type) + '" is back from your bait: ' + p.id + ' caught the hunter'); } } removeBait(K, b); }
+    for (const b of K.baits.filter(b => b.creatureId === f.id && (b.kind === 'stake' || b.kind === 'meat'))) { if (b.payload) { const owner = playerById(K, b.by); if (owner) { giveBack(K, owner, b.payload); if (owner !== p) news(K, owner.id, '"' + (b.payload.name || b.payload.type) + '" is back from your bait: ' + (p.display || p.id) + ' caught the hunter'); } } removeBait(K, b); }
     delete K.aw[f.id];
     for (const b of K.baits.filter(b => b.creatureId === f.id)) { b.creatureId = null; b.until = tick + BAIT_ROT; }   // a plant bait it was eating waits for another
     const where = p.party.length < PARTY_CAP ? 'party' : 'cabinet';
@@ -385,7 +386,7 @@ export function throwStone(K, p, f, stone = p.stone) {
   let eaten = '';
   if (st.baitId) {   // a failed throw on a feeding creature: a plant bait is freed; a set-down or staked creature is eaten now (sec. 7)
     for (const b of K.baits.filter(b => b.creatureId === f.id)) {
-      if ((b.kind === 'meat' || b.kind === 'stake') && b.payload) { f.energy = Math.min(f.maxEnergy, f.energy + 40); eaten = '; "' + (b.payload.name || b.payload.type) + '" is eaten'; fx(K, 'eaten', { x: b.x, y: b.y, len: 8 }); if (b.by !== p.id) news(K, b.by, '"' + (b.payload.name || b.payload.type) + '" was eaten at your bait: ' + p.id + ' missed a throw at the ' + f.type); removeBait(K, b); }
+      if ((b.kind === 'meat' || b.kind === 'stake') && b.payload) { f.energy = Math.min(f.maxEnergy, f.energy + 40); eaten = '; "' + (b.payload.name || b.payload.type) + '" is eaten'; fx(K, 'eaten', { x: b.x, y: b.y, len: 8 }); if (b.by !== p.id) news(K, b.by, '"' + (b.payload.name || b.payload.type) + '" was eaten at your bait: ' + (p.display || p.id) + ' missed a throw at the ' + f.type); removeBait(K, b); }
       else { b.creatureId = null; b.until = tick + BAIT_ROT; }
     }
     releaseHold(K, f);
@@ -459,7 +460,7 @@ export function nameCatch(K, p, raw, speciesNick) {
   pruneNaming(K, p);
   const c = p.naming ? (p.party.find(x => x.id === p.naming) || K.cabinet.find(x => x.id === p.naming)) : null;
   if (!c) return { ok: false, text: 'nothing to name' };
-  const taken = [K.kevin, K.root].flatMap(q => (q && q.party) || []).concat(K.cabinet || [], (K.baits || []).map(b => b.payload).filter(Boolean)).find(x => x !== c && x.name && x.name.toLowerCase() === name.toLowerCase());
+  const taken = [K.kevin, K.root, K.rootStash, K.guestStash].flatMap(q => (q && q.party) || []).concat(K.cabinet || [], (K.baits || []).map(b => b.payload).filter(Boolean)).find(x => x !== c && x.name && x.name.toLowerCase() === name.toLowerCase());
   if (taken) return { ok: false, text: 'there is a "' + taken.name + '" already; names are one to a creature, so pick another' };   // the verbs, the cabinet and give find creatures by name
   c.name = name; p.naming = (p.namingQueue || []).shift() || null;   // the next unnamed one, if any, takes the prompt
   const e = almanacEntry(K, c);

@@ -18,6 +18,7 @@ import { initPlayer, initEncounters, creatureTag, targetsNear, throwStone, place
 import { initStores, shopText, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacText, packSummary, creatureCard } from './ketchem/market.js';
 import { catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { STRENGTH } from './ketchem/rules.js';
+import { unseatGuest } from './ketchem/guest.js';
 
 export const SIGHT = 4;            // Root sees a (2*SIGHT+1)^2 square around itself, nothing more
 export const MAX_STRIDE = 3;       // tiles per walk call
@@ -799,6 +800,7 @@ export function bootVisit(hooks) {
       // The game mode needs a board under both players: build one first if the page has none, then call Root.
       if (MODES[mode].board && hooks.ketchem) {
         const K = hooks.ketchem.board();
+        if (K && K.root && K.root.human && !K.root.away) { showPanel(); logLine('s', 'The second seat is taken by ' + (K.root.display || 'a guest') + ': press "' + (K.root.display || 'Guest') + ' leaves" first.'); return; }
         if (!K) {
           showPanel(); logLine('s', 'Building a ' + setting + ' board first.');
           hooks.ketchem.start(setting, seed, ok => { if (ok) summon(mode, model); else logLine('s', 'The board did not build.'); });
@@ -910,6 +912,8 @@ async function arriveHere(mode) {
     const K = board();
     if (!K) return null;
     if (worldKey() !== V.key) { V.key = worldKey(); V.st = (await loadState(V.key)).st; V.st.plantsThisVisit = 0; }   // the board that landed is the world now
+    if (K.root && K.root.human && !K.root.away) return null;   // a guest holds the second seat (checked after the last wait, so a guest seated meanwhile counts); the relay reads this as not ready
+    if (K.root && K.root.id && K.root.id !== 'root') { K.guestStash = K.root; K.root = K.rootStash || null; delete K.rootStash; }   // never take over a guest's record
     const mine = K.starts[1], other = K.starts[0];
     V.st.x = mine.x; V.st.y = mine.y; V.st.boat = false;
     revealSquare(K, mine.x, mine.y, SIGHT_HALF);
@@ -950,6 +954,7 @@ export function rootPlaying() { return !!(V && V.here && V.mode === 'ketchem'); 
 // where the save left it or on its own doorstep, instead of waiting away until its next action.
 export function boardAdopted(K) {
   if (!rootPlaying() || !K || !K.starts) return;
+  if (K.root && K.root.human && !K.root.away) { const g = K.root.display || 'The guest'; unseatGuest(K); logLine('s', g + ' got up: Root is playing in this board.'); }   // a loaded game with a guest seated, while Root plays
   const fresh = !K.root || !K.root.party || !K.root.loaded;
   if (!K.root || !K.root.party) { const s = K.starts[1]; K.root = initPlayer(newPlayer(s.x, s.y), 'root'); }
   else if (fresh) { const s = K.starts[1]; Object.assign(K.root, { x: s.x, y: s.y, boat: false }); }
