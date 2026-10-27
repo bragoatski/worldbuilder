@@ -93,3 +93,11 @@ describe('Root and a guest never share a player (critic 2026-10-26)', () => {
     expect(E.nameCatch(K, g, 'Ash').ok).toBe(false);
   });
 });
+
+describe('the guest link leaves nothing behind (critic 2026-10-27)', () => {
+  it('a guest who played from another screen sits down at this keyboard next time', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); K.root.remote = '482913';
+    Gst.unseatGuest(K); expect(K.guestStash.remote).toBeUndefined();
+    Gst.seatGuest(K, false, 'Sam'); expect(K.root.remote).toBeUndefined();
+  });
+});

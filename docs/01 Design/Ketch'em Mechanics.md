@@ -1250,3 +1250,33 @@ Root on the public site (model calls paid for strangers). Readings, overturnable
   a green sight square. Their questions use the same bar as Kevin's; a second question waits for the first.
 - Not built for the guest: bait (B), give (G), feed (T) and breeding (the PEN tab works for them at a store; G and T
   are Kevin's); sending to another save (the saves are Kevin's); a gamepad.
+
+## 26. The guest link: the guest seat from another screen
+
+Built 2026-10-27 (owner ask "continue next step"). A guest plays the second seat (sec. 25) from another screen: a
+second window on this machine, or, once the owner opens the link to them, a phone or laptop on the owner's private
+network. Nothing is hosted and nothing is paid for: Kevin's page is the game, and `visit/guest-link.mjs` is a mailbox
+between the two pages. Readings, overturnable.
+- Kevin's bar shows "+ guest on another screen" while the link is running: the dev server starts it beside Root's relay
+  (or `npm run guest-link` on its own). It asks the guest's
+  name, seats them, and shows the address and a six-digit join code. The guest opens the address, types the code,
+  and sees a live picture of the 33 x 33 tiles around them (the same drawing, fog and all, about five a second),
+  their coins, stones, pack and party, and their last message.
+- The guest plays with their own keyboard (the same keys as sec. 25) or with buttons on a phone: a d-pad and Target,
+  Throw, Stone, Name, Use, Follow, Potion, Pack. Questions (a name, which creature a potion is for) appear on the
+  guest's screen. On a store tile the guest sees what it sells and types `buy Geode 2`, `sell Moss`, `sell plant 2`,
+  `box Moss`, `take Moss` or `breed Moss, Fern`. While a guest plays from another screen, the arrows on Kevin's
+  keyboard are Kevin's again.
+- When the guest leaves (the chip), the link closes and their page asks for a code again. A load or a new board keeps
+  the same guest on the other screen; if Root holds the seat in the loaded game, the link closes.
+- Safety, by design: the link has two ports. The guest port (7797) serves the guest's page behind the join code; twenty
+  wrong codes in a minute lock an address out for a minute, and every refusal reads the same. The host port (7798)
+  is bound to this machine only, refuses other Host headers, other pages' requests and anything that is not JSON, and
+  needs the session key from opening, so a second tab cannot take the link over. Exposing the guest port can never
+  expose the host side.
+- Opening it to other devices is the owner's call and needs nothing installed: with Tailscale already running, start
+  the dev server from PowerShell with `$env:GUEST_HOST = (tailscale ip -4); npm run dev` (the link it starts binds the
+  guest port to this machine's Tailscale address; a link already running must be stopped first). Only devices on the owner's tailnet can reach that address; the host port stays on this machine.
+  Kevin's message then shows that address. Without it, the link answers this machine only.
+- Not built: sound on the guest's screen, the Almanac and the full store panel for a remote guest (the text and the
+  command line stand in), bait, give and feed for the guest (as in sec. 25), several guests at once.

@@ -105,6 +105,8 @@ function partyFor(p, slot) {
   slot.cards = partyCards(p); slot.cheap = cs; slot.at = tick; return slot.cards;
 }
 
+let remoteOk = false;   // a guest link server answers: the chip offers a guest on another screen
+export function setRemoteOk(v) { remoteOk = !!v; lastHud = ''; }
 let hudEl = null, partyEl = null, hud2El = null, party2El = null, lastHud = '', lastParty = '', lastRoot = '', lastHud2 = '', lastParty2 = '';
 const kevinSlot = {}, rootSlot = {};
 function css() {
@@ -156,7 +158,8 @@ export function hudTick(K) {
   ensure();
   const p = K.kevin;
   const g = K.root && K.root.human && !K.root.away ? K.root : null;
-  const chip = '<button type="button" class="kh-guest' + (g ? ' on' : '') + '" title="' + (g ? 'The guest gets up; what they carry waits' : 'A second player on this keyboard: arrows, . / [ ] \' ; , L K') + '">' + (g ? esc(g.display || 'Guest') + ' leaves' : '+ guest') + '</button>';
+  const chip = '<button type="button" class="kh-guest' + (g ? ' on' : '') + '" title="' + (g ? 'The guest gets up; what they carry waits' : 'A second player on this keyboard: arrows, . / [ ] \' ; , L K') + '">' + (g ? esc(g.display || 'Guest') + (g.remote ? ' (code ' + esc(g.remote) + ')' : '') + ' leaves' : '+ guest') + '</button>' +
+    (!g && remoteOk ? '<button type="button" class="kh-guest" data-remote="1" title="A second player on another screen, through the guest link">+ guest on another screen</button>' : '');
   const hs = hudSig(p) + chip; if (hs !== lastHud) { lastHud = hs; hudEl.innerHTML = hudHTML(p, chip); hudEl.hidden = false; const sb = hudEl.querySelector('.kh-sound'); if (sb) sb.addEventListener('click', () => { toggleSound(); hudTick(K); }); }
   soundTick(K);
   arcs(hudEl, p);

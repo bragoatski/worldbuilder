@@ -10,7 +10,10 @@ function visitRelay() {
     configureServer() {
       if (process.env.VITEST) return;   // tests run Vite in serve mode too; a relay would keep them from exiting
       const relay = spawn(process.execPath, ['visit/relay.mjs'], { stdio: 'inherit' });
-      process.on('exit', () => relay.kill());
+      // The guest link (Ketch'em mechanics 26) beside it: both its ports on 127.0.0.1 unless the owner sets GUEST_HOST,
+      // so the page's "+ guest on another screen" works without a second command. A link already running bows out.
+      const link = spawn(process.execPath, ['visit/guest-link.mjs'], { stdio: 'inherit' });
+      process.on('exit', () => { relay.kill(); link.kill(); });
     },
   };
 }

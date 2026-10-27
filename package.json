@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "measure": "node scripts/harness.mjs",
+    "guest-link": "node visit/guest-link.mjs",
     "lint": "eslint ."
   },
   "devDependencies": {

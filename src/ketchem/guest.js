@@ -28,7 +28,7 @@ export function seatGuest(K, rootPlaying = false, name = 'Guest') {
 // The guest gets up: their record waits for them, and Root's comes back to the seat (away until Root is called in).
 export function unseatGuest(K) {
   if (!guestSeated(K)) return { ok: false, text: 'no guest is playing' };
-  const g = K.root; g.away = true; g.follower = null; g.followerAt = null;
+  const g = K.root; g.away = true; g.follower = null; g.followerAt = null; delete g.remote;   // whoever sits next plays at this keyboard unless a link seats them
   K.guestStash = g;
   K.root = K.rootStash || null; delete K.rootStash;
   if (K.root) K.root.away = true;
