@@ -28,7 +28,7 @@ import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
 import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
-import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacLists, packSummary } from './ketchem/market.js';
+import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacLists, packSummary, POTIONS } from './ketchem/market.js';
 import { storePanel, almanacPanel, closePanel, panelOpen } from './ketchem/panel.js';
 import { hudTick } from './ketchem/hud.js';
 import { ask, closeAsk } from './ketchem/ask.js';
@@ -735,7 +735,10 @@ function ketchemKey(e){
     if(/^[1-9]$/.test(k)){var names=Object.keys(packSummary(p).potions);var pn=names[+k-1];if(!pn){kevinSay('no potion '+k);draw();return true;}
       var tgt=p.target?fauna.find(function(a){return a&&a.id===p.target;}):null;
       if(pn==='Musk'){ask('Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore').then(function(t){if(t===null||!K)return;kevinSay(usePotion(K,K.kevin,'Musk',t).text);draw();});return true;}
-      var rp=usePotion(K,p,pn,pn==='Tonic'?(p.party[0]||null):tgt);kevinSay(rp.text);}
+      if(POTIONS[pn]&&POTIONS[pn].kind==='creature'){   // Tonic and the shards: which party creature?
+        if(!p.party.length){kevinSay(pn+' wants a party creature');draw();return true;}
+        ask(pn+' on which party creature? '+p.party.map(function(c){return c.name||c.type;}).join(', '),p.party[0].name||p.party[0].type).then(function(w){if(w===null||!K)return;var c=K.kevin.party.find(function(x){return (x.name||x.type).toLowerCase()===w.toLowerCase();});kevinSay(c?usePotion(K,K.kevin,pn,c).text:'no "'+w+'" in the party');draw();});return true;}
+      var rp=usePotion(K,p,pn,tgt);kevinSay(rp.text);}
     else kevinSay('potion: cancelled');
     draw();return true;
   }
@@ -760,7 +763,7 @@ function ketchemKey(e){
   if(k==='e'){e.preventDefault();if(storeAt(K,p)){openStore();return true;}var pk=pickPlant(K,p);kevinSay(pk.ok?pk.text:interact(K,p).text);draw();return true;}
   if(k==='c'){e.preventDefault();if(storeAt(K,p))openStore('box');else kevinSay('the cabinet is at a store');draw();return true;}
   if(k==='p'){e.preventDefault();var ps=packSummary(p);var pl=Object.keys(ps.potions);if(!pl.length){kevinSay('no potions in the pack');draw();return true;}_kPotion=true;kevinSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));draw();return true;}
-  if(k==='i'){e.preventDefault();var pi=packSummary(p);kevinSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):''));draw();return true;}
+  if(k==='i'){e.preventDefault();var pi=packSummary(p);kevinSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):'')+(pi.gear.length?'; worn: '+pi.gear.join(', '):''));draw();return true;}
   if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else almanacPanel(almanacLists(K,p));return true;}
   if(k==='g'){e.preventDefault();ask('Give Root what? coins N, Amber N, a potion name, plant, or a party creature name','coins 10').then(function(gw){if(gw===null||!K)return;var gm=/^(.*?)(?:\s+(\d+))?$/.exec(gw);kevinSay(giveItem(K,K.kevin,gm[1],gm[2]?+gm[2]:undefined).text);draw();});return true;}
   if(k==='o'){e.preventDefault();kevinSay('sound '+(toggleSound()?'on':'off'));draw();return true;}

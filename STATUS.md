@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-26 (j) - Ketch'em item pass (build order step 7) - DONE, GATE GREEN
+Owner ask: "build the next step". The owner's Ketch'em build order (`docs/01 Design/Ketch'em.md`) ends at "7. Items"; the design had left items "to be designed with the item pass". Built as readings in the new mechanics section 23, all overturnable: **shards** (eight, one per elemental type, one use: a party creature takes one step toward that type and can evolve; priced 30 to 100 by the type's rarity; two per store) and **gear** (bought once, worn for good, kept through a knock-down: Satchel 120 = +5 pack slots, Trail Boots 180 = stride +1 on open ground, Lucky Charm 300 = odds +5 with Amber and Geode). Owner's calls flagged in sec. 23: the kinds and numbers, and whether worn gear survives a knock-down (read as worn, not carried). **Not deployed.**
+
+What the game does now: the store's BUY tab lists the gear (it reads "worn" once bought) and its two shards; P on a shard or a Tonic asks which party creature; enough shards turn a creature's type and cross a species line, which is an evolution with a linked Almanac entry and a species to name; a creature a shard has shaped (and its bred young) sells without the scarcity bonus, so a 45-coin shard is not a 600-coin sale. Root buys and uses both through the door.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 245/245 (new `src/ketchem/items.test.js`, 14), build green. Critic: 1 blocker (the Satchel's slots did not count for picking plants), 1 economy hole (the shard-made "last of its kind" price), Root's tool text; all taken. Rehearsals with Root on a scratch relay: the item pass 11/11, the finishing pass 16/16; adversary 0 findings; fuzz seed 91, 1,200 actions, 0 violations, 0 page errors. Screenshots: `docs/04 Handoffs/img/2026-10-26-ketchem-items/`.
+
 ## Session 2026-10-26 (i) - Ketch'em finishing pass - DONE, GATE GREEN; nothing open but the owner playtest
 Owner ask: "finish the rest of the steps". The ten steps were built and deployed; this closes what step 10 and the adversarial run left open (mechanics note "Finishing pass 2026-10-26"). Not built, by the handoff's sec. 7: a second human player, Root on the public site, trading between saves, items beyond the potion table. Next: **the owner playtest** (session (g) below has the 15-minute run). **Not deployed yet**: the live site is the adversarial-run build until the owner says deploy.
 

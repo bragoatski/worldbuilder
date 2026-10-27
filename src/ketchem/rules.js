@@ -77,12 +77,15 @@ export function rarity(N, typ) {
   const p = populationRarity(N), t = typeRarity(typ);
   return { N, reading: p.reading, levelBonus: p.levelBonus, populationF: p.priceF, cls: t.cls, typeF: t.priceF, priceF: p.priceF * t.priceF };
 }
-// N for a creature: living members of its species, by the sim's species key (pass sim.speciesKey).
+// N for a creature: living members of its species, by the sim's species key (pass sim.speciesKey). A creature a
+// shard has shaped (23) reads as established at least: a species made in the hand with coins is not a wild rarity, so
+// it earns no scarcity bonus to its level or its price (a 45-coin shard must not turn 67 coins into 638).
+export const SHAPED_N = 13;
 export function populationOf(f, list, keyFn) {
   const k = keyFn(f);
   let n = 0;
   for (const g of list) if (g && keyFn(g) === k) n++;
-  return n;
+  return f && f.shaped ? Math.max(n, SHAPED_N) : n;
 }
 
 // Section 1: age and energy words follow the sim's look code (visit.js creatureCode, including its fallbacks).
@@ -194,7 +197,7 @@ export const STONES = {
   Geode:    { price: 25,  odds: [95, 95, 95, 80, 65, 50, 40, 30, 20, 10] },
   Obsidian: { price: 150, odds: null },
 };
-export const ODDS_MOD = { calm: 15, plantBait: 20, meatBait: 25, alert: -10, growl: -10, wary: -30, lureIII: 10, corral: 10 };
+export const ODDS_MOD = { calm: 15, plantBait: 20, meatBait: 25, alert: -10, growl: -10, wary: -30, lureIII: 10, corral: 10, charm: 5 };
 export function oddsOf(stone, L, m = {}) {
   if (!Object.hasOwn(STONES, stone)) throw new Error('ketchem: unknown stone ' + stone);
   const s = STONES[stone];
@@ -211,6 +214,7 @@ export function oddsOf(stone, L, m = {}) {
   if (m.bait === 'meat') o += ODDS_MOD.meatBait;
   if (m.lureIII) o += ODDS_MOD.lureIII;
   if (m.corral) o += ODDS_MOD.corral;
+  if (m.charm) o += ODDS_MOD.charm;   // the Lucky Charm (23): after the early returns, so Obsidian stays sure and Amber on L10 stays 0
   return clamp(o, 1, 99);
 }
 

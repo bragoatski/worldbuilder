@@ -30,7 +30,7 @@ function ticks(K, n) { for (let k = 0; k < n; k++) { sim.step(); E.encounterTick
 describe('stock and restock (21)', () => {
   it('every store has the first six potions and two of the last six; Survey and Mirror each sit in one store', () => {
     const K = world();
-    for (const s of K.stores) { for (const n of M.POTION_NAMES.slice(0, 6)) expect(s.stock.potions[n]).toBe(M.RESTOCK_COUNT); expect(Object.keys(s.stock.potions)).toHaveLength(8); }
+    for (const s of K.stores) { for (const n of M.POTION_NAMES.slice(0, 6)) expect(s.stock.potions[n]).toBe(M.RESTOCK_COUNT); expect(Object.keys(s.stock.potions)).toHaveLength(10); expect(Object.keys(s.stock.potions).filter(n => / Shard$/.test(n))).toHaveLength(2); }
     expect(K.stores.filter(s => s.stock.potions.Survey).length).toBe(1); expect(K.stores.filter(s => s.stock.potions.Mirror).length).toBe(1);
   });
   it('restocks to 3 of each 2,000 ticks after the last restock', () => {

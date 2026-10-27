@@ -1054,7 +1054,7 @@ async function pump(hooks) {
           K.root.away = false;
           // a knock-down moved Root's body to a doorstep between actions: the visit state follows it
           if (K.root.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; K.root.moved = false; }
-          K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat; st.effects = K.root.effects; st.facing = K.root.facing;   // potions act on the body that walks
+          K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat; st.effects = K.root.effects; st.gear = K.root.gear; st.facing = K.root.facing;   // potions act on the body that walks
         }
         const syncRoot = () => { if (K && K.root) { if (K.root.moved) { st.x = K.root.x; st.y = K.root.y; st.boat = false; K.root.moved = false; } else { K.root.x = st.x; K.root.y = st.y; K.root.boat = !!st.boat; K.root.facing = st.facing; } } };
         const rootNews = () => { const n = K ? drainNews(K, 'root') : []; return n.length ? '\n' + n.join('\n') : ''; };
@@ -1104,14 +1104,14 @@ async function pump(hooks) {
           case 'drink': {
             const near = targetsNear(K, K.root, 2); let tgt = a.target;
             if (/^slumber$/i.test(a.potion || '')) { const want = String(a.target || '').toUpperCase(); const t = want ? tileAtBearing(st, want) : { error: 1 }; tgt = t.error ? near[0] : near.find(c => c.x === t.x && c.y === t.y); }
-            else if (/^tonic$/i.test(a.potion || '')) tgt = (K.root.party || []).find(c => (c.name || c.type).toLowerCase() === String(a.target || '').toLowerCase()) || null;
+            else if (/^tonic$| shard$/i.test(a.potion || '')) tgt = (K.root.party || []).find(c => (c.name || c.type).toLowerCase() === String(a.target || '').toLowerCase()) || null;
             else if (/^decoy$/i.test(a.potion || '')) { const t = tileAtBearing(st, a.target || ''); tgt = t.error ? null : t; }
             const r = usePotion(K, K.root, a.potion, tgt); logLine('s', 'Root: ' + r.text + '.'); syncRoot(); text = r.text + (r.ok ? '\n\n' + look() : heardPoints()); break;
           }
           case 'almanac': text = almanacText(K, K.root) + heardPoints(); break;
           case 'breed': { const r = breedPair(K, K.root, a.a, a.b); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
           case 'feed': { const r = feedCreature(K, K.root, a.name, a.what); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
-          case 'pack': { const ps = packSummary(K.root); text = 'pack ' + ps.used + '/' + ps.cap + ': ' + ps.plants + ' plants' + (Object.keys(ps.potions).length ? ', ' + Object.entries(ps.potions).map(x => x[0] + ' x' + x[1]).join(', ') : '') + '; stones Amber ' + K.root.stones.amber + ' Geode ' + K.root.stones.geode + ' Obsidian ' + K.root.stones.obsidian + '; ' + K.root.wallet + ' coins; party ' + (K.root.party.map(c => '"' + (c.name || c.type) + '"').join(', ') || 'none') + heardPoints(); break; }
+          case 'pack': { const ps = packSummary(K.root); text = 'pack ' + ps.used + '/' + ps.cap + ': ' + ps.plants + ' plants' + (Object.keys(ps.potions).length ? ', ' + Object.entries(ps.potions).map(x => x[0] + ' x' + x[1]).join(', ') : '') + '; stones Amber ' + K.root.stones.amber + ' Geode ' + K.root.stones.geode + ' Obsidian ' + K.root.stones.obsidian + '; ' + K.root.wallet + ' coins; party ' + (K.root.party.map(c => '"' + (c.name || c.type) + '"').join(', ') || 'none') + (ps.gear.length ? '; worn: ' + ps.gear.join(', ') : '') + heardPoints(); break; }
           case 'name': { const r = nameCatch(K, K.root, a.name, a.species); if (r.ok) logLine('s', 'Root names its catch ' + r.text + '.'); text = r.text + heardPoints(); break; }
           case 'follow': { const r = follow(K, K.root, a.name); text = r.text + heardPoints(); break; }
           case 'recall': { const r = recallFollower(K, K.root); text = r.text + heardPoints(); break; }

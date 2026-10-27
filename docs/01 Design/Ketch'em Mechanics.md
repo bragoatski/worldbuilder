@@ -1151,3 +1151,48 @@ owner's.
   where the save left it at once; Reset (or a new world) while Root plays builds a new board of the same setting with
   Root on its doorstep, also when pressed again mid-build; a throw whose result lands after the board was replaced
   says so instead of reading the old board.
+
+## 23. Items (the item pass; build order step 7)
+
+Built 2026-10-26 on the owner's ask "build the next step". The design left items "to be designed with the item pass"
+(11.3) and folded evolution stones into it (20.4); smoke, repel and decoy were already potions (21). Two kinds, both
+readings, all overturnable: the kinds, the numbers and whether gear survives a knock-down are the owner's call.
+
+**Shards** (one use, carried in the pack like a potion, on the P menu, lost on a knock-down):
+
+| shard | step | price | rarity of the type (3b) |
+|---|---|---|---|
+| Sun | sunlight +1 | 30 | common |
+| Dune, Marsh, Shade, Vale | aridity +1, aridity -1, sunlight -1, height -1 | 45 | uncommon |
+| Frost, Peak | temperature -1, height +1 | 70 | rare |
+| Ember | temperature +1 | 100 | very rare |
+
+- A shard on a party creature moves its genome one step (1.0, two growth levels' worth) on that type's axis toward the
+  type's pole. Crossing a species line is an evolution exactly as in 20.3: a new, linked Almanac entry and the species
+  to name. Enough shards turn a creature's elemental type (a Vale grazer fed Ember shards becomes an Ember grazer);
+  the trophic type never changes, so the food web is untouched. At the end of its axis a shard is spent with a note.
+- A creature a shard has shaped earns no scarcity bonus (3b): its species counts as established at least, for its
+  level and its price. A new species made in the hand has no wild members, so without this rule one 45-coin shard
+  turned a 67-coin carnivore into a 638-coin "last of its kind". Evolution earned by growth keeps the bonus: it costs
+  hours, not coins. The shaped mark stays with the creature, and a young one bred from a shaped parent carries it
+  too, so breeding two shaped creatures is not a way round it.
+- Each store stocks two of the eight (store index, like the spread potions; all eight between the four stores), three
+  of each, restocked with the potions. Root: `buy <Type> Shard`, then `drink <Type> Shard <creature name>`. Kevin: P,
+  the shard's number, then the creature's name in the question bar (Tonic asks the same way now).
+
+**Gear** (bought once at any store, worn for good, never consumed, not giveable or sellable):
+
+| gear | price | effect |
+|---|---|---|
+| Satchel | 120 | +5 pack slots (stacks with Pack) |
+| Trail Boots | 180 | stride +1 on open ground and river banks (land 3); not on a road, at sea or on steep ground. With Fleetfoot, open ground walks at road speed |
+| Lucky Charm | 300 | catch odds +5 with Amber and Geode; Obsidian stays sure and Amber on L10 stays 0 |
+
+- Worn gear survives a knock-down: 11.6's ruling takes "everything else carried", and gear is read as worn, not
+  carried. If the owner reads it the other way, it is one line.
+- Economy: the first hour's 100-150 coins buys a Satchel at most; Boots and the Charm are what a player who sells a
+  carnivore or breeds saves for. They are the long-game coin sink the market lacked after the potions.
+- Shown: the BUY tab lists gear with "worn" once bought; the HUD's pack tooltip and I list what is worn; Root's
+  `shop` has a gear line and `pack` says what Root wears. Saves carry it.
+- Not built: gear that wears out, selling gear back, gear slots, more gear (a spyglass would need sight to be one rule
+  across the page and Root's look first).

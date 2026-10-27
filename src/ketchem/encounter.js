@@ -105,7 +105,7 @@ export function oddsFor(K, p, f, stone = p.stone) {
   const a = aw(K, f), ab = partyAbilities(p);
   const bait = a.feeding ? BAIT[a.feeding].odds : null;
   const corral = corralFor(K, p, f);
-  let o = oddsOf(stone, factsOf(f).L, { aw: a.baitId || a.asleep ? 'calm' : a.state === 'fled' ? 'wary' : a.state, en: ratio(f), bait, lureIII: ab.Lure === 3, dreadIII: ab.Dread === 3, corral: corral === 'partner' });
+  let o = oddsOf(stone, factsOf(f).L, { aw: a.baitId || a.asleep ? 'calm' : a.state === 'fled' ? 'wary' : a.state, en: ratio(f), bait, lureIII: ab.Lure === 3, dreadIII: ab.Dread === 3, corral: corral === 'partner', charm: !!(p.gear && p.gear['Lucky Charm']) });
   if (corral === 'follower' && o > 0 && o < 100) o = Math.min(99, o + 5);   // never lifts Amber on L10, never touches Obsidian
   if (a.asleep && o > 0 && o < 100) o = Math.min(99, o + 30);               // Slumber (21)
   return o;
@@ -131,7 +131,7 @@ export function targetsNear(K, p, range = 2) {
 
 // ---------- plants: pick and the pack ----------
 export function pickPlant(K, p) {
-  const cap = PACK_CAP + 5 * (partyAbilities(p).Pack || 0);
+  const cap = PACK_CAP + 5 * (partyAbilities(p).Pack || 0) + (p.gear && p.gear.Satchel ? 5 : 0);   // the same cap as market.packCap, the Satchel included
   if (p.pack.length >= cap) return { ok: false, text: 'pack full (' + cap + ')' };
   const k = flora.findIndex(f => f && f.x === p.x && f.y === p.y);
   if (k < 0) return { ok: false, text: 'no plant here' };
@@ -429,7 +429,7 @@ export function learnSpecies(e, f) {
 }
 const NAME_OK = /^[A-Za-z0-9' ]+$/;
 // Words the store and the pack commands read: a creature carrying one would be sold or fed in its place.
-const RESERVED = /^(plants?( \d+)?|all plants|coins?|amber|geode|obsidian|herbivore|carnivore|omnivore|scavenger|apex|fleetfoot|hawkeye|slumber|hush|musk|smoke|decoy|homeward|tonic|survey|spice|mirror)$/i;
+const RESERVED = /^(plants?( \d+)?|all plants|coins?|amber|geode|obsidian|herbivore|carnivore|omnivore|scavenger|apex|fleetfoot|hawkeye|slumber|hush|musk|smoke|decoy|homeward|tonic|survey|spice|mirror|(dune|marsh|ember|frost|sun|shade|peak|vale) shard|satchel|trail boots|lucky charm)$/i;
 // Naming prompts point at creatures the player still owns; a creature sold, given, eaten, taken or fed away drops
 // out of them (and the queue moves up), so N never sticks on a creature that is gone. Called every tick.
 export function pruneNaming(K, p) {

@@ -35,7 +35,8 @@ export function tryStep(K, p, dx, dy, budget = true) {
   const fleet = p.effects && p.effects.some(e => e.potion === 'Fleetfoot' && e.until > tick);   // stride +1 on every ground (21)
   if (budget) {
     if (tick - p.windowStart >= WINDOW_TICKS || tick < p.windowStart) { p.spent = 0; p.windowStart = tick; }
-    const cost = 1 / (g.stride + (fleet && g.kind !== 'steep' ? 1 : 0));
+    const boots = p.gear && p.gear['Trail Boots'] && (g.kind === 'open' || g.kind === 'river');   // Trail Boots (23): open ground only
+    const cost = 1 / (g.stride + (fleet && g.kind !== 'steep' ? 1 : 0) + (boots ? 1 : 0));
     if (p.spent + cost > 1 + 1e-9) return { ok: false, why: 'winded', kind: g.kind };
     p.spent += cost;
   }

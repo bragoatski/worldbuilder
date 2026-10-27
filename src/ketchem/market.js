@@ -2,11 +2,11 @@
 // restock, buy / sell / cabinet / give, the potions and their effects, and the Almanac. Pure over the sim's arrays and
 // the board K, like encounter.js; the page and Root's door call it. Prices come from rules.js.
 import { W, H, grid as gridRef, fauna, tick, speciesKey, getSpeciesName } from '../sim.js';
-import { priceOf, priceTerms, levelOf, populationOf, abilitiesOf, elementalType, glyphOf } from './rules.js';
+import { priceOf, priceTerms, levelOf, populationOf, abilitiesOf, elementalType, glyphOf, TYPES } from './rules.js';
 import { STONE_KEY, PARTY_CAP, PACK_CAP, partyAbilities, onStore, hasEffect } from './encounter.js';
 import { revealSquare } from './fog.js';
 import { bearingTo } from './controls.js';
-import { growthText, breedFee, addXP, eventsText } from './growth.js';
+import { growthText, breedFee, addXP, eventsText, applyShard } from './growth.js';
 
 export const STONE_PRICE = { Amber: 5, Geode: 25, Obsidian: 150 };
 export const RESTOCK_TICKS = 2000, RESTOCK_COUNT = 3;
@@ -26,19 +26,35 @@ export const POTIONS = {
   Spice:     { kind: 'bait', price: 8, blurb: 'your bait draws from twice as far and feeds twice as long' },
   Mirror:    { kind: 'self', price: 60, duration: 500, blurb: 'the next attack is reflected: the predator goes wary and loses 30 energy' },
 };
+const ALWAYS = Object.keys(POTIONS).slice(0, 6), SPREAD = Object.keys(POTIONS).slice(6);   // the potions' stock rule, before the shards join the table
+// The item pass (sec. 23). Shards: one use on a party creature, a step toward one elemental type; they sit in the pack
+// and on the P menu like a potion. Priced by how rare the type is (3b); each store stocks two of the eight.
+export const SHARD_TYPES = ['Dune', 'Marsh', 'Ember', 'Frost', 'Sun', 'Shade', 'Peak', 'Vale'];
+const SHARD_PRICE = { common: 30, uncommon: 45, rare: 70, 'very rare': 100 };
+const AXIS_WORD = { A: ['drier', 'wetter'], P: ['warmer', 'colder'], S: ['sunnier', 'shadier'], E: ['higher', 'lower'] };
+for (const t of SHARD_TYPES) POTIONS[t + ' Shard'] = { kind: 'creature', shard: t, price: SHARD_PRICE[TYPES[t].cls], blurb: 'a party creature leans ' + AXIS_WORD[TYPES[t].axis][TYPES[t].high ? 0 : 1] + ', one step toward ' + t + '; cross a species line and it evolves' };
 export const POTION_NAMES = Object.keys(POTIONS);
-const ALWAYS = POTION_NAMES.slice(0, 6), SPREAD = POTION_NAMES.slice(6);
+// Gear: bought once, worn, kept (a knock-down takes what is carried, not what is worn); every store sells it.
+export const GEAR = {
+  Satchel: { price: 120, blurb: '+5 pack slots, worn for good' },
+  'Trail Boots': { price: 180, blurb: 'stride +1 on open ground (land and river banks), worn for good' },
+  'Lucky Charm': { price: 300, blurb: 'catch odds +5 with Amber and Geode, worn for good' },
+};
+export const GEAR_NAMES = Object.keys(GEAR);
+export function wears(p, name) { return !!(p && p.gear && p.gear[name]); }
 
 // ---------- stock ----------
 export function stockFor(storeIndex) {
   const potions = {};
   for (const n of ALWAYS) potions[n] = RESTOCK_COUNT;
   for (let k = 0; k < 2; k++) potions[SPREAD[(2 * storeIndex + k) % SPREAD.length]] = RESTOCK_COUNT;
+  for (let k = 0; k < 2; k++) potions[SHARD_TYPES[(2 * storeIndex + k) % SHARD_TYPES.length] + ' Shard'] = RESTOCK_COUNT;   // four stores x two = all eight
   return potions;
 }
 export function initStores(K) {
   K.stores.forEach((s, k) => {
     if (!s.stock || !s.stock.potions || !Object.keys(s.stock.potions).length) s.stock = { potions: stockFor(k) };   // stones are never short: price is the gate, so only potions are counted
+    for (const n of Object.keys(stockFor(k))) if (!(n in s.stock.potions)) s.stock.potions[n] = RESTOCK_COUNT;   // a save from before the shards stocks them at once
     if (!s.restockAt) s.restockAt = tick + RESTOCK_TICKS;
     if (!s.held) s.held = [];
   });
@@ -79,18 +95,19 @@ export function creatureCard(c) {
 }
 
 // ---------- the pack: plants and potions share its slots ----------
-export function packCap(p) { return PACK_CAP + 5 * (partyAbilities(p).Pack || 0); }
+export function packCap(p) { return PACK_CAP + 5 * (partyAbilities(p).Pack || 0) + (wears(p, 'Satchel') ? 5 : 0); }
 export function packSummary(p) {
   const plants = (p.pack || []).filter(x => !x.potion).length, potions = {};
   for (const x of p.pack || []) if (x.potion) potions[x.potion] = (potions[x.potion] || 0) + 1;
-  return { plants, potions, used: (p.pack || []).length, cap: packCap(p) };
+  return { plants, potions, used: (p.pack || []).length, cap: packCap(p), gear: GEAR_NAMES.filter(n => wears(p, n)) };
 }
 function takePotion(p, name) { const k = (p.pack || []).findIndex(x => x.potion === name); if (k < 0) return null; return p.pack.splice(k, 1)[0]; }
 
 // ---------- the shop (text for Root; the panel reads the same lists) ----------
 export function shopLists(K, p, s) {
   const buy = Object.keys(STONE_PRICE).map(n => ({ item: n, price: STONE_PRICE[n], left: Infinity }))
-    .concat(Object.entries(s.stock.potions).filter(([, n]) => n > 0).map(([name, n]) => ({ item: name, price: POTIONS[name].price, left: n, blurb: POTIONS[name].blurb })));
+    .concat(Object.entries(s.stock.potions).filter(([name, n]) => n > 0 && POTIONS[name]).map(([name, n]) => ({ item: name, price: POTIONS[name].price, left: n, blurb: POTIONS[name].blurb })))
+    .concat(GEAR_NAMES.map(n => ({ item: n, price: GEAR[n].price, left: Infinity, blurb: GEAR[n].blurb, gear: true, owned: wears(p, n) })));
   const sell = (p.party || []).map(c => ({ ...creatureCard(c), where: 'party' })).concat((K.cabinet || []).map(c => ({ ...creatureCard(c), where: 'cabinet' })));
   const plants = (p.pack || []).filter(x => !x.potion).map(f => ({ plant: true, gen: f.gen || 0, health: f.health, price: plantPrice(f, p) }));
   const mine = (p.party || []).concat(K.cabinet || []);
@@ -102,7 +119,8 @@ export function shopText(K, p) {
   const s = storeAt(K, p); if (!s) return 'no store here';
   const L = shopLists(K, p, s);
   const out = [s.name + '. wallet ' + L.wallet + ' coins'];
-  out.push('buy: ' + L.buy.map(b => b.item + ' ' + b.price + (b.left === Infinity ? '' : ' (' + b.left + ')')).join(', '));
+  out.push('buy: ' + L.buy.filter(b => !b.gear).map(b => b.item + ' ' + b.price + (b.left === Infinity ? '' : ' (' + b.left + ')')).join(', '));
+  out.push('gear (once, worn for good): ' + L.buy.filter(b => b.gear).map(b => b.item + ' ' + b.price + (b.owned ? ' (worn)' : '')).join(', '));
   out.push('sell: ' + (L.sell.length ? L.sell.map(c => '"' + c.name + '" L' + c.level + ' ' + c.elemental + ' ' + c.price + (c.where === 'cabinet' ? ' (cabinet)' : '')).join(', ') : 'nothing'));
   if (L.plants.length) out.push('plants: ' + L.plants.map(x => x.price).join(' + ') + ' = ' + L.plants.reduce((a, x) => a + x.price, 0) + ' coins');
   out.push('cabinet: ' + (L.box.length ? L.box.map(c => '"' + c.name + '"').join(', ') : 'empty'));
@@ -114,6 +132,13 @@ export function buy(K, p, item, qty = 1) {
   qty = Math.max(1, qty | 0);
   const stone = Object.keys(STONE_PRICE).find(n => n.toLowerCase() === String(item || '').toLowerCase());
   const potion = POTION_NAMES.find(n => n.toLowerCase() === String(item || '').toLowerCase());
+  const gear = GEAR_NAMES.find(n => n.toLowerCase() === String(item || '').toLowerCase());
+  if (gear) {   // once: it is worn, not carried
+    if (wears(p, gear)) return { ok: false, text: 'you already wear the ' + gear };
+    if (p.wallet < GEAR[gear].price) return { ok: false, text: 'not enough coins (' + GEAR[gear].price + ' for the ' + gear + ', you have ' + p.wallet + ')' };
+    p.wallet -= GEAR[gear].price; p.gear = { ...(p.gear || {}), [gear]: true };
+    return { ok: true, text: 'bought the ' + gear + ' for ' + GEAR[gear].price + ' coins and put it on (' + GEAR[gear].blurb.split(',')[0] + '; ' + p.wallet + ' left)' };
+  }
   if (!stone && !potion) return { ok: false, text: 'the store does not sell "' + item + '"' };
   const price = (stone ? STONE_PRICE[stone] : POTIONS[potion].price) * qty;
   if (p.wallet < price) return { ok: false, text: 'not enough coins (' + price + ' for ' + qty + ' ' + (stone || potion) + ', you have ' + p.wallet + ')' };
@@ -213,6 +238,12 @@ export function usePotion(K, p, name, target) {
   if (!potion) return { ok: false, text: 'no potion called "' + name + '"' };
   if (!(p.pack || []).some(x => x.potion === potion)) return { ok: false, text: 'no ' + potion + ' in the pack' };
   const spec = POTIONS[potion];
+  if (spec.shard) {   // a shard on a party creature (23): one step toward its type, an evolution if a species line is crossed
+    const c = target && target.id !== undefined ? (p.party || []).find(x => x.id === target.id) : null;
+    if (!c) return { ok: false, text: potion + ' wants a party creature (by name)' };
+    const r = applyShard(K, p, c, spec.shard); takePotion(p, potion);
+    return { ok: true, text: r.text + eventsText(r.events) };
+  }
   const aw = id => K.aw[id] || (K.aw[id] = { state: 'calm', until: 0, enc: {} });
   const near = r => fauna.filter(f => f && Math.max(Math.abs(f.x - p.x), Math.abs(f.y - p.y)) <= r);
   let text;

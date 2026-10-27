@@ -19,7 +19,7 @@ function css() {
     '#kPanel td.g{width:26px;padding:4px 4px 0 0;} #kPanel .kp-glyph{width:26px;height:26px;display:block;image-rendering:pixelated;background:rgba(255,255,255,.04);border-radius:5px;}' +
     '#kPanel .kp-bd{color:var(--fg-faint);font-size:10px;margin-top:2px;} #kPanel .kp-sec{color:var(--fg-faint);font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding:10px 4px 2px;}' +
     '#kPanel .kp-zone{border:1px dashed transparent;border-radius:8px;padding:0 4px 4px;margin-bottom:4px;} #kPanel .kp-zone.over{border-color:#e8a83899;background:rgba(232,168,56,.06);}' +
-    '#kPanel .kp-note{color:#ff9a7a;margin:-2px 2px 8px;font-size:11px;} #kPanel tr[draggable]{cursor:grab;} #kPanel tr.dragging{opacity:.4;} #kPanel .kp-usual{color:var(--fg-dim);} #kPanel .kp-usual svg{vertical-align:-1px;margin:0 2px 0 4px;}';
+    '#kPanel .kp-worn{color:#58d27a;margin-left:6px;} #kPanel .kp-note{color:#ff9a7a;margin:-2px 2px 8px;font-size:11px;} #kPanel tr[draggable]{cursor:grab;} #kPanel tr.dragging{opacity:.4;} #kPanel .kp-usual{color:var(--fg-dim);} #kPanel .kp-usual svg{vertical-align:-1px;margin:0 2px 0 4px;}';
   document.head.appendChild(s);
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -39,7 +39,7 @@ export function storePanel(acts, tab = 'buy', note = '') {
   const tabs = ['buy', 'sell', 'box', 'pen'].map(t => '<button type="button" data-tab="' + t + '" class="' + (t === tab ? 'on' : '') + '">' + t.toUpperCase() + '</button>').join('');
   let body;
   if (tab === 'buy') {
-    body = '<table>' + L.buy.map(b => '<tr><td class="n">' + esc(b.item) + '</td><td class="m">' + esc(b.blurb || (b.item + ' stone')) + (b.left === Infinity ? '' : ' (' + b.left + ' in stock)') + '</td><td class="r">' + b.price + ' <button class="b" data-buy="' + esc(b.item) + '">Buy</button><button class="b" data-buy="' + esc(b.item) + '" data-qty="5">x5</button></td></tr>').join('') + '</table>';
+    body = '<table>' + L.buy.map(b => '<tr><td class="n">' + esc(b.item) + '</td><td class="m">' + esc(b.blurb || (b.item + ' stone')) + (b.left === Infinity ? '' : ' (' + b.left + ' in stock)') + '</td><td class="r">' + b.price + (b.gear ? (b.owned ? ' <span class="kp-worn">worn</span>' : ' <button class="b" data-buy="' + esc(b.item) + '">Buy</button>') : ' <button class="b" data-buy="' + esc(b.item) + '">Buy</button><button class="b" data-buy="' + esc(b.item) + '" data-qty="5">x5</button>') + '</td></tr>').join('') + '</table>';
   } else if (tab === 'sell') {
     const rows = L.sell.map(c => '<tr>' + glyphCell(c) + '<td class="n">' + esc(c.name) + '</td><td class="m">' + esc(c.species) + ' ' + esc(c.type) + ' L' + esc(c.level) + ' ' + esc(c.elemental) + ' ' + esc(c.growth || '') + (c.abilities.length ? ', ' + esc(c.abilities.join(', ')) : '') + (c.where === 'cabinet' ? ' (cabinet)' : '') + (c.breakdown ? '<div class="kp-bd">' + esc(c.breakdown) + '</div>' : '') + '</td><td class="r">' + esc(c.price) + ' <button class="b" data-sell="' + esc(c.id) + '">Sell</button></td></tr>').join('');
     const plants = L.plants.map((x, i) => '<tr><td class="g"></td><td class="n">plant ' + (i + 1) + '</td><td class="m">gen ' + x.gen + ', health ' + Math.round((x.health || 0) * 100) + '%</td><td class="r">' + x.price + ' <button class="b" data-sellplant="' + (i + 1) + '">Sell</button></td></tr>').join('') +

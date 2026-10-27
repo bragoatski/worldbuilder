@@ -76,14 +76,14 @@ const STONES = [['Amber', 'amber'], ['Geode', 'geode'], ['Obsidian', 'obsidian']
 function hudHTML(p) {
   const ps = packSummary(p), potions = Object.keys(ps.potions);
   const stones = STONES.map(([n, k], i) => '<span class="kh-stone' + (p.stone === n ? ' on' : '') + '" title="' + (i + 1) + ' picks ' + n + '"><i>' + (i + 1) + '</i>' + n + ' ' + p.stones[k] + '</span>').join('');
-  const packTip = ps.plants + ' plants' + (potions.length ? ', ' + potions.map(n => n + ' x' + ps.potions[n]).join(', ') : '') + '. I for the pack, P for a potion';
+  const packTip = ps.plants + ' plants' + (potions.length ? ', ' + potions.map(n => n + ' x' + ps.potions[n]).join(', ') : '') + (ps.gear.length ? '; worn: ' + ps.gear.join(', ') : '') + '. I for the pack, P for a potion or a shard';
   const fx = (p.effects || []).filter(e => e.until > tick).map(e => '<span class="kh-arc" data-potion="' + esc(e.potion) + '" title="' + esc(e.potion) + '"><b>' + esc(e.potion[0]) + '</b></span>').join('');
   const hint = p.naming ? 'N to name your catch' : p.namingSpecies ? 'N to name the new species' : p.cast ? 'homeward' : '';
   const over = ps.used > ps.cap;   // a Pack creature left the party: nothing more fits until the pack is lighter
   return '<span class="kh-wallet">' + p.wallet + ' coins</span>' + stones + '<span class="kh-pack' + (over ? ' over' : '') + '" title="' + esc(packTip + (over ? '. Over the cap: nothing more fits until the pack is lighter or a Pack creature rejoins the party' : '')) + '">pack ' + ps.used + '/' + ps.cap + '</span>' + (fx ? '<span class="kh-fx">' + fx + '</span>' : '') + (hint ? '<span class="kh-hint">' + hint + '</span>' : '') +
     '<button type="button" class="kh-sound' + (soundOn() ? '' : ' off') + '" title="Sound ' + (soundOn() ? 'on' : 'off') + ' (O)" aria-label="Sound">' + (soundOn() ? 'sound' : 'muted') + '</button>';
 }
-function hudSig(p) { return JSON.stringify([p.wallet, p.stone, p.stones, (p.pack || []).length, packSummary(p).cap, (p.pack || []).filter(x => x.potion).map(x => x.potion), (p.effects || []).filter(e => e.until > tick).map(e => e.potion), !!p.naming, !!p.namingSpecies, !!p.cast, soundOn()]); }
+function hudSig(p) { return JSON.stringify([p.wallet, p.stone, p.stones, (p.pack || []).length, packSummary(p).cap, (p.pack || []).filter(x => x.potion).map(x => x.potion), (p.effects || []).filter(e => e.until > tick).map(e => e.potion), !!p.naming, !!p.namingSpecies, !!p.cast, soundOn(), Object.keys(p.gear || {})]); }
 // The arcs: the fraction of each potion's duration left, as a conic sweep; the sweep moves every tick, the hover
 // text once a second (a rewritten title would reset the tooltip under the pointer).
 function arcs(el, p) {

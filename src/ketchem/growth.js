@@ -40,6 +40,18 @@ export function addXP(K, p, c, amount, why) {
   }
   return events;
 }
+// A shard (23): one full step (1.0, two growth levels' worth) on its type's axis toward the type's pole; the same
+// evolution rule as growth: a species key that changes is a new, linked species. Returns { text, events }.
+export const SHARD_STEP = 1.0;
+export function applyShard(K, p, c, type) {
+  const field = AXIS_FIELD[type], high = AXIS_HIGH[type];
+  const before = speciesKey(c), oldName = getSpeciesName(c), v = c[field] === undefined ? 5 : c[field];
+  const next = high ? Math.min(10, v + SHARD_STEP) : Math.max(0, v - SHARD_STEP);
+  if (next === v) return { text: '"' + (c.name || c.type) + '" is as far toward ' + type + ' as it goes; the shard is spent', events: [] };
+  c[field] = next; delete c._speciesName; c.shaped = true;   // priced and levelled without a scarcity bonus (rules.populationOf)
+  const events = speciesKey(c) !== before ? [evolve(K, p, c, before, oldName)] : [];
+  return { text: '"' + (c.name || c.type) + '" leans toward ' + type + ' (now ' + elementalType(c).typ + ')', events };
+}
 // One growth level on the genome (20.2).
 export function moveGenome(c) {
   let typ = elementalType(c).typ;
@@ -67,7 +79,7 @@ function evolve(K, p, c, oldKey, oldName) {
   learnSpecies(e, c); if (!e.seen) e.seen = 1; if (!e.caught) e.caught = 1;   // the evolver is the first of its kind, seen and in hand
   if (!e.nickname && !pendingUnnamed(K, p)) p.namingSpecies = c.id;   // the first evolver names the new species; an earlier unnamed one keeps its turn
   fx(K, 'evolve', { len: 24, id: c.id, x: p.x, y: p.y, name: e.scientific || '' });
-  return { kind: 'evolve', creature: c, from: e.evolvedFrom, to: e.scientific || speciesKey(c), named: !!e.nickname };
+  return { kind: 'evolve', creature: c, from: e.evolvedFrom, to: e.nickname || e.scientific || ('a new ' + c.type + ' line'), named: !!e.nickname };   // never the raw species key
 }
 
 // Per tick: time in the party (1 per 100 ticks), following (2), exposure to its own type's biome (10 per 500).
@@ -151,6 +163,7 @@ export function breed(K, p, aName, bName) {
   if (p.wallet < fee) return { ok: false, text: 'the fee is ' + fee + ' coins (you have ' + p.wallet + ')' };
   p.wallet -= fee; a.bredAt = tick; b.bredAt = tick;
   const child = makeFauna(p.x, p.y, a.type, offspringGenome(a, b, K.rng));
+  if (a.shaped || b.shaped) child.shaped = true;   // a line shaped by shards stays cultivated: no scarcity bonus by breeding either (23)
   child.age = 0; child.energy = child.maxEnergy; child.bornAt = tick; child.by = p.id; child.parents = [a.name || a.type, b.name || b.type]; delete child._speciesName;
   K.cabinet.push(child);
   const e = almanacEntry(K, child); e.variants = e.variants || []; if (!e.variants.includes('bred')) e.variants.push('bred'); learnSpecies(e, child);

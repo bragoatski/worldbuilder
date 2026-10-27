@@ -40,7 +40,7 @@ function playerRecord(id, p) {
   return { id, x: p.x, y: p.y, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones || { amber: 10, geode: 0, obsidian: 0 }, stone: p.stone || 'Amber',
     pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null,
     naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, away: !!p.away,
-    cast: p.cast && p.cast.store ? { until: p.cast.until, store: p.cast.store.name } : null, followerAt: p.followerAt || null, facing: p.facing || null };
+    cast: p.cast && p.cast.store ? { until: p.cast.until, store: p.cast.store.name } : null, followerAt: p.followerAt || null, facing: p.facing || null, gear: p.gear || {} };
 }
 
 // The whole game in memory. slot = the record's name (the player's, default the seed).
@@ -129,7 +129,7 @@ export function applySave(raw) {
     seenIds,
   };
   for (const p of data.players || []) {
-    const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, followerAt: p.followerAt || null, facing: p.facing || null,
+    const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, followerAt: p.followerAt || null, facing: p.facing || null, gear: p.gear && typeof p.gear === 'object' ? p.gear : {},
       cast: p.cast && K.stores.some(s => s.name === p.cast.store) ? { until: p.cast.until, store: K.stores.find(s => s.name === p.cast.store) } : null });
     if (p.id === 'kevin') K.kevin = pl; else if (p.id === 'root') { K.root = pl; K.root.loaded = true; K.root.away = true; }   // Root is away until it arrives
   }
