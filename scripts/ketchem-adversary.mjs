@@ -11,7 +11,7 @@ const errors = [];
 page.on('console', m => { if (m.type() === 'error' && !/ERR_(EMPTY_RESPONSE|CONNECTION_RESET|CONNECTION_REFUSED)/.test(m.text())) errors.push('console: ' + m.text().slice(0, 300)); });
 page.on('pageerror', e => errors.push('pageerror: ' + e.message.slice(0, 300)));
 let answers = [];
-page.on('dialog', d => d.accept(d.type() === 'prompt' ? (answers.length ? answers.shift() : 'x') : undefined));
+const reply = async () => { if (await page.$('#kAsk:not([hidden])')) { await page.fill('#kAskIn', answers.length ? answers.shift() : 'x'); await page.press('#kAskIn', 'Enter'); } };   // the question bar (ask.js) replaced window.prompt
 await page.goto('http://127.0.0.1:5173/worldbuilder/?debug&ketchem=continent&kseed=23');
 await page.click('#introStart');
 await page.waitForFunction(() => window.__wb && window.__wb.ketchem && window.__wb.ketchem.board() !== null, null, { timeout: 180000 });
@@ -19,7 +19,7 @@ await page.waitForTimeout(300);
 const ev = (fn, arg) => page.evaluate(fn, arg);
 const msg = () => ev(() => window.__wb.ketchem.board().kevin.msg);
 const pause = on => ev(on => window.__wb.ketchem.pause(on), on);
-const key = async (k, n = 1) => { for (let i = 0; i < n; i++) await page.keyboard.press(k); };
+const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(k); await reply(); } };
 const findings = [];
 const check = async (scene) => {
   const v = await ev(() => {

@@ -1,7 +1,7 @@
 // The store panel (BUY / SELL / BOX / PEN) and the Almanac panel for Kevin (the market section of the design, 22.2 M / C,
 // 5.6). DOM only; the page passes the lists and what each button does. Esc or the X closes. Creature cards carry the
 // sim's drawing of the creature (hud.js drawGlyphs) and the SELL card its price breakdown.
-import { drawGlyphs } from './hud.js';
+import { drawGlyphs, abilityIcon } from './hud.js';
 let el = null, mode = null;
 function css() {
   const s = document.createElement('style');
@@ -17,7 +17,9 @@ function css() {
     '#kPanel button.b{border-radius:6px;padding:4px 9px;font:600 11px/1 inherit;cursor:pointer;border:1px solid var(--border-hi);background:transparent;color:var(--fg-dim);margin-left:4px;}' +
     '#kPanel button.b:hover{color:var(--fg);background:rgba(255,255,255,.05);} #kPanel .kp-empty{color:var(--fg-faint);padding:8px 4px;} #kPanel pre{white-space:pre-wrap;margin:0;color:var(--fg-dim);}' +
     '#kPanel td.g{width:26px;padding:4px 4px 0 0;} #kPanel .kp-glyph{width:26px;height:26px;display:block;image-rendering:pixelated;background:rgba(255,255,255,.04);border-radius:5px;}' +
-    '#kPanel .kp-bd{color:var(--fg-faint);font-size:10px;margin-top:2px;} #kPanel .kp-sec{color:var(--fg-faint);font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding:10px 4px 2px;}';
+    '#kPanel .kp-bd{color:var(--fg-faint);font-size:10px;margin-top:2px;} #kPanel .kp-sec{color:var(--fg-faint);font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding:10px 4px 2px;}' +
+    '#kPanel .kp-zone{border:1px dashed transparent;border-radius:8px;padding:0 4px 4px;margin-bottom:4px;} #kPanel .kp-zone.over{border-color:#e8a83899;background:rgba(232,168,56,.06);}' +
+    '#kPanel .kp-note{color:#ff9a7a;margin:-2px 2px 8px;font-size:11px;} #kPanel tr[draggable]{cursor:grab;} #kPanel tr.dragging{opacity:.4;} #kPanel .kp-usual{color:var(--fg-dim);} #kPanel .kp-usual svg{vertical-align:-1px;margin:0 2px 0 4px;}';
   document.head.appendChild(s);
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -31,7 +33,7 @@ export function panelOpen() { return !!el && !el.hidden; }
 
 // acts: { lists: () => shopLists, buy(item, qty), sell(id | 'plant N'), sellPlants(), box(id, take), breed(idA, idB), onChange() }
 // Creature buttons act by id: two creatures may share a name, or have none.
-export function storePanel(acts, tab = 'buy') {
+export function storePanel(acts, tab = 'buy', note = '') {
   ensure(); mode = 'store';
   const L = acts.lists();
   const tabs = ['buy', 'sell', 'box', 'pen'].map(t => '<button type="button" data-tab="' + t + '" class="' + (t === tab ? 'on' : '') + '">' + t.toUpperCase() + '</button>').join('');
@@ -47,27 +49,41 @@ export function storePanel(acts, tab = 'buy') {
     const rows = L.pen.map(c => '<tr>' + glyphCell(c) + '<td class="n"><label><input type="checkbox" data-pen="' + c.id + '" data-type="' + esc(c.type) + '"' + (c.cooldown || c.newborn ? ' disabled' : '') + '> ' + esc(c.name) + '</label></td><td class="m">' + esc(c.type) + ' L' + esc(c.level) + ' ' + esc(c.elemental) + (c.cooldown ? ', rests ' + c.cooldown + ' ticks' : c.newborn ? ', newborn' : '') + '</td><td class="r"></td></tr>').join('');
     body = (rows ? '<table>' + rows + '</table>' : '<div class="kp-empty">Nothing to breed: catch two of one kind.</div>') + '<div class="km-row" style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;align-items:center;color:var(--fg-dim)"><span id="kpFee">pick two of one kind</span><button class="b" id="kpBreed" disabled>Breed</button></div>';
   } else {
-    const party = L.party.map(c => '<tr>' + glyphCell(c) + '<td class="n">' + esc(c.name) + '</td><td class="m">party, ' + esc(c.type) + ' L' + esc(c.level) + ' ' + esc(c.elemental) + ' ' + esc(c.growth || '') + '</td><td class="r"><button class="b" data-box="' + esc(c.id) + '">To cabinet</button></td></tr>').join('');
-    const cab = L.box.map(c => '<tr>' + glyphCell(c) + '<td class="n">' + esc(c.name) + '</td><td class="m">cabinet, ' + esc(c.type) + ' L' + esc(c.level) + ' ' + esc(c.elemental) + ' ' + esc(c.growth || '') + '</td><td class="r"><button class="b" data-take="' + esc(c.id) + '">To party</button></td></tr>').join('');
-    body = party || cab ? '<table>' + party + cab + '</table>' : '<div class="kp-empty">The party and the cabinet are empty.</div>';
+    // Two drop zones (22.2 C: drag between them); the buttons do the same for a keyboard or a touch screen.
+    const row = (c, zone) => '<tr draggable="true" data-drag="' + esc(c.id) + '" data-from="' + zone + '">' + glyphCell(c) + '<td class="n">' + esc(c.name) + '</td><td class="m">' + esc(c.type) + ' L' + esc(c.level) + ' ' + esc(c.elemental) + ' ' + esc(c.growth || '') + '</td><td class="r">' +
+      (zone === 'party' ? '<button class="b" data-box="' + esc(c.id) + '">To cabinet</button>' : '<button class="b" data-take="' + esc(c.id) + '">To party</button>') + '</td></tr>';
+    const zone = (id, title, list, empty) => '<div class="kp-zone" data-zone="' + id + '"><div class="kp-sec">' + title + '</div>' + (list.length ? '<table>' + list.map(c => row(c, id)).join('') + '</table>' : '<div class="kp-empty">' + empty + '</div>') + '</div>';
+    body = zone('party', 'Party ' + L.party.length + '/3', L.party, 'Empty. Drag a creature here from the cabinet.') + zone('cabinet', 'Cabinet ' + L.box.length, L.box, 'Empty. Drag a party creature here to keep it at the stores.');
   }
-  el.innerHTML = '<div class="kp-head"><span>' + esc(L.store) + ' &middot; ' + L.wallet + ' coins</span><button type="button" id="kpClose" aria-label="Close">&times;</button></div><div class="kp-tabs">' + tabs + '</div>' + body;
+  el.innerHTML = '<div class="kp-head"><span>' + esc(L.store) + ' &middot; ' + L.wallet + ' coins</span><button type="button" id="kpClose" aria-label="Close">&times;</button></div><div class="kp-tabs">' + tabs + '</div>' + (note ? '<div class="kp-note">' + esc(note) + '</div>' : '') + body;
   el.hidden = false;
   const glyphs = {}; for (const list of [L.sell, L.box, L.party, L.pen]) for (const c of list || []) if (c.id !== undefined) glyphs[c.id] = c.glyph;
   drawGlyphs(el, glyphs, 13);
   el.querySelector('#kpClose').addEventListener('click', closePanel);
   el.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => storePanel(acts, b.dataset.tab)));
-  const redo = t => { acts.onChange(); storePanel(acts, t); };
-  el.querySelectorAll('[data-buy]').forEach(b => b.addEventListener('click', () => { acts.buy(b.dataset.buy, +(b.dataset.qty || 1)); redo('buy'); }));
-  el.querySelectorAll('[data-sell]').forEach(b => b.addEventListener('click', () => { acts.sell(+b.dataset.sell); redo('sell'); }));
-  el.querySelectorAll('[data-sellplants]').forEach(b => b.addEventListener('click', () => { acts.sellPlants(); redo('sell'); }));
-  el.querySelectorAll('[data-sellplant]').forEach(b => b.addEventListener('click', () => { acts.sell('plant ' + b.dataset.sellplant); redo('sell'); }));
-  el.querySelectorAll('[data-box]').forEach(b => b.addEventListener('click', () => { acts.box(+b.dataset.box, false); redo('box'); }));
-  el.querySelectorAll('[data-take]').forEach(b => b.addEventListener('click', () => { acts.box(+b.dataset.take, true); redo('box'); }));
+  const redo = (t, r) => { acts.onChange(); storePanel(acts, t, r && r.ok === false ? r.text : ''); };   // a refusal shows in the panel, not only behind it
+  el.querySelectorAll('[data-buy]').forEach(b => b.addEventListener('click', () => { redo('buy', acts.buy(b.dataset.buy, +(b.dataset.qty || 1))); }));
+  el.querySelectorAll('[data-sell]').forEach(b => b.addEventListener('click', () => { redo('sell', acts.sell(+b.dataset.sell)); }));
+  el.querySelectorAll('[data-sellplants]').forEach(b => b.addEventListener('click', () => { redo('sell', acts.sellPlants()); }));
+  el.querySelectorAll('[data-sellplant]').forEach(b => b.addEventListener('click', () => { redo('sell', acts.sell('plant ' + b.dataset.sellplant)); }));
+  el.querySelectorAll('[data-box]').forEach(b => b.addEventListener('click', () => { redo('box', acts.box(+b.dataset.box, false)); }));
+  el.querySelectorAll('[data-take]').forEach(b => b.addEventListener('click', () => { redo('box', acts.box(+b.dataset.take, true)); }));
+  el.querySelectorAll('[data-drag]').forEach(r => r.addEventListener('dragstart', e => { e.dataTransfer.setData('application/x-ketchem', r.dataset.drag + ':' + r.dataset.from); e.dataTransfer.effectAllowed = 'move'; r.classList.add('dragging'); }));
+  el.querySelectorAll('[data-drag]').forEach(r => r.addEventListener('dragend', () => r.classList.remove('dragging')));
+  el.querySelectorAll('[data-zone]').forEach(z => {
+    z.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; z.classList.add('over'); });
+    z.addEventListener('dragleave', e => { if (!z.contains(e.relatedTarget)) z.classList.remove('over'); });
+    z.addEventListener('drop', e => {
+      e.preventDefault(); z.classList.remove('over');
+      const [id, from] = String(e.dataTransfer.getData('application/x-ketchem') || '').split(':');   // only the panel's own rows; dropped text is ignored
+      if (!/^\d+$/.test(id || '') || from === z.dataset.zone) return;
+      redo('box', acts.box(+id, z.dataset.zone === 'party'));
+    });
+  });
   const picks = () => [...el.querySelectorAll('[data-pen]:checked')];
   const feeEl = el.querySelector('#kpFee'), breedBtn = el.querySelector('#kpBreed');
   el.querySelectorAll('[data-pen]').forEach(c => c.addEventListener('change', () => { const ps = picks(); if (ps.length > 2) { c.checked = false; return; } const two = ps.length === 2, same = two && ps[0].dataset.type === ps[1].dataset.type; breedBtn.disabled = !same; feeEl.textContent = same ? 'fee ' + L.fee(ps[0].dataset.pen, ps[1].dataset.pen) + ' coins' : two ? 'two of one kind' : 'pick two of one kind'; }));
-  if (breedBtn) breedBtn.addEventListener('click', () => { const ps = picks(); if (ps.length === 2) { acts.breed(ps[0].dataset.pen, ps[1].dataset.pen); redo('pen'); } });
+  if (breedBtn) breedBtn.addEventListener('click', () => { const ps = picks(); if (ps.length === 2) { redo('pen', acts.breed(ps[0].dataset.pen, ps[1].dataset.pen)); } });
 }
 
 function glyphCell(c) { return '<td class="g"><canvas class="kp-glyph" width="26" height="26" data-glyph="' + esc(c.id) + '"></canvas></td>'; }
@@ -81,7 +97,8 @@ export function almanacPanel(A) {
     glyphs['s' + i] = e.glyph;
     const title = (e.nickname ? '<b>' + esc(e.nickname) + '</b> ' : '') + '<span class="kp-sci">' + esc(e.scientific || 'unnamed ' + e.type + ' line') + '</span>';
     const notes = [e.namedBy ? 'named by ' + esc(e.namedBy) : '', e.evolvedFrom ? 'evolved from ' + esc(e.evolvedFrom) : ''].concat(e.variants.map(esc)).filter(Boolean).join(' · ');
-    return '<tr><td class="g"><canvas class="kp-glyph" width="26" height="26" data-glyph="s' + i + '"></canvas></td><td class="n">' + title + '<div class="kp-bd">' + esc(e.type) + (notes ? ' · ' + notes : '') + '</div></td><td class="r m">seen ' + esc(e.seen) + ' · caught ' + esc(e.caught) + ' · best L' + esc(e.bestLevel) + '</td></tr>';
+    const usual = (e.usual || []).length ? '<div class="kp-bd kp-usual">usually' + e.usual.map(n => abilityIcon(n) + esc(n)).join('') + '</div>' : '';   // 5.6: the species' usual pool; the variants (big, vivid, tolerant) name the gene behind a trait ability
+    return '<tr><td class="g"><canvas class="kp-glyph" width="26" height="26" data-glyph="s' + i + '"></canvas></td><td class="n">' + title + '<div class="kp-bd">' + esc(e.type) + (notes ? ' · ' + notes : '') + '</div>' + usual + '</td><td class="r m">seen ' + esc(e.seen) + ' · caught ' + esc(e.caught) + ' · best L' + esc(e.bestLevel) + '</td></tr>';
   }).join('');
   const places = A.stores.map(s => '<tr><td class="g"></td><td class="n">' + esc(s.name) + '</td><td class="r m">store ' + esc(s.bearing) + '</td></tr>').join('') +
     A.landmarks.map(l => '<tr><td class="g"></td><td class="n">' + esc(l.name) + '</td><td class="r m">' + esc(l.kind || 'landmark') + ' ' + esc(l.bearing) + '</td></tr>').join('');

@@ -4,7 +4,7 @@
 // that acts returns { ok, text, ... } with the words Root reads; the page turns the same results into bubbles and
 // animations (K.fx). Tick-driven work happens in encounterTick(K), called after every sim step while a board is up.
 import { T, grid, riverData, fauna, flora, road, tick, idx, inb, mulberry32, speciesKey, getSpeciesName } from '../sim.js';
-import { levelOf, populationOf, abilitiesOf, oddsOf, elementalType, genomeHash, glyphOf } from './rules.js';
+import { levelOf, populationOf, abilitiesOf, oddsOf, elementalType, genomeHash, glyphOf, TROPHIC } from './rules.js';
 import { groundOf, bearingTo } from './controls.js';
 
 export const ENCOUNTER_RANGE = 6, ENCOUNTER_RESET = 100, ALERT_RANGE = { carnivore: 3, apex: 3 }, ALERT_DEFAULT = 2;
@@ -244,8 +244,8 @@ function awarenessTick(K) {
     const np = nearestPlayer(K, f);
     if (!a && (!np || np[2] > (K.musk ? 8 : ENCOUNTER_RANGE))) continue;   // far from everyone and never met: nothing to do (a musk reaches 8)
     const st = aw(K, f);
-    // the Almanac: a creature entering Kevin's sight is seen once (Root's looks mark their own sightings)
-    if (K.kevin && !st.seenK && !K.kevin.away && dist(K.kevin, f) <= (hasEffect(K.kevin, 'Hawkeye') ? 5 : 4)) { st.seenK = true; noteSeen(K, f); }
+    // the Almanac: a creature entering Kevin's sight is seen (Root's looks mark theirs; each creature counts once)
+    if (K.kevin && !K.kevin.away && !(K.seenIds && K.seenIds[f.id]) && dist(K.kevin, f) <= (hasEffect(K.kevin, 'Hawkeye') ? 5 : 4)) noteSeen(K, f);
     // encounters: one per player within 6 tiles, continuous; 100 ticks beyond 6 resets the fail count
     for (const [id, p] of players(K)) {
       const e = st.enc[id]; const d = dist(p, f);
@@ -273,7 +273,7 @@ function awarenessTick(K) {
       if (st.state === 'alert') { if (near <= 3) st.until = tick + ALERT_CLEAR; else if (tick >= st.until) { st.state = 'calm'; continue; } }
       if (isPredator(f) && hungry(f) && near <= 1 && !(ab.Dread >= 1) && !onStore(K, p) && tick >= (st.cooldownUntil || 0) && !guarded(f, ab) && !hasEffect(p, 'Smoke')) {
         st.state = 'growl'; st.target = pid; st.pulsesLeft = pulsesFor(facts.L, rng); st.nextPulse = tick; st.stalker = isStalker(f, facts.L); delete st.pursueUntil;
-        f.held = true; fx(K, 'growl', { id: f.id }); continue;   // the first pulse comes this tick: N pulses span 10N ticks (11.2)
+        f.held = true; continue;   // the first pulse comes this tick: N pulses span 10N ticks (11.2)
       }
       if (!(ab.Dread >= 2) && rng() < 0.30) stepAway(f, p);
       continue;
@@ -284,11 +284,11 @@ function awarenessTick(K) {
       if (!hungry(f) || onStore(K, tp) || (tab.Dread >= 1) || backedDown || guarded(f, tab) || (K.root && tp === K.root && K.root.away) || hasEffect(tp, 'Smoke')) { st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; continue; }
       if (K.decoy && dist(K.decoy, f) <= 8) { if (tick >= st.nextPulse) { stepToward(f, K.decoy); st.nextPulse = tick + 10; } continue; }   // a decoy's scent is chased instead
       if (d > 3) {   // the player left its reach
-        if (st.stalker && (st.pursueUntil || (st.pursueUntil = tick + 60)) > tick) { if ((tick - (st.pursueAt || 0)) >= 16 && stalkerStep(K, f, tp)) st.pursueAt = tick; if (tick >= st.nextPulse) { fx(K, 'pulse', { id: f.id, len: 10 }); st.nextPulse = tick + 10; } continue; }
+        if (st.stalker && (st.pursueUntil || (st.pursueUntil = tick + 60)) > tick) { if ((tick - (st.pursueAt || 0)) >= 16 && stalkerStep(K, f, tp)) st.pursueAt = tick; if (tick >= st.nextPulse) { fx(K, 'pulse', { id: f.id, x: f.x, y: f.y, len: 10 }); st.nextPulse = tick + 10; } continue; }
         st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; delete st.pursueUntil; continue;
       }
       if (tick >= st.nextPulse) {
-        if (st.pulsesLeft > 0) { st.pulsesLeft--; fx(K, 'pulse', { id: f.id, len: 10 }); st.nextPulse = tick + 10; }
+        if (st.pulsesLeft > 0) { st.pulsesLeft--; fx(K, 'pulse', { id: f.id, x: f.x, y: f.y, len: 10 }); st.nextPulse = tick + 10; }
         else if (d <= 1) { const r = attack(K, f, tp); news(K, tp.id, r.text); }
         else { if (stepToward(f, tp)) st.nextPulse = tick + 10; else { st.state = 'alert'; st.until = tick + ALERT_CLEAR; f.held = false; } }
       }
@@ -377,7 +377,7 @@ export function throwStone(K, p, f, stone = p.stone) {
     if (where === 'party') p.party.push(f); else K.cabinet.push(f);
     if (p.naming) (p.namingQueue || (p.namingQueue = [])).push(f.id); else p.naming = f.id;   // a catch still waiting for its name keeps its turn
     const level = facts.L;
-    const entry = almanacEntry(K, f); entry.caught++; entry.bestLevel = Math.max(entry.bestLevel, facts.L); if (!entry.seen) noteSeen(K, f);   // a catch is a sighting too
+    const entry = almanacEntry(K, f); entry.caught++; entry.bestLevel = Math.max(entry.bestLevel, facts.L); noteSeen(K, f);   // a catch is a sighting too (counted once per creature)
     return { ok: true, caught: true, text: 'caught ' + f.type + ' L' + facts.L + ' ' + facts.type + ' (' + where + '). name it', odds, roll, wobbles, where, creature: f, level, delay: THROW_TICKS };
   }
   enc.fails++;
@@ -408,7 +408,25 @@ export function almanacEntry(K, f) {
   const key = speciesKey(f);
   return K.almanac.species[key] || (K.almanac.species[key] = { seen: 0, caught: 0, bestLevel: 0, nickname: null, namedBy: null, firstSeen: { tick, x: f.x, y: f.y }, type: f.type, glyph: glyphOf(f) });
 }
-export function noteSeen(K, f) { const e = almanacEntry(K, f); e.seen++; if (!e.scientific) e.scientific = getSpeciesName(f) || null; if (!e.glyph) e.glyph = glyphOf(f); return e; }   // a save from before the glyphs gets one at the next sighting
+// The genes behind the trait abilities (5.5): a creature that carries one is a variant of its species (5.6).
+export function variantsOf(f) { const v = []; if ((f.size || 1) >= 1.25) v.push('big'); if (f.vivid) v.push('vivid'); if ((f.tolerance || 0) >= 5) v.push('tolerant'); return v; }
+// A sighting: once per creature for the whole game, whichever player sees it (K.seenIds), so a creature walking in and
+// out of sight, released after a knock-down, or met by both players counts once. The entry learns the species' usual
+// abilities (its elemental and trophic ones) and every variant seen.
+export function noteSeen(K, f) {
+  const e = almanacEntry(K, f);
+  const ids = K.seenIds || (K.seenIds = {});
+  if (!ids[f.id]) { ids[f.id] = 1; e.seen++; }
+  return learnSpecies(e, f);
+}
+// What an entry learns from any member: its binomial, its face, its usual abilities, the variants this one shows.
+export function learnSpecies(e, f) {
+  if (!e.scientific) e.scientific = getSpeciesName(f) || null;
+  if (!e.glyph) e.glyph = glyphOf(f);   // a save from before the glyphs gets one at the next sighting
+  if (!e.usual || !e.usual.length) { const u = abilitiesOf(f, 1).pool.filter(a => a.family !== 'trait').map(a => a.name); e.usual = u.length ? u : (TROPHIC[f.type] ? [TROPHIC[f.type].ability] : []); }   // a Plain variant's pool is only its trait: the trophic ability is its usual one
+  for (const v of variantsOf(f)) { e.variants = e.variants || []; if (!e.variants.includes(v)) e.variants.push(v); }
+  return e;
+}
 const NAME_OK = /^[A-Za-z0-9' ]+$/;
 // Words the store and the pack commands read: a creature carrying one would be sold or fed in its place.
 const RESERVED = /^(plants?( \d+)?|all plants|coins?|amber|geode|obsidian|herbivore|carnivore|omnivore|scavenger|apex|fleetfoot|hawkeye|slumber|hush|musk|smoke|decoy|homeward|tonic|survey|spice|mirror)$/i;
@@ -441,6 +459,8 @@ export function nameCatch(K, p, raw, speciesNick) {
   pruneNaming(K, p);
   const c = p.naming ? (p.party.find(x => x.id === p.naming) || K.cabinet.find(x => x.id === p.naming)) : null;
   if (!c) return { ok: false, text: 'nothing to name' };
+  const taken = [K.kevin, K.root].flatMap(q => (q && q.party) || []).concat(K.cabinet || [], (K.baits || []).map(b => b.payload).filter(Boolean)).find(x => x !== c && x.name && x.name.toLowerCase() === name.toLowerCase());
+  if (taken) return { ok: false, text: 'there is a "' + taken.name + '" already; names are one to a creature, so pick another' };   // the verbs, the cabinet and give find creatures by name
   c.name = name; p.naming = (p.namingQueue || []).shift() || null;   // the next unnamed one, if any, takes the prompt
   const e = almanacEntry(K, c);
   let text = '"' + name + '" it is';

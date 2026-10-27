@@ -7,6 +7,7 @@ const C = await import('./controls.js');
 const E = await import('./encounter.js');
 const M = await import('./market.js');
 const G = await import('./growth.js');
+const R = await import('./rules.js');
 
 const at = (x, y) => sim.idx(x, y);
 function world() {
@@ -138,5 +139,44 @@ describe('potions and give at the edges (R1, R2, R6, N3)', () => {
   it('F with no name lets the first party creature out', () => {
     const K = world(), p = K.kevin; const a = catchOne(K, p); E.nameCatch(K, p, 'First'); catchOne(K, p);
     expect(E.follow(K, p, null).ok).toBe(true); expect(p.follower).toBe(a.id);
+  });
+});
+
+describe('finishing pass 2026-10-26: names, sightings, the Almanac', () => {
+  it('a name is one to a creature across both players and the cabinet', () => {
+    const K = world(), p = K.kevin, r = K.root;
+    catchOne(K, p); expect(E.nameCatch(K, p, 'Tam').ok).toBe(true);
+    r.x = p.x; r.y = p.y + 2; const f = put('herbivore', r.x + 1, r.y); expect(E.throwStone(K, r, f, 'Amber').caught).toBe(true);
+    const dup = E.nameCatch(K, r, 'tam'); expect(dup.ok).toBe(false); expect(dup.text).toContain('already');
+    expect(E.nameCatch(K, r, 'Ash').ok).toBe(true);
+  });
+  it('a creature counts as seen once, whoever sees it and however often', () => {
+    const K = world(), p = K.kevin;
+    const f = put('herbivore', p.x + 2, p.y);
+    E.encounterTick(K); E.markSeen(K, [f]); E.markSeen(K, [f]);
+    p.x += 10; E.encounterTick(K); p.x -= 10; E.encounterTick(K);
+    expect(K.almanac.species[sim.speciesKey(f)].seen).toBe(1);
+    f.x = p.x + 1; f.y = p.y; expect(E.throwStone(K, p, f, 'Amber').caught).toBe(true);
+    const e = K.almanac.species[sim.speciesKey(f)]; expect(e.seen).toBe(1); expect(e.caught).toBe(1);
+  });
+  it('the Almanac learns the usual abilities and the variants by their gene', () => {
+    const K = world(), p = K.kevin;
+    const f = put('herbivore', p.x + 1, p.y); f.size = 1.7; f.vivid = true; f.tolerance = 5.5;
+    E.markSeen(K, [f]);
+    const e = K.almanac.species[sim.speciesKey(f)];
+    expect(e.variants).toEqual(['big', 'vivid', 'tolerant']);
+    expect(e.usual.length).toBeGreaterThan(0); for (const n of e.usual) expect(['Pack', 'Lure', 'Hardy']).not.toContain(n);
+    const A = M.almanacLists(K, p); expect(A.species[0].usual).toEqual(e.usual);
+    expect(M.almanacText(K, p)).toContain('usually ' + e.usual.join(' and '));
+  });
+});
+
+describe('critic on the finishing pass (2026-10-26)', () => {
+  it('a Plain creature that is only a trait variant still gives its species a usual ability', () => {
+    const K = world(), p = K.kevin;
+    const f = put('herbivore', p.x + 1, p.y); f.size = 1.7; f.prefArid = 5; f.prefTemp = 5; f.prefSL = 5; f.prefElev = 5;   // every axis at 5: Plain, so the pool is only Pack
+    expect(R.elementalType(f).typ).toBe('Plain'); expect(R.abilitiesOf(f, 1).pool.map(a => a.name)).toEqual(['Pack']);
+    E.markSeen(K, [f]);
+    const e = K.almanac.species[sim.speciesKey(f)]; expect(e.usual).toEqual(['Forager']); expect(e.variants).toContain('big');
   });
 });

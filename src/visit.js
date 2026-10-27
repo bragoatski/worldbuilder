@@ -894,7 +894,7 @@ function standOnGround() {
 }
 
 async function arriveHere(mode) {
-  V.mode = modeOf(mode);
+  V.mode = modeOf(mode); V.reformed = null;
   // The world itself must exist before anything is loaded under its key: a page still building its first world has no
   // grid yet (a survey of nothing threw on the first real Sky rehearsal), and its seed is not yet the world's.
   for (let k = 0; k < 160 && !grid; k++) { if (k === 0) logLine('s', 'Root is waiting for the world to form.'); await sleep(500); }
@@ -944,9 +944,27 @@ async function arriveHere(mode) {
     arrivalText(V.st, V.mode);
 }
 
+// Is Root playing Ketch'em right now? The page asks before it rebuilds the world (Reset rebuilds a board for Root).
+export function rootPlaying() { return !!(V && V.here && V.mode === 'ketchem'); }
+// The page adopted a board (a load, or a new board after a Reset) while Root is playing: Root stands in it at once,
+// where the save left it or on its own doorstep, instead of waiting away until its next action.
+export function boardAdopted(K) {
+  if (!rootPlaying() || !K || !K.starts) return;
+  const fresh = !K.root || !K.root.party || !K.root.loaded;
+  if (!K.root || !K.root.party) { const s = K.starts[1]; K.root = initPlayer(newPlayer(s.x, s.y), 'root'); }
+  else if (fresh) { const s = K.starts[1]; Object.assign(K.root, { x: s.x, y: s.y, boat: false }); }
+  K.root.away = false; delete K.root.loaded;
+  if (K.root.follower) K.root.followerAt = { x: K.root.x, y: K.root.y };
+  V.st.x = K.root.x; V.st.y = K.root.y; V.st.boat = !!K.root.boat;
+  revealSquare(K, V.st.x, V.st.y, SIGHT_HALF);
+  V.reformed = 'the world dissolves and re-forms: ' + (fresh ? 'a new board; you stand on your doorstep, ' + K.stores[K.starts[1].store].name : 'a saved game, and you stand where it left you');
+  logLine('s', fresh ? 'A new board: Root stands on its doorstep.' : 'A saved game: Root stands where it left off.');
+  V.hooks.draw();
+}
+
 function depart(line) {
   if (!V.here) return;
-  V.here = false; V.departed = true;
+  V.here = false; V.departed = true; V.reformed = null;
   V.st.leftTick = tick;
   const K = V.hooks.ketchem && V.hooks.ketchem.board();
   if (K && K.root) { K.root.away = true; if (K.cam === 'root') K.cam = 'kevin'; }   // Root's party and stones keep; its body is not in the world
@@ -969,6 +987,10 @@ function tally(n) {
 // Called by the page loop after every sim step while the game runs.
 export function visitTick() {
   if (!V || !V.here || V.mode === 'sky') return;   // a friend follows a body, never the sky's gaze
+  if (V.mode === 'ketchem') {   // a knock-down or a Homeward moved Root's record: the body and its dot follow at once, not on its next action
+    const K = V.hooks.ketchem && V.hooks.ketchem.board();
+    if (K && K.root && K.root.moved && !K.root.away) { V.st.x = K.root.x; V.st.y = K.root.y; V.st.boat = false; K.root.moved = false; revealSquare(K, V.st.x, V.st.y, SIGHT_HALF); }
+  }
   if (companionTick(V.st) === 'gone') { V.friendNews = '"' + V.st.companion.name + '" is gone (t' + tick + ')'; logLine('s', 'Root\'s friend ' + V.st.companion.name + ' is gone.'); saveState(); }
 }
 
@@ -1016,8 +1038,9 @@ async function pump(hooks) {
         }
         const sky = V.mode === 'sky', game = V.mode === 'ketchem', body = !sky;
         const K = game && V.hooks.ketchem ? V.hooks.ketchem.board() : null;
+        if (K && K.root && V.reformed) { V.st.x = K.root.x; V.st.y = K.root.y; V.st.boat = !!K.root.boat; prefix = V.reformed + '\n'; V.reformed = null; }   // boardAdopted placed Root; a key change above must not move it back
         if (body && (!game || !K)) standOnGround();   // a Ketch'em body may be at sea in its boat; with the board gone it is a visitor again
-        if (game && !K) prefix += 'the board is gone (the world was reset); you are a visitor here until a new board is built\n';
+        if (game && !K) prefix += (V.hooks.ketchem && V.hooks.ketchem.building && V.hooks.ketchem.building() ? 'a new board is being built; wait, then look\n' : 'the board is gone (the world was reset); you are a visitor here until a new board is built\n');
         if (K && K.root && K.root.loaded) {   // a saved game was loaded under Root: it stands where the save left it
           V.st.x = K.root.x; V.st.y = K.root.y; V.st.boat = K.root.boat; delete K.root.loaded;
           prefix += 'the world dissolves and re-forms: a saved game, and you stand where it left you\n';
@@ -1068,6 +1091,7 @@ async function pump(hooks) {
             const r = throwStone(K, K.root, f || null, a.stone || K.root.stone);
             logLine('s', 'Root throws: ' + r.text + '.');
             if (r.delay) { V.hooks.draw(); await ticksPass(r.delay); }   // the result lands when Kevin sees the stone click or burst
+            if (V.hooks.ketchem.board() !== K) { text = r.text + '\n\nthe world dissolved and re-formed while the stone flew; look again'; break; }   // a load or a new board landed during the flight
             syncRoot();
             const grown = r.caught ? eventsText(catchXP(K, K.root, r.creature, r.level)) : '';
             text = r.text + grown + '\n\n' + perceive(st, K) + heardPoints() + rootNews(); break;

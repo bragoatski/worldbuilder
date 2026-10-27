@@ -8,6 +8,7 @@ import { drawCreatureShape } from '../render.js';
 import { creatureCard, packSummary, POTIONS } from './market.js';
 import { TYPE_COLOUR } from './render.js';
 import { STRENGTH } from './rules.js';
+import { soundOn, toggleSound, soundTick } from './sound.js';
 
 // Section 5.5 in one line each, I / II / III.
 export const ABILITY_RULES = {
@@ -29,6 +30,21 @@ export const ABILITY_RULES = {
   Hardy: 'one attack absorbed per I 500 ticks · II 300 · III 150',
 };
 
+// One small icon per ability (5.6), 12x12, drawn in the pip's colour: [path, 'f' fill | 's' stroke].
+export const ABILITY_ICON = {
+  Waterless: ['M1 9Q4 4 7 9Q9 6 11 9', 's'], Wader: ['M3 11V4M6 11V2M9 11V5', 's'],
+  Firewalk: ['M6 1C8 4 10 5 9 8A3 3 0 0 1 3 8C2 6 4 5 6 1Z', 'f'], Furcoat: ['M6 1V11M1.7 3.5L10.3 8.5M10.3 3.5L1.7 8.5', 's'],
+  Farsight: ['M1 6Q6 1 11 6Q6 11 1 6ZM6 4.5A1.5 1.5 0 1 0 6 7.5A1.5 1.5 0 1 0 6 4.5', 's'], Stalk: ['M8 1A5 5 0 1 0 11 8A4 4 0 0 1 8 1Z', 'f'],
+  Climber: ['M1 11L5 3L8 8L9 6L11 11Z', 'f'], Rivergait: ['M1 5Q3 3 5 5T9 5T11 5M1 9Q3 7 5 9T9 9T11 9', 's'],
+  Forager: ['M2 10C2 4 6 2 10 2C10 7 7 10 2 10ZM2 10L7 5', 's'], Scrounge: ['M3 3L9 9M2 4L4 2M8 10L10 8M2 2.5L3.5 1M8.5 11L10 9.5', 's'],
+  Nose: ['M6 2V8Q6 10 4 10M6 8Q6 10 8 10', 's'], Guard: ['M6 1L10 3V6C10 9 6 11 6 11C6 11 2 9 2 6V3Z', 'f'],
+  Dread: ['M6 1A4 4 0 0 0 2 5C2 7 3 8 4 8V10H8V8C9 8 10 7 10 5A4 4 0 0 0 6 1Z', 'f'], Pack: ['M3 4H9L10 11H2ZM4.5 4V3A1.5 1.5 0 0 1 7.5 3V4', 's'],
+  Lure: ['M6 1L7 5L11 6L7 7L6 11L5 7L1 6L5 5Z', 'f'], Hardy: ['M6 10L2 6A2.2 2.2 0 0 1 6 3A2.2 2.2 0 0 1 10 6Z', 'f'],
+};
+export function abilityIcon(name) {
+  const ic = ABILITY_ICON[name]; if (!ic) return '';
+  return '<svg class="kc-ic" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="' + ic[0] + '" ' + (ic[1] === 'f' ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"') + '/></svg>';
+}
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 // A creature (or an Almanac glyph) into a card canvas: the sim's own shape, scaled to the card.
@@ -46,7 +62,7 @@ export function drawGlyphs(el, glyphs, px) {
 
 // One party card. cards: creatureCard() results; the collar marks the follower.
 export function cardHTML(k, out) {
-  const pips = k.abilityList.map(a => '<span class="kc-pip" title="' + esc(ABILITY_RULES[a.name] || '') + '">' + esc(a.name) + ' <i>' + STRENGTH[a.strength] + '</i></span>').join('');
+  const pips = k.abilityList.map(a => '<span class="kc-pip" title="' + esc(a.name + ' ' + STRENGTH[a.strength] + ': ' + (ABILITY_RULES[a.name] || '')) + '">' + abilityIcon(a.name) + esc(a.name) + ' <i>' + STRENGTH[a.strength] + '</i></span>').join('');
   return '<div class="kc' + (out ? ' out' : '') + '"><canvas class="kc-g" width="30" height="30" data-glyph="' + esc(k.id) + '"></canvas><div class="kc-body">' +
     '<div class="kc-top"><b>' + esc(k.name) + '</b><span class="kc-lvl">L' + k.level + '</span><span class="kc-type" style="background:' + (TYPE_COLOUR[k.elemental] || '#ccc') + '">' + esc(k.elemental) + '</span>' + (out ? '<span class="kc-collar" title="out, following"></span>' : '') + '</div>' +
     '<div class="kc-sub">' + esc(k.type) + ' · ' + esc(k.growth) + '</div><div class="kc-ab">' + pips + '</div></div></div>';
@@ -63,9 +79,11 @@ function hudHTML(p) {
   const packTip = ps.plants + ' plants' + (potions.length ? ', ' + potions.map(n => n + ' x' + ps.potions[n]).join(', ') : '') + '. I for the pack, P for a potion';
   const fx = (p.effects || []).filter(e => e.until > tick).map(e => '<span class="kh-arc" data-potion="' + esc(e.potion) + '" title="' + esc(e.potion) + '"><b>' + esc(e.potion[0]) + '</b></span>').join('');
   const hint = p.naming ? 'N to name your catch' : p.namingSpecies ? 'N to name the new species' : p.cast ? 'homeward' : '';
-  return '<span class="kh-wallet">' + p.wallet + ' coins</span>' + stones + '<span class="kh-pack" title="' + esc(packTip) + '">pack ' + ps.used + '/' + ps.cap + '</span>' + (fx ? '<span class="kh-fx">' + fx + '</span>' : '') + (hint ? '<span class="kh-hint">' + hint + '</span>' : '');
+  const over = ps.used > ps.cap;   // a Pack creature left the party: nothing more fits until the pack is lighter
+  return '<span class="kh-wallet">' + p.wallet + ' coins</span>' + stones + '<span class="kh-pack' + (over ? ' over' : '') + '" title="' + esc(packTip + (over ? '. Over the cap: nothing more fits until the pack is lighter or a Pack creature rejoins the party' : '')) + '">pack ' + ps.used + '/' + ps.cap + '</span>' + (fx ? '<span class="kh-fx">' + fx + '</span>' : '') + (hint ? '<span class="kh-hint">' + hint + '</span>' : '') +
+    '<button type="button" class="kh-sound' + (soundOn() ? '' : ' off') + '" title="Sound ' + (soundOn() ? 'on' : 'off') + ' (O)" aria-label="Sound">' + (soundOn() ? 'sound' : 'muted') + '</button>';
 }
-function hudSig(p) { return JSON.stringify([p.wallet, p.stone, p.stones, (p.pack || []).length, packSummary(p).cap, (p.pack || []).filter(x => x.potion).map(x => x.potion), (p.effects || []).filter(e => e.until > tick).map(e => e.potion), !!p.naming, !!p.namingSpecies, !!p.cast]); }
+function hudSig(p) { return JSON.stringify([p.wallet, p.stone, p.stones, (p.pack || []).length, packSummary(p).cap, (p.pack || []).filter(x => x.potion).map(x => x.potion), (p.effects || []).filter(e => e.until > tick).map(e => e.potion), !!p.naming, !!p.namingSpecies, !!p.cast, soundOn()]); }
 // The arcs: the fraction of each potion's duration left, as a conic sweep; the sweep moves every tick, the hover
 // text once a second (a rewritten title would reset the tooltip under the pointer).
 function arcs(el, p) {
@@ -101,6 +119,8 @@ function css() {
     '#kHud .kh-fx{display:flex;gap:4px;margin-left:2px;} .kh-arc{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;position:relative;}' +
     '.kh-arc b{width:14px;height:14px;border-radius:50%;background:var(--bg-panel);display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:#f3d9a4;}' +
     '#kHud .kh-hint{color:#f3d9a4;padding:2px 7px;border-left:1px solid var(--border);}' +
+    '#kHud .kh-pack.over{color:#ff7a7a;} #kHud .kh-sound{background:none;border:1px solid var(--border);border-radius:6px;color:var(--fg-dim);font:inherit;font-size:11px;padding:1px 6px;cursor:pointer;} #kHud .kh-sound.off{color:var(--fg-faint);text-decoration:line-through;}' +
+    '.kc-ic{vertical-align:-1px;margin-right:3px;}' +
     '#kParty{position:absolute;left:14px;bottom:12px;z-index:6;display:flex;gap:8px;width:calc(100% - 28px);max-width:640px;}' +
     '.kc{display:flex;gap:8px;align-items:flex-start;flex:1 1 0;min-width:0;max-width:200px;box-sizing:border-box;padding:7px 9px;background:rgba(13,17,23,.86);border:1px solid var(--border-hi);border-radius:9px;backdrop-filter:blur(6px);color:var(--fg);font:11px/1.35 "JetBrains Mono",monospace;}' +
     '.kc.out{border-color:#e8a83899;} .kc .kc-g{flex:none;width:30px;height:30px;image-rendering:pixelated;background:rgba(255,255,255,.04);border-radius:6px;}' +
@@ -131,7 +151,8 @@ export function hudTick(K) {
   }
   ensure();
   const p = K.kevin;
-  const hs = hudSig(p); if (hs !== lastHud) { lastHud = hs; hudEl.innerHTML = hudHTML(p); hudEl.hidden = false; }
+  const hs = hudSig(p); if (hs !== lastHud) { lastHud = hs; hudEl.innerHTML = hudHTML(p); hudEl.hidden = false; const sb = hudEl.querySelector('.kh-sound'); if (sb) sb.addEventListener('click', () => { toggleSound(); hudTick(K); }); }
+  soundTick(K);
   arcs(hudEl, p);
   const cards = partyFor(p, kevinSlot), sig = partySig(p, cards);
   if (sig !== lastParty) { lastParty = sig; partyEl.innerHTML = rowHTML(p, cards); partyEl.hidden = !cards.length; drawGlyphs(partyEl, glyphMap(cards), 16); }

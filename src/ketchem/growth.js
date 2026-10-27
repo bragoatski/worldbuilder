@@ -5,7 +5,7 @@
 import { T, grid, tick, idx, speciesKey, getSpeciesName, fauna, makeFauna } from '../sim.js';
 import { onStore } from './encounter.js';
 import { elementalType, levelOf, populationOf, prefBucket } from './rules.js';
-import { almanacEntry, fx } from './encounter.js';
+import { almanacEntry, fx, learnSpecies } from './encounter.js';
 // An evolved species still waiting for its name from this player (the HUD keeps asking until it is named or gone).
 function pendingUnnamed(K, p) { if (!p.namingSpecies) return false; const c = (p.party || []).find(x => x.id === p.namingSpecies) || (K.cabinet || []).find(x => x.id === p.namingSpecies); if (!c) { p.namingSpecies = null; return false; } return !almanacEntry(K, c).nickname; }
 
@@ -64,7 +64,7 @@ function evolve(K, p, c, oldKey, oldName) {
   const old = K.almanac.species[oldKey];
   if (!e.evolvedFrom) e.evolvedFrom = (old && (old.nickname || old.scientific)) || oldName || ('an unnamed ' + c.type + ' line');
   if (old) { old.variants = old.variants || []; if (!old.variants.includes('evolved')) old.variants.push('evolved'); }
-  if (!e.scientific) e.scientific = getSpeciesName(c) || null;
+  learnSpecies(e, c); if (!e.seen) e.seen = 1; if (!e.caught) e.caught = 1;   // the evolver is the first of its kind, seen and in hand
   if (!e.nickname && !pendingUnnamed(K, p)) p.namingSpecies = c.id;   // the first evolver names the new species; an earlier unnamed one keeps its turn
   fx(K, 'evolve', { len: 24, id: c.id, x: p.x, y: p.y, name: e.scientific || '' });
   return { kind: 'evolve', creature: c, from: e.evolvedFrom, to: e.scientific || speciesKey(c), named: !!e.nickname };
@@ -153,7 +153,8 @@ export function breed(K, p, aName, bName) {
   const child = makeFauna(p.x, p.y, a.type, offspringGenome(a, b, K.rng));
   child.age = 0; child.energy = child.maxEnergy; child.bornAt = tick; child.by = p.id; child.parents = [a.name || a.type, b.name || b.type]; delete child._speciesName;
   K.cabinet.push(child);
-  const e = almanacEntry(K, child); e.variants = e.variants || []; if (!e.variants.includes('bred')) e.variants.push('bred'); if (!e.scientific) e.scientific = getSpeciesName(child) || null;
+  const e = almanacEntry(K, child); e.variants = e.variants || []; if (!e.variants.includes('bred')) e.variants.push('bred'); learnSpecies(e, child);
+  const seen = K.seenIds || (K.seenIds = {}); if (!seen[child.id]) { seen[child.id] = 1; e.seen++; } e.caught++;   // a newborn is seen and in hand
   if (p.naming) (p.namingQueue || (p.namingQueue = [])).push(child.id); else p.naming = child.id;   // a pending catch name keeps its turn
   fx(K, 'bred', { len: 12, x: p.x, y: p.y });
   return { ok: true, text: 'bred "' + (a.name || a.type) + '" and "' + (b.name || b.type) + '" for ' + fee + ' coins: a young ' + child.type + ' L' + levelOf(child, populationOf(child, fauna, speciesKey)) + ' ' + elementalType(child).typ + ' in the cabinet. name it', child, fee };

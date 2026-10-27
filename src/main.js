@@ -22,7 +22,7 @@ import {
 } from './sim.js';
 import * as SIM from './sim.js';   // the live module, for the ?debug handle only (a URL import after a hot reload is a second instance)
 import { drawWorld } from './render.js';
-import { bootVisit, visitDraw, visitTick } from './visit.js';
+import { bootVisit, visitDraw, visitTick, boardAdopted, rootPlaying } from './visit.js';
 import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
 import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
@@ -31,6 +31,8 @@ import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, pla
 import { initStores, marketTick, storeAt, shopLists, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacLists, packSummary } from './ketchem/market.js';
 import { storePanel, almanacPanel, closePanel, panelOpen } from './ketchem/panel.js';
 import { hudTick } from './ketchem/hud.js';
+import { ask, closeAsk } from './ketchem/ask.js';
+import { toggleSound } from './ketchem/sound.js';
 import { growthTick, catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
@@ -630,6 +632,7 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 
 // Hotkeys
 window.addEventListener('keydown',function(e){
+  if((e.target||{}).id==='kAskIn')return;   // keys typed into the question bar are the bar's (Enter answers, Esc declines), F5 and F9 included
   var tag=(e.target||{}).tagName||'';
   if(/INPUT|SELECT|TEXTAREA/.test(tag)){if(K&&(e.key==='F5'||e.key==='F9'||((tag==='SELECT'||(e.target||{}).type==='range')&&e.key!=='Tab'&&!/^(Shift|Control|Alt|Meta)$/.test(e.key)))){e.target.blur();ketchemKey(e);}return;}   // F5 must never reload an unsaved game because a slider had focus; on a board a focused select or slider gives the keys back to the game
   if(K){if(ketchemKey(e))return;if(e.ctrlKey||e.metaKey||e.altKey)return;}   // a board is up: the keys are Kevin's character's, and a browser chord (Ctrl+R, Ctrl+F) is the browser's, never the page's reset
@@ -693,7 +696,7 @@ function draw(){
 // Reached for now through ?ketchem=<setting>[&kseed=N][&ksize=96]; the launch card entry is step 4.
 var K=null,_kWorker=null,_kProgress=null;
 // Anything that regenerates the world under a board takes the board down first (a scenario, a JSON load; init() does its own).
-function leaveBoard(){if(!K&&!_kProgress)return;abandonBuild();K=null;document.body.classList.remove('ketchem');closePanel();hudTick(null);}
+function leaveBoard(){if(!K&&!_kProgress)return;abandonBuild();K=null;document.body.classList.remove('ketchem');closePanel();closeAsk();hudTick(null);}
 function _kGround(c,p){drawKetchemGround(c,p,K);}
 function _kTop(c,p){drawFog(c,p,K);}
 function getKetchemParam(){
@@ -726,12 +729,13 @@ function ketchemKey(e){
   var p=K.kevin;if(!p)return false;
   if(e.ctrlKey||e.metaKey||e.altKey)return false;   // browser and page chords (copy, undo, reload) stay theirs
   var k=String(e.key||'').toLowerCase();
-  if(e.repeat&&(k==='tab'||k===' '||e.code==='Space'||k==='f'||k==='n'||k==='b'||k==='p'||k==='g'||k==='m'||k==='c'||k==='e'||k==='i')){e.preventDefault();return true;}   // an act is one press, never an auto-repeat
+  if(e.repeat&&(k==='tab'||k===' '||e.code==='Space'||k==='f'||k==='n'||k==='b'||k==='p'||k==='g'||k==='m'||k==='c'||k==='e'||k==='i'||k==='o'||k==='t')){e.preventDefault();return true;}   // an act is one press, never an auto-repeat
   if(_kPotion){   // P then a digit: the Nth potion in the pack; a thrown or creature potion wants the target
     e.preventDefault();_kPotion=false;
     if(/^[1-9]$/.test(k)){var names=Object.keys(packSummary(p).potions);var pn=names[+k-1];if(!pn){kevinSay('no potion '+k);draw();return true;}
-      var tgt=p.target?fauna.find(function(a){return a&&a.id===p.target;}):null;var kind=pn==='Tonic'?(p.party[0]||null):pn==='Musk'?(window.prompt('Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore')||''):tgt;
-      var rp=usePotion(K,p,pn,kind);kevinSay(rp.text);}
+      var tgt=p.target?fauna.find(function(a){return a&&a.id===p.target;}):null;
+      if(pn==='Musk'){ask('Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore').then(function(t){if(t===null||!K)return;kevinSay(usePotion(K,K.kevin,'Musk',t).text);draw();});return true;}
+      var rp=usePotion(K,p,pn,pn==='Tonic'?(p.party[0]||null):tgt);kevinSay(rp.text);}
     else kevinSay('potion: cancelled');
     draw();return true;
   }
@@ -758,7 +762,8 @@ function ketchemKey(e){
   if(k==='p'){e.preventDefault();var ps=packSummary(p);var pl=Object.keys(ps.potions);if(!pl.length){kevinSay('no potions in the pack');draw();return true;}_kPotion=true;kevinSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));draw();return true;}
   if(k==='i'){e.preventDefault();var pi=packSummary(p);kevinSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):''));draw();return true;}
   if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else almanacPanel(almanacLists(K,p));return true;}
-  if(k==='g'){e.preventDefault();var gw=window.prompt('Give what? coins N, Amber N, a potion name, plant, or a party creature name','coins 10');if(gw===null)return true;var gm=/^(.*?)(?:\s+(\d+))?$/.exec(gw.trim());var rg=giveItem(K,p,gm[1],+gm[2]||1);kevinSay(rg.text);draw();return true;}
+  if(k==='g'){e.preventDefault();ask('Give Root what? coins N, Amber N, a potion name, plant, or a party creature name','coins 10').then(function(gw){if(gw===null||!K)return;var gm=/^(.*?)(?:\s+(\d+))?$/.exec(gw);kevinSay(giveItem(K,K.kevin,gm[1],gm[2]?+gm[2]:undefined).text);draw();});return true;}
+  if(k==='o'){e.preventDefault();kevinSay('sound '+(toggleSound()?'on':'off'));draw();return true;}
   if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
   if(k==='tab'){e.preventDefault();kevinCycleTarget();draw();return true;}
   if(k===' '||e.code==='Space'){e.preventDefault();kevinThrow();draw();return true;}
@@ -766,7 +771,7 @@ function ketchemKey(e){
   if(k==='b'){e.preventDefault();_kBait={kind:null};kevinSay('bait: P plant, S scatter, M meat, T stake');draw();return true;}
   if(k==='f'){e.preventDefault();var rf=p.follower?recall(K,p):follow(K,p,null);kevinSay(rf.text);draw();return true;}
   if(k==='n'){e.preventDefault();kevinName();draw();return true;}
-  if(k==='t'){e.preventDefault();var fw=window.prompt('Feed which party creature, and what? "Goat" feeds it the first plant in the pack; "Wolf, Snack" feeds Wolf the party creature Snack',(p.party[0]&&(p.party[0].name||p.party[0].type))||'');if(fw===null)return true;var fp=fw.split(',').map(function(x){return x.trim();});var rf2=feedCreature(K,p,fp[0],fp[1]||'plant');kevinSay(rf2.text);draw();return true;}
+  if(k==='t'){e.preventDefault();ask('Feed which party creature, and what? "Goat" feeds it the first plant in the pack; "Wolf, Snack" feeds Wolf the party creature Snack',(p.party[0]&&(p.party[0].name||p.party[0].type))||'').then(function(fw){if(fw===null||!K)return;var fp=fw.split(',').map(function(x){return x.trim();});kevinSay(feedCreature(K,K.kevin,fp[0],fp[1]||'plant').text);draw();});return true;}
   if(k==='f5'){e.preventDefault();saveGame();return true;}
   if(k==='f9'){e.preventDefault();_kMenu().toggle();return true;}
   if(k==='escape'||k==='enter'||k==='t'||/^f\d+$/.test(k))return false;   // R is NOT let through: it would reset the world under both players (the Reset button still does)
@@ -779,8 +784,8 @@ var _kBait=null,_kPotion=false;
 // The store (E or C on a store tile): BUY / SELL / BOX; entering autosaves (18.2).
 function openStore(tab){
   var p=K.kevin;if(!storeAt(K,p))return;
-  storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[],pen:[],fee:function(){return 0;}};}return shopLists(K,p,s);},buy:function(item,qty){kevinSay(buyItem(K,p,item,qty).text);},sell:function(name){kevinSay(sellItem(K,p,name).text);},
-    sellPlants:function(){kevinSay(sellItem(K,p,'plants').text);},box:function(name,take){kevinSay(boxItem(K,p,name,take).text);},breed:function(a,b){kevinSay(breedPair(K,p,a,b).text);},onChange:draw},tab||'buy');
+  storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[],pen:[],fee:function(){return 0;}};}return shopLists(K,p,s);},buy:function(item,qty){var r=buyItem(K,p,item,qty);kevinSay(r.text);return r;},sell:function(name){var r=sellItem(K,p,name);kevinSay(r.text);return r;},
+    sellPlants:function(){var r=sellItem(K,p,'plants');kevinSay(r.text);return r;},box:function(name,take){var r=boxItem(K,p,name,take);kevinSay(r.text);return r;},breed:function(a,b){var r=breedPair(K,p,a,b);kevinSay(r.text);return r;},onChange:draw},tab||'buy');
   draw();
 }
 function dirOf(d){return (d[1]<0?'N':d[1]>0?'S':'')+(d[0]<0?'W':d[0]>0?'E':'');}
@@ -797,10 +802,10 @@ function kevinThrow(){
 }
 function kevinName(){
   var p=K.kevin;
-  if(!p.naming&&p.namingSpecies){var sn=window.prompt('Your creature evolved into a new species. Name the species','');if(sn===null)return;kevinSay(nameCatch(K,p,sn).text);return;}
+  if(!p.naming&&p.namingSpecies){ask('Your creature evolved into a new species. Name the species','').then(function(sn){if(sn===null||!K)return;kevinSay(nameCatch(K,K.kevin,sn).text);draw();});return;}
   if(!p.naming){kevinSay('nothing to name');return;}
-  var name=window.prompt('Name your catch (and, after a comma, a nickname for the species)','');if(name===null)return;
-  var parts=name.split(',');var r=nameCatch(K,p,parts[0],parts[1]&&parts[1].trim());kevinSay(r.text);
+  var c=p.party.concat(K.cabinet).find(function(x){return x.id===p.naming;}),nid=p.naming,K0=K;
+  ask('Name your '+(c?c.type:'catch')+(p.namingQueue&&p.namingQueue.length?' ('+(p.namingQueue.length+1)+' waiting)':'')+'; after a comma, a nickname for its species','').then(function(name){if(name===null||K!==K0)return;if(K.kevin.naming!==nid){kevinSay('that one left your hands before you named it; N names the next');draw();return;}var parts=name.split(',');kevinSay(nameCatch(K,K.kevin,parts[0],parts[1]&&parts[1].trim()).text);draw();});
 }
 canvas.addEventListener('click',function(ev){
   if(!K||!K.kevin||ev.shiftKey)return;
@@ -830,7 +835,7 @@ function slotName(raw){return String(raw||'').replace(/[^\w -]/g,'').replace(/^[
 var _kSaving=false;
 function saveGame(){
   if(!K||_kSaving)return Promise.resolve(false);
-  if(!K.slot){var name=window.prompt('Name this game',String(K.seed));if(name===null)return Promise.resolve(false);K.slot=slotName(name)||String(K.seed);}
+  if(!K.slot){var K0=K;return ask('Name this game',String(K.seed)).then(function(name){if(name===null||K!==K0)return false;if(!K.slot)K.slot=slotName(name)||String(K.seed);return saveGame();});}
   _kSaving=true;_kAutoAt=tick;   // the autosave clock advances now, so a slow or failed write is never retried every tick
   var data=buildSave(K,K.slot);
   return putSlot(data).then(function(){return mirrorSave(data);}).then(function(mirrored){kevinSay('saved "'+K.slot+'"'+(mirrored?'':', not mirrored'));draw();return true;})
@@ -848,6 +853,7 @@ function adoptBoard(board){
   placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
   speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
   var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
+  closeAsk();boardAdopted(K);   // Root, if it is playing, stands in the new board at once
   running=!_kHold;draw();refreshUndoBtn();
 }
 var _kHold=false;   // debug only (window.__wb.ketchem.pause): a held world lets a rehearsal compare a save with its load exactly
@@ -858,7 +864,7 @@ function abandonBuild(){if(_kWorker){_kWorker.terminate();_kWorker=null;}_kProgr
 function startKetchem(setting,seed,size,onDone){
   if(!KETCHEM_SETTINGS[setting]){var eb0=document.getElementById('err');if(eb0){eb0.style.display='block';eb0.textContent='Unknown Ketch\'em board setting: '+setting;}if(onDone)onDone(false);return;}
   abandonBuild();_kOnDone=onDone||null;
-  K=null;running=false;followId=null;document.body.classList.remove('ketchem');
+  K=null;running=false;followId=null;document.body.classList.remove('ketchem');closeAsk();
   clearScenario();if(_scenWarmTimer){clearTimeout(_scenWarmTimer);_scenWarmTimer=null;}   // a scenario warm-up must not seed life into the arriving board
   _kProgress={phase:'land',land:0,target:1,setting:setting};draw();
   _kWorker=new Worker(new URL('./ketchem/board.worker.js',import.meta.url),{type:'module'});
@@ -1268,7 +1274,11 @@ function init(){
   // A rebuilt world re-issues fauna ids from 1, so a stale followId would re-attach the camera to an unrelated
   // creature (or spuriously report "the creature you were following has died"). Drop the follow on any rebuild.
   followId=null;
-  K=null;abandonBuild();   // a rebuilt world has no board; a build in flight is abandoned (its caller is told)
+  // With Root playing Ketch'em, a rebuilt world gets a new board of the same setting, so Root is never left standing
+  // in a world with no game (adversarial run 2026-10-25); without Root, Reset leaves the game for the plain world.
+  var _kRebuild=((K||_kProgress)&&rootPlaying())?{setting:K?K.setting:_kProgress.setting,size:K?(K.size||W):W}:null;   // a board in flight counts: a second Reset mid-build still leaves Root a board
+  K=null;abandonBuild();closeAsk();   // a rebuilt world has no board; a build in flight is abandoned (its caller is told)
+  if(_kRebuild)setTimeout(function(){if(!K&&!_kProgress)startKetchem(_kRebuild.setting,undefined,_kRebuild.size);},0);
   if(typeof document!=='undefined')document.body.classList.remove('ketchem');
   if(_pendingWorldCode){
     var wc=_pendingWorldCode; _pendingWorldCode=null;
@@ -1362,7 +1372,7 @@ function dismissIntro(){
 bootVisit({draw:draw,screenToTile:screenToTile,canvas:canvas,getSpeed:function(){return speed;},
   setSpeed:function(s){speed=s;var sp=document.getElementById('speed');if(sp)sp.value=s;},
   onGodMark:refreshUndoBtn,     // Root's shaping is one act in the Hand's undo, so the button must wake for it
-  ketchem:{board:function(){return K;},start:function(setting,seed,cb){startKetchem(setting,seed,96,cb);}}});   // the game mode builds a board first
+  ketchem:{board:function(){return K;},building:function(){return !!_kProgress;},start:function(setting,seed,cb){startKetchem(setting,seed,96,cb);}}});   // the game mode builds a board first
 
 // Verification handle, active ONLY with ?debug in the URL (inert for normal users). Lets the
 // gate-blind river visual verify drive load->rivers->draw from one script call, no file dialog.

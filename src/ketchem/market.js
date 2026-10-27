@@ -252,7 +252,7 @@ export function almanacText(K, p) {
   out.push('Almanac: ' + species.length + ' species, ' + K.stores.filter(s => s.revealed).length + '/4 stores found');
   for (const [key, e] of species) {
     const sci = e.scientific || 'unnamed ' + e.type + ' line'; void key;
-    out.push((e.nickname ? '"' + e.nickname + '" ' : '') + sci + ' (' + e.type + '): seen ' + e.seen + ', caught ' + e.caught + ', best L' + e.bestLevel + (e.namedBy ? ', named by ' + e.namedBy : '') + (e.evolvedFrom ? ', evolved from ' + e.evolvedFrom : '') + (e.variants && e.variants.length ? ', ' + e.variants.join(', ') : ''));
+    out.push((e.nickname ? '"' + e.nickname + '" ' : '') + sci + ' (' + e.type + '): seen ' + e.seen + ', caught ' + e.caught + ', best L' + e.bestLevel + (e.namedBy ? ', named by ' + e.namedBy : '') + (e.evolvedFrom ? ', evolved from ' + e.evolvedFrom : '') + (e.usual && e.usual.length ? ', usually ' + e.usual.join(' and ') : '') + (e.variants && e.variants.length ? ', ' + e.variants.join(', ') : ''));
   }
   for (const s of K.stores.filter(s => s.revealed)) out.push('store ' + s.name + ' at ' + s.x + ',' + s.y + (p ? ' ' + bearingTo(p.x, p.y, s.x, s.y) : ''));
   for (const l of K.landmarks || []) if (K.fog && isSeenTile(K, l)) out.push('landmark ' + l.name + ' at ' + l.x + ',' + l.y);
@@ -263,7 +263,7 @@ export function almanacText(K, p) {
 export function almanacLists(K, p) {
   const at = o => (p ? bearingTo(p.x, p.y, o.x, o.y) : '');
   const species = Object.entries(K.almanac.species).map(([key, e]) => ({ key, nickname: e.nickname || null, scientific: e.scientific || null, type: e.type, seen: e.seen, caught: e.caught, bestLevel: e.bestLevel,
-    namedBy: e.namedBy || null, evolvedFrom: e.evolvedFrom || null, variants: e.variants || [], glyph: e.glyph || null }));
+    namedBy: e.namedBy || null, evolvedFrom: e.evolvedFrom || null, variants: e.variants || [], usual: e.usual || [], glyph: e.glyph || null }));
   const stores = K.stores.filter(s => s.revealed).map(s => ({ name: s.name, x: s.x, y: s.y, bearing: at(s) }));
   const landmarks = (K.landmarks || []).filter(l => K.fog && isSeenTile(K, l)).map(l => ({ name: l.name, kind: l.kind, x: l.x, y: l.y, bearing: at(l) }));
   return { species, stores, landmarks, found: stores.length, total: K.stores.length };

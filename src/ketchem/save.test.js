@@ -98,3 +98,20 @@ describe('carried creatures keep their ids after a load (adversarial run 2026-10
     expect(K2.cabinet[0].id).toBe(kid.id); expect(K2.kevin.party[0].id).toBe(pet.id);
   });
 });
+
+describe('sightings survive a load (finishing pass 2026-10-26)', () => {
+  it('the seen ids of creatures still in the world come back; the dead are dropped', () => {
+    const live = sim.fauna.find(Boolean);
+    K.seenIds = { [live.id]: 1, 99999999: 1 };
+    const K2 = S.importSave(S.exportSave(S.buildSave(K, 'seen')));
+    expect(K2.seenIds[live.id]).toBe(1); expect(K2.seenIds[99999999]).toBeUndefined();
+  });
+});
+
+describe('a damaged sightings list (critic 2026-10-26)', () => {
+  it('loads as empty instead of throwing after the world changed', () => {
+    const rec = S.buildSave(K, 'bad'); rec.seenIds = 'oops';
+    const K2 = S.applySave(JSON.parse(JSON.stringify(rec)));
+    expect(K2.seenIds).toEqual({});
+  });
+});

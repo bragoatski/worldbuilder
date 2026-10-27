@@ -15,7 +15,7 @@ const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text().slice(0, 300)); });
 page.on('pageerror', e => errors.push('pageerror: ' + e.message.slice(0, 300)));
 const HOSTILE = ['<img src=x onerror=alert(1)>', 'plants', '', 'a'.repeat(100), 'Tam, Hopper', 'coins 1e9', 'coins -5', 'Amber NaN', 'herbivore', 'Ash', 'Tam', 'x, y, z', '0', 'carnivore', 'Goat, Snack', 'Tam, Tam', 'fuzz', 'Bee'];
-page.on('dialog', d => d.accept(d.type() === 'prompt' ? pick(HOSTILE) : undefined));
+const reply = async () => { if (await page.$('#kAsk:not([hidden])')) { if (rnd() < 0.85) { await page.fill('#kAskIn', pick(HOSTILE)); await page.press('#kAskIn', 'Enter'); } else await page.press('#kAskIn', 'Escape'); } };   // the question bar (ask.js) replaced window.prompt
 await page.goto('http://127.0.0.1:5173/worldbuilder/?debug&ketchem=continent&kseed=' + seed);
 await page.click('#introStart');
 await page.waitForFunction(() => window.__wb && window.__wb.ketchem && window.__wb.ketchem.board() !== null, null, { timeout: 180000 });
@@ -73,7 +73,7 @@ async function act() {
 }
 const found = [];
 for (let i = 1; i <= ITER; i++) {
-  await act();
+  await act(); await reply();
   if (i % 50 === 0) {
     bursts++;
     const planted = await plant();

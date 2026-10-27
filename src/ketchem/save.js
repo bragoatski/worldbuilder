@@ -30,6 +30,12 @@ function awarenessRecords(aw) {
 }
 function activeVents() { const out = []; for (let i = 0; i < W * H; i++) if (volcActive[i]) out.push({ i, age: volcAge[i], life: volcLife[i] }); return out; }
 function cfgDiff() { const d = {}; for (const k of Object.keys(DEFAULT_CFG)) if (CFG[k] !== DEFAULT_CFG[k]) d[k] = CFG[k]; return d; }
+// The sighted creatures that can still be met: alive in the world or carried (the dead never come back, ids are not reused).
+function seenLive(K) {
+  const ids = K.seenIds || {}, live = new Set(fauna.filter(Boolean).map(f => f.id));
+  for (const c of [K.cabinet, (K.baits || []).map(b => b.payload)].concat([K.kevin, K.root].map(p => (p && p.party) || [])).flat()) if (c) live.add(c.id);
+  return Object.keys(ids).map(Number).filter(id => live.has(id));
+}
 function playerRecord(id, p) {
   return { id, x: p.x, y: p.y, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones || { amber: 10, geode: 0, obsidian: 0 }, stone: p.stone || 'Amber',
     pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null,
@@ -62,6 +68,7 @@ export function buildSave(K, slot) {
     almanac: K.almanac || { species: {}, places: { stores: [], landmarks: [] } },
     baits: K.baits || [], encounters: awarenessRecords(K.aw), pulses: {}, nextId: K.nextId || 1,
     musk: K.musk || null, decoy: K.decoy || null, news: K.news || [],
+    seenIds: seenLive(K),
   });
 }
 
@@ -94,6 +101,7 @@ function decode(data) {
 export function applySave(raw) {
   const data = migrate(raw);
   const d = decode(data);
+  const seenIds = Object.fromEntries((Array.isArray(data.seenIds) ? data.seenIds : []).filter(Number.isFinite).map(id => [id, 1]));   // before anything live changes
   const cfg0 = { ...CFG };
   Object.assign(CFG, DEFAULT_CFG, data.cfg || {});
   try { applySnapshot(data.sim); } catch (e) { Object.assign(CFG, cfg0); throw e; }   // a damaged record leaves the tab's configuration as it was
@@ -118,6 +126,7 @@ export function applySave(raw) {
     fog: d.fog, cabinet: data.cabinet || [], almanac: data.almanac, baits: data.baits || [], aw: data.encounters || {}, pulses: data.pulses || {}, nextId: data.nextId || 1,
     kevin: null, root: null, cam: 'kevin',
     musk: data.musk || null, decoy: data.decoy || null, news: data.news || [],
+    seenIds,
   };
   for (const p of data.players || []) {
     const pl = Object.assign(newPlayer(p.x, p.y), { id: p.id, boat: !!p.boat, wallet: p.wallet || 0, stones: p.stones, pack: p.pack || [], party: p.party || [], follower: p.follower || null, effects: p.effects || [], knockedDown: p.knockedDown || null, stone: p.stone || 'Amber', naming: p.naming || null, namingQueue: p.namingQueue || [], namingSpecies: p.namingSpecies || null, hardyAt: p.hardyAt || 0, followerAt: p.followerAt || null, facing: p.facing || null,

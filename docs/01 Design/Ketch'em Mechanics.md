@@ -412,7 +412,9 @@ results are delayed to match them (sec. 9) so the two players are in step. All d
 
 Root's text keeps the same beats: a throw's result is delivered after throw + pull-in + wobbles + click or burst
 (8 + 4 + 30 + 6 = 48 ticks, 8 seconds at full visit speed), so when Kevin sees the stone click, Root reads `caught`.
-Sound is deferred: a single short click, burst and growl sample would be enough when we add it.
+Sound is deferred: a single short click, burst and growl sample would be enough when we add it. Built 2026-10-26: the
+three, synthesised in the browser (no files), each at its moment in the animation (the click or burst when the wobbles
+end, a growl with each warning pulse), only for what is in Kevin's sight square; O or the HUD chip mutes.
 
 ## 10. Price
 
@@ -1066,7 +1068,8 @@ Kevin's last message shows as a bubble at his character for 4 s. Root's characte
 boat hull under either player at sea. Root arrives on the second start's doorstep and its first look names its store,
 the signpost and Kevin's start store with a bearing. Root is called through the launch card: the Ketch'em card shows a
 board setting and seed; Begin builds the board first when the page has none, then summons. Tab, Space, B, F, P, I, M,
-C, G, Enter, F5, F9, the HUD and the party row are later steps.
+C, G, Enter, F5, F9, the HUD and the party row are later steps. (Built since: see steps 6-10 and the finishing pass;
+O toggles sound.)
 
 Built 2026-10-25 (step 10, `src/ketchem/hud.js`, `panel.js`; readings of 22.3 and 5.6, overturnable):
 - The HUD is a DOM bar at the top left of the map: wallet, the three stones as `1 Amber 8` chips with the one in hand
@@ -1124,4 +1127,27 @@ page; the rulings below are readings, overturnable):
   big / vivid / tolerant variants (never recorded); a pack can sit over its cap after the Pack creature leaves (no
   further picking); names are not unique; `window.prompt` (N, G, T, Musk) freezes the loop and Root's door while open
   (an inline input is the polish for it); a load during Root's 48-tick throw delay lets that one result read the old
-  board.
+  board. (All closed by the finishing pass below, except that names became unique rather than staying free.)
+
+Finishing pass 2026-10-26 (owner ask: "finish the rest of the steps"; readings, overturnable). The ten steps were built;
+this closes what step 10 and the adversarial run left open. Out of scope by the handoff's sec. 7 and not built: a second
+human player, Root on the public site, trading between saves, items beyond the potion table. The playtest stays the
+owner's.
+- Questions are an inline bar above the party row (N, G, T, Musk's type, a new game's name), never a browser prompt:
+  the world and Root keep moving while Kevin types. Enter answers, Esc declines; a question about a creature that left
+  his hands before he answered says so rather than naming the next one.
+- Names are one to a creature across both players, the cabinet and a bait (the verbs, give and the cabinet find
+  creatures by name); a duplicate is refused with the reason. Catches are named in the order caught.
+- Every ability pip has an icon (16 small glyphs: dunes, reeds, flame, snowflake, eye, moon, mountain, waves, leaf,
+  bone, nose, shield, skull, bag, spark, heart) beside its name and strength; hover gives the rule.
+- The cabinet tab (C) is two zones, party and cabinet: drag a creature across, or use the buttons. Any refusal (a full
+  party, too few coins, a rest) shows in the panel itself.
+- The Almanac learns each species' usual abilities (its elemental and trophic ones; a Plain line's trophic one) and
+  the variants seen with the gene behind each (big, vivid, tolerant), beside bred and evolved. A creature counts as
+  seen once for the whole game, whoever sees it; an evolved species and a bred newborn's species count their first
+  member as seen and caught.
+- The pack shows red when over its cap (a Pack creature left the party); nothing more fits until it is lighter.
+- Root and the board: a knock-down or Homeward moves Root's body and dot at once; a load while Root plays puts Root
+  where the save left it at once; Reset (or a new world) while Root plays builds a new board of the same setting with
+  Root on its doorstep, also when pressed again mid-build; a throw whose result lands after the board was replaced
+  says so instead of reading the old board.
