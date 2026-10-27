@@ -115,3 +115,31 @@ describe('a damaged sightings list (critic 2026-10-26)', () => {
     expect(K2.seenIds).toEqual({});
   });
 });
+
+describe('trading between saves (mechanics 24)', () => {
+  it('a creature sent into another record takes an id that record never used, and loads in its cabinet', () => {
+    const other = S.buildSave(K, 'other');
+    const kept = sim.makeFauna(K.kevin.x, K.kevin.y, 'herbivore', null); kept.name = 'Kept';
+    other.cabinet = [structuredClone(kept)];
+    const top = S.recordMaxId(other);
+    const pet = sim.makeFauna(K.kevin.x, K.kevin.y, 'carnivore', null); pet.name = 'Rex'; pet.id = 5; pet.bredAt = 3;
+    const sent = S.addToRecordCabinet(other, pet, 'mine');
+    expect(sent.id).toBe(top + 1); expect(sent.name).toBe('Rex'); expect(sent.tradedFrom).toBe('mine'); expect(sent.bredAt).toBeUndefined();
+    expect(pet.id).toBe(5);   // the original is untouched: a copy went
+    const K2 = S.importSave(S.exportSave(other));
+    expect(K2.cabinet.map(c => c.name)).toEqual(['Kept', 'Rex']);
+    const born = sim.makeFauna(1, 1, 'herbivore', null); expect(born.id).toBeGreaterThan(sent.id);
+  });
+  it('refuses a record that is not a save', () => { expect(() => S.addToRecordCabinet({}, { id: 1 })).toThrow(/not a Ketch/); });
+});
+
+describe('trading: names and ids in the other save (critic 2026-10-26)', () => {
+  it('a name already taken in the other save gets a number', () => {
+    const other = S.buildSave(K, 'other');
+    const a = sim.makeFauna(1, 1, 'herbivore', null); a.name = 'Rex'; other.cabinet = [structuredClone(a)];
+    const b = sim.makeFauna(1, 1, 'herbivore', null); b.name = 'rex';
+    expect(S.addToRecordCabinet(other, b, 'mine').name).toBe('rex 2');
+    const c = sim.makeFauna(1, 1, 'herbivore', null); c.name = 'Rex';
+    expect(S.addToRecordCabinet(other, c, 'mine').name).toBe('Rex 3');
+  });
+});

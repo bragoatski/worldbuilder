@@ -51,7 +51,7 @@ export function storePanel(acts, tab = 'buy', note = '') {
   } else {
     // Two drop zones (22.2 C: drag between them); the buttons do the same for a keyboard or a touch screen.
     const row = (c, zone) => '<tr draggable="true" data-drag="' + esc(c.id) + '" data-from="' + zone + '">' + glyphCell(c) + '<td class="n">' + esc(c.name) + '</td><td class="m">' + esc(c.type) + ' L' + esc(c.level) + ' ' + esc(c.elemental) + ' ' + esc(c.growth || '') + '</td><td class="r">' +
-      (zone === 'party' ? '<button class="b" data-box="' + esc(c.id) + '">To cabinet</button>' : '<button class="b" data-take="' + esc(c.id) + '">To party</button>') + '</td></tr>';
+      (zone === 'party' ? '<button class="b" data-box="' + esc(c.id) + '">To cabinet</button>' : '<button class="b" data-take="' + esc(c.id) + '">To party</button>' + (acts.send ? '<button class="b" data-send="' + esc(c.id) + '" title="Send it to the cabinet of another saved game">Send</button>' : '')) + '</td></tr>';
     const zone = (id, title, list, empty) => '<div class="kp-zone" data-zone="' + id + '"><div class="kp-sec">' + title + '</div>' + (list.length ? '<table>' + list.map(c => row(c, id)).join('') + '</table>' : '<div class="kp-empty">' + empty + '</div>') + '</div>';
     body = zone('party', 'Party ' + L.party.length + '/3', L.party, 'Empty. Drag a creature here from the cabinet.') + zone('cabinet', 'Cabinet ' + L.box.length, L.box, 'Empty. Drag a party creature here to keep it at the stores.');
   }
@@ -68,6 +68,7 @@ export function storePanel(acts, tab = 'buy', note = '') {
   el.querySelectorAll('[data-sellplant]').forEach(b => b.addEventListener('click', () => { redo('sell', acts.sell('plant ' + b.dataset.sellplant)); }));
   el.querySelectorAll('[data-box]').forEach(b => b.addEventListener('click', () => { redo('box', acts.box(+b.dataset.box, false)); }));
   el.querySelectorAll('[data-take]').forEach(b => b.addEventListener('click', () => { redo('box', acts.box(+b.dataset.take, true)); }));
+  el.querySelectorAll('[data-send]').forEach(b => b.addEventListener('click', () => acts.send(+b.dataset.send)));   // async: it reopens the tab when done
   el.querySelectorAll('[data-drag]').forEach(r => r.addEventListener('dragstart', e => { e.dataTransfer.setData('application/x-ketchem', r.dataset.drag + ':' + r.dataset.from); e.dataTransfer.effectAllowed = 'move'; r.classList.add('dragging'); }));
   el.querySelectorAll('[data-drag]').forEach(r => r.addEventListener('dragend', () => r.classList.remove('dragging')));
   el.querySelectorAll('[data-zone]').forEach(z => {

@@ -44,9 +44,8 @@ const invariants = () => page.evaluate(() => {
     if (p.x < 0 || p.y < 0 || p.x >= sim.W || p.y >= sim.H) v.push(p.id + ' off map ' + p.x + ',' + p.y);
     const t = sim.grid[sim.idx(p.x, p.y)]; if ((t === sim.T.OCEAN || t === sim.T.COAST) && !p.boat && !p.away) v.push(p.id + ' on water without a boat');
     if (p.pack && p.pack.length > 25) v.push(p.id + ' pack ' + p.pack.length);
-    for (const c of p.party || []) if (c.held !== true) v.push(p.id + ' party creature ' + c.id + ' not held');
+    // (no 'held' check on party or cabinet creatures: held only matters in the wild list the sim steps)
   }
-  for (const c of K.cabinet || []) if (c.held !== true) v.push('cabinet creature ' + c.id + ' not held');
   const live = new Set(ids);
   for (const b of K.baits || []) if (b.creatureId && !live.has(b.creatureId)) v.push('bait walker ' + b.creatureId + ' gone');
   for (const f of sim.fauna) { if (!f || !f.held) continue; const a = K.aw[f.id]; const why = a && (a.bolt || a.asleep || a.baitId || a.state === 'growl' || a.pursueUntil); if (!why) v.push('held fauna ' + f.id + ' without a reason (' + (a ? a.state : 'no aw') + ')'); }

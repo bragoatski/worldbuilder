@@ -145,6 +145,33 @@ export function applySave(raw) {
   return K;
 }
 
+// Trading between saves (mechanics 24): a creature from this game's cabinet into another saved game's cabinet. The
+// other game has its own id counter, so the creature takes an id above every id that record holds, wild or carried
+// (the loader's reserveFaunaIds then keeps the next wild birth above it). Pure over the record; returns the copy.
+export function recordMaxId(data) {
+  let m = 0;
+  const see = c => { if (c && Number.isFinite(c.id) && c.id > m) m = c.id; };
+  for (const f of (data.sim && data.sim.fauna) || []) see(f);
+  for (const c of data.cabinet || []) see(c);
+  for (const p of data.players || []) for (const c of p.party || []) see(c);
+  for (const s of data.stores || []) for (const c of s.held || []) see(c);
+  for (const b of data.baits || []) see(b.payload);
+  return m;
+}
+export function addToRecordCabinet(data, creature, from) {
+  if (!data || !Number.isInteger(data.version)) throw new Error('not a Ketch\'em save');
+  const c = structuredClone(creature);
+  c.id = Math.max(recordMaxId(data), (data.sim && data.sim.faunaIdCounter) || 0) + 1; c.held = true; c.tradedFrom = from || null;
+  if (c.name) {   // names are one to a creature (the verbs find creatures by name): a name taken there gets a number
+    const taken = new Set([...(data.cabinet || []), ...(data.players || []).flatMap(p => p.party || []), ...(data.baits || []).map(b => b.payload).filter(Boolean)].filter(x => x && x.name).map(x => x.name.toLowerCase()));
+    const base = c.name.slice(0, 21); let n = 2, name = c.name;
+    while (taken.has(name.toLowerCase())) name = base + ' ' + n++;
+    c.name = name;
+  }
+  delete c.bredAt; delete c._speciesName;   // it arrives rested; the binomial is the new world's to name
+  data.cabinet = (data.cabinet || []).concat([c]);
+  return c;
+}
 export function exportSave(data) { return JSON.stringify(data); }
 export function importSave(text) { let d; try { d = JSON.parse(text); } catch { throw new Error('not JSON'); } return applySave(d); }
 

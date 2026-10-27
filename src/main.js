@@ -35,7 +35,7 @@ import { ask, closeAsk } from './ketchem/ask.js';
 import { toggleSound } from './ketchem/sound.js';
 import { growthTick, catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
-import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots } from './ketchem/save.js';
+import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots, addToRecordCabinet, SAVE_VERSION } from './ketchem/save.js';
 import { saveMenu } from './ketchem/menu.js';
 import { mirrorSave } from './visit.js';
 
@@ -788,8 +788,46 @@ var _kBait=null,_kPotion=false;
 function openStore(tab){
   var p=K.kevin;if(!storeAt(K,p))return;
   storePanel({lists:function(){var s=storeAt(K,p);if(!s){closePanel();return {store:'',wallet:p.wallet,buy:[],sell:[],plants:[],box:[],party:[],pen:[],fee:function(){return 0;}};}return shopLists(K,p,s);},buy:function(item,qty){var r=buyItem(K,p,item,qty);kevinSay(r.text);return r;},sell:function(name){var r=sellItem(K,p,name);kevinSay(r.text);return r;},
-    sellPlants:function(){var r=sellItem(K,p,'plants');kevinSay(r.text);return r;},box:function(name,take){var r=boxItem(K,p,name,take);kevinSay(r.text);return r;},breed:function(a,b){var r=breedPair(K,p,a,b);kevinSay(r.text);return r;},onChange:draw},tab||'buy');
+    sellPlants:function(){var r=sellItem(K,p,'plants');kevinSay(r.text);return r;},box:function(name,take){var r=boxItem(K,p,name,take);kevinSay(r.text);return r;},breed:function(a,b){var r=breedPair(K,p,a,b);kevinSay(r.text);return r;},send:sendCreature,onChange:draw},tab||'buy');
   draw();
+}
+// Trading between saves (mechanics 24): a cabinet creature goes to another saved game's cabinet. Everything that can
+// refuse is checked before anything changes (this game has a name, the creature is still in the cabinet and has its
+// name, the other save is readable and of this version, the copy can be made). Then the two IndexedDB writes run back
+// to back, this game without the creature first, so no copy survives in two places; the relay mirrors after both.
+// A failed second write puts the creature back and saves this game again before saying so.
+var _kSending=false;
+function sendCreature(id){
+  if(!K||_kSending)return;var K0=K,c=K.cabinet.find(function(x){return x.id===id;});if(!c)return;var nm=c.name||c.type;
+  if(!K.slot){kevinSay('save this game first (F5), then send');draw();return;}   // naming it mid-send could pick the other save's name
+  if(K.kevin.naming===c.id||(K.kevin.namingQueue||[]).indexOf(c.id)>=0){kevinSay('name "'+nm+'" first (N), then send it');draw();return;}
+  _kSending=true;
+  var stillHere=function(){return K===K0&&K.cabinet.indexOf(c)>=0;};
+  listSlots().then(function(slots){
+    var others=slots.map(function(m){return m.slot;}).filter(function(s){return s!==K0.slot;});
+    if(!others.length){kevinSay('no other saved game to send "'+nm+'" to (F9 lists them)');draw();return;}
+    return ask('Send "'+nm+'" to which saved game? '+others.join(', '),others[0]).then(function(to){
+      if(to===null)return;var slot=others.find(function(s){return s.toLowerCase()===to.toLowerCase();});
+      if(!slot){kevinSay('no saved game called "'+to+'"');draw();return;}
+      return getSlot(slot).then(function(data){
+        if(!stillHere()){kevinSay('not sent: "'+nm+'" left the cabinet while you chose');draw();return;}
+        if(!data)throw new Error('the save "'+slot+'" is gone');
+        if(data.version!==SAVE_VERSION)throw new Error('the save "'+slot+'" is from another version of the game');
+        var sent=addToRecordCabinet(data,c,K0.slot);   // throws on a damaged record: nothing has changed yet
+        K.cabinet=K.cabinet.filter(function(x){return x!==c;});
+        var mine=buildSave(K,K.slot);
+        return putSlot(mine).then(function(){
+          return putSlot(data).catch(function(e){   // the other save refused: back it comes, and this game is saved with it
+            K0.cabinet.push(c);return putSlot(buildSave(K0,K0.slot)).then(function(){throw e;},function(e2){throw new Error(e.message+'; and this game could not be saved again ('+e2.message+'), so F5 now');});
+          });
+        },function(e){K0.cabinet.push(c);throw e;}).then(function(){
+          mirrorSave(mine);mirrorSave(data);   // best effort, after both writes (18.1)
+          kevinSay('"'+nm+'" went to the cabinet of "'+slot+'"'+(sent.name!==c.name?' as "'+sent.name+'" (that name was taken there)':''));
+          if(K===K0&&panelOpen())openStore('box');draw();
+        });
+      });
+    });
+  }).catch(function(e){showErr('Send failed: '+e.message);draw();}).finally(function(){_kSending=false;});
 }
 function dirOf(d){return (d[1]<0?'N':d[1]>0?'S':'')+(d[0]<0?'W':d[0]>0?'E':'');}
 function kevinCycleTarget(){

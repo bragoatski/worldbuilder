@@ -1196,3 +1196,24 @@ readings, all overturnable: the kinds, the numbers and whether gear survives a k
   `shop` has a gear line and `pack` says what Root wears. Saves carry it.
 - Not built: gear that wears out, selling gear back, gear slots, more gear (a spyglass would need sight to be one rule
   across the page and Root's look first).
+
+## 24. Trading between saves
+
+Built 2026-10-26 (owner ask "start on the next step" after the item pass; the build order was complete, and of the
+three items the campaign handoff left out, this is the one with no hosting or running cost; the second human player
+and Root on the public site stay the owner's call). Readings, overturnable.
+- At a store, the cabinet tab's Send button sends a cabinet creature to the cabinet of another saved game: the
+  question bar lists the other saves and takes the name. Only cabinet creatures travel (party creatures go to the
+  cabinet first), so a store is where a trade happens.
+- It refuses before anything changes: this game must have a name (F5 first), the creature must already have its
+  name, the other save must be readable and of this version, and the creature must still be in the cabinet when the
+  answer comes (moving it to the party while the question is open cancels the send).
+- No copy survives in two places: the two saves are written back to back, this game without the creature first. If
+  the other save cannot be written, the creature comes back and this game is saved again. A page closed in the
+  instant between the two writes loses the creature rather than copying it.
+- Names stay one to a creature in the other game: a name already used there gets a number ("Rex 2").
+- The creature keeps its genome, name, growth and abilities. In the other game it takes an id that game never used,
+  arrives rested (no breeding cooldown), is marked "sent from <game>", and its species takes the other world's
+  binomial. An exported file of the old game is the player's own backup and can still be imported: that is not
+  guarded.
+- Root has no send: the saves are Kevin's.
