@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-27 (r) - Ketch'em the guest's screen: sound and a store of buttons - DONE, GATE GREEN
+Owner ask: "keep building". Mechanics 26's own "not built" list: sound on the guest's screen and the store panel for a remote guest. **Not deployed**; nothing pushed.
+
+What the game does now: a guest on another screen hears the catch click, the break-free burst and the growl for what is in their own sight, with a sound switch on their bar; on a store they tap Buy, Sell, Sell all, Box and Take instead of typing. The shared screen now sounds for a guest playing at it too, not only for Kevin.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 288/288 (guest.test.js +3 for who hears what, guest-link.test.js +1 for `/synth.js`), build green. The sounds moved to `src/ketchem/synth.js` (no imports) so the link serves the same synthesis. Critic (Sonnet): 0 blockers, 6 risks; taken: sounds lost at high speed (now queued every tick), old sounds on joining, a rejoin or a host reload (a per-page epoch and resets; a backlog plays only its newest), taps lost to the bar and store redraws (the switch is fixed, rows update their numbers in place), two unnamed creatures sharing one button (no button until named), the audio unlock on touch; the dead shop text no longer sent. Rehearsals: rehearse15 37/37 (Buy, Box and Take by tapping; a growl reaches the guest's screen), rehearse16 21/21, rehearse14 35/35; adversary 0 findings; fuzz seed 211: 0 violations, 0 page errors.
+
 ## Session 2026-10-27 (q) - Ketch'em saves, the rest of 18.2 - DONE, GATE GREEN
 Owner ask: "keep going", "we have lots of tokens to use so keep building". The design's own unbuilt list was the next source: mechanics 18.2's leftovers. **Not deployed**; nothing pushed.
 

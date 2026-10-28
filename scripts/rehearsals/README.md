@@ -13,7 +13,7 @@ as its first argument. They drive the dev server at http://127.0.0.1:5173 with P
 | rehearse14.mjs | a guest at the same keyboard (bait, give, feed, the Almanac, a stake across a seat swap); Call Root refused while seated | scratch relay |
 | rehearse17.mjs | saves: Root's save / save as through the door, never-overwrite naming, autosave when Root leaves, the F9 delete and the mirror (args: screenshots, the scratch relay folder) | scratch relay |
 | rehearse16.mjs | a gamepad for the guest seat (a scripted pad: seat, move, catch, name, bait, give, feed, the Almanac, RB to a fifth potion) | nothing |
-| rehearse15.mjs | a guest on another screen through the guest link (two browsers; bait, give, feed, the Almanac as text, a pad on the guest's screen) | the guest link (the dev server starts it) |
+| rehearse15.mjs | a guest on another screen through the guest link (two browsers; bait, give, feed, the Almanac as text, a pad on the guest's screen, the store's buttons, a sound sent) | the guest link (the dev server starts it) |
 
 Never rehearse against the real visit record. A scratch relay, from PowerShell in the repo:
 
@@ -27,4 +27,4 @@ modules during a run make Vite reload the page under the script.
 
 The guest link (`visit/guest-link.mjs`) usually runs as its own node process, not under Vite: after editing its page,
 stop whatever listens on 7797 and start `node visit/guest-link.mjs` again, or rehearse15 tests the old page. It also
-reads `src/ketchem/pad.js` once at start, so the same goes for an edit to pad.js.
+reads `src/ketchem/pad.js` and `src/ketchem/synth.js` once at start, so the same goes for an edit to either.

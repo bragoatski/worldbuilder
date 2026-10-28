@@ -1328,6 +1328,9 @@ between the two pages. Readings, overturnable.
   the dev server from PowerShell with `$env:GUEST_HOST = (tailscale ip -4); npm run dev` (the link it starts binds the
   guest port to this machine's Tailscale address; a link already running must be stopped first). Only devices on the owner's tailnet can reach that address; the host port stays on this machine.
   Kevin's message then shows that address. Without it, the link answers this machine only.
-- Not built: sound on the guest's screen, the full store panel and the Almanac's drawings for a remote guest (the
-  text and the command line stand in), several guests at once. Bait, give, feed and the Almanac were added
+- The guest's screen (added 2026-10-27): the three sounds play there for what is in the guest's sight (the same
+  synthesis, served by the link; a switch on their bar), and on a store tile the store is a panel of rows with Buy,
+  Sell, Sell all, Box and Take buttons (the command line stays for breeding and anything else). An unnamed creature
+  has no button until it is named. The shared screen's own sounds are for Kevin and a guest playing at it.
+- Not built: the Almanac's drawings for a remote guest (its text stands in), several guests at once. Bait, give, feed and the Almanac were added
   2026-10-27; the link's input kinds are unchanged (keys, answers, commands).

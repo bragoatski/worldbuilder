@@ -9,6 +9,7 @@ const E = await import('./encounter.js');
 const M = await import('./market.js');
 const Gst = await import('./guest.js');
 const Gr = await import('./growth.js');
+const Snd = await import('./sound.js');
 
 const at = (x, y) => sim.idx(x, y);
 function world() {
@@ -100,6 +101,28 @@ describe('the guest link leaves nothing behind (critic 2026-10-27)', () => {
     const K = world(); Gst.seatGuest(K, false, 'Sam'); K.root.remote = '482913';
     Gst.unseatGuest(K); expect(K.guestStash.remote).toBeUndefined();
     Gst.seatGuest(K, false, 'Sam'); expect(K.root.remote).toBeUndefined();
+  });
+});
+
+describe('what a guest hears (25, 26)', () => {
+  it('a growl in the guest\'s sight sounds for them once, and not for Kevin far away', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 20; g.y = 20; K.kevin.x = 3; K.kevin.y = 3;
+    K.fx = [{ kind: 'pulse', x: 21, y: 20, start: sim.tick }];
+    expect(Snd.soundsDue(K, [K.kevin], new WeakSet())).toEqual([]);
+    const done = new WeakSet();
+    expect(Snd.soundsDue(K, [g], done)).toEqual(['growl']); expect(Snd.soundsDue(K, [g], done)).toEqual([]);
+  });
+  it('this screen hears for Kevin and a guest playing here, not for a guest on another screen', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam');
+    expect(Snd.screenListeners(K)).toEqual([K.kevin, K.root]);
+    K.root.remote = '123456'; expect(Snd.screenListeners(K)).toEqual([K.kevin]);
+  });
+  it('a throw waits for its wobbles before it sounds', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 20; g.y = 20;
+    K.fx = [{ kind: 'throw', to: { x: 21, y: 20 }, wobbles: 3, caught: true, start: sim.tick }];
+    const done = new WeakSet();
+    expect(Snd.soundsDue(K, [g], done)).toEqual([]);   // still in the air: kept for a later look
+    K.fx[0].start = sim.tick - 42; expect(Snd.soundsDue(K, [g], done)).toEqual(['click']);
   });
 });
 

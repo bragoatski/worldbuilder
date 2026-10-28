@@ -20,6 +20,8 @@ import { readFileSync } from 'node:fs';
 
 // The pad mapping the game uses (pure, no imports), served to the guest's page so a pad there reads the same way.
 const PAD_JS = readFileSync(new URL('../src/ketchem/pad.js', import.meta.url), 'utf8');
+// The game's three sounds (pure WebAudio synthesis, no imports), so the guest's screen sounds like the host's.
+const SYNTH_JS = readFileSync(new URL('../src/ketchem/synth.js', import.meta.url), 'utf8');
 
 const MAX_BODY = 2e6, MAX_INPUTS = 200, HOST_PORT_DEFAULT = 7798;
 const WRONG_LIMIT = 20, WRONG_WINDOW = 60000, LOCKOUT = 60000;   // per guest address: 20 wrong codes a minute, then a minute's pause
@@ -82,7 +84,7 @@ export function createGuestLink(opts = {}) {
     const url = new URL(req.url, 'http://x'), path = url.pathname;
     try {
       if (path === '/' || path === '/index.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(GUEST_PAGE); }
-      if (path === '/pad.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(PAD_JS); }   // public code, no game data
+      if (path === '/pad.js' || path === '/synth.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(path === '/pad.js' ? PAD_JS : SYNTH_JS); }   // public code, no game data
       if (path !== '/frame' && path !== '/input') return send(res, 404, { error: 'not here' });
       const who = req.socket.remoteAddress || '?', now = Date.now(), w = wrong.get(who);
       if (w && w.until > now) return send(res, 429, { error: 'too many wrong codes; wait a minute' });
@@ -126,14 +128,16 @@ button{cursor:pointer;background:transparent}button:active{background:rgba(255,2
 #q[hidden],#join[hidden],#game[hidden]{display:none}#q label{display:block;color:var(--dim);margin-bottom:6px}.row{display:flex;gap:8px}.row input{flex:1;min-width:0}
 #pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:6px}#pad button{font-size:18px}
 #acts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;flex:1;min-width:0}#acts button,#more button{padding:7px 4px;min-width:0}#controls{display:flex;gap:12px;align-items:flex-start}
-.keys{color:var(--faint);font-size:11px;margin-top:8px}#stale{color:var(--faint)}#shop,#alm{white-space:pre-wrap;margin:8px 0 0;color:var(--dim);font:inherit}
+.keys{color:var(--faint);font-size:11px;margin-top:8px}#stale{color:var(--faint)}#alm{white-space:pre-wrap;margin:8px 0 0;color:var(--dim);font:inherit}
 #more{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:10px}
+#store[hidden]{display:none}#store h2{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:10px 0 4px;font-weight:600}#store h2:first-child{margin-top:0}
+.srow{display:flex;align-items:center;gap:8px;padding:3px 0;border-top:1px solid var(--border)}.srow span{flex:1;min-width:0;overflow-wrap:anywhere}.srow em{color:var(--dim);font-style:normal}.srow button{padding:4px 10px}#snd{padding:2px 8px;font-size:11px;flex:none}
 </style></head><body>
 <h1>Ketch'em, the guest seat</h1>
 <div id="join" class="card"><label for="code">The join code on the host's screen</label><div class="row" style="margin-top:6px"><input id="code" inputmode="numeric" autocomplete="off"><button id="go">Join</button></div><div id="joinMsg" class="keys"></div></div>
 <div id="game" hidden>
 <img id="view" alt="Your corner of the world">
-<div class="card"><div id="bar"></div><div id="party"></div><div id="msg"></div><pre id="shop" hidden></pre><pre id="alm" hidden></pre><div id="stale"></div></div>
+<div class="card"><div class="row" style="align-items:center"><div id="bar" style="flex:1;min-width:0"></div><button id="snd" type="button"></button></div><div id="party"></div><div id="msg"></div><div id="store" hidden></div><pre id="alm" hidden></pre><div id="stale"></div></div>
 <div id="q" class="card" hidden><label id="qText"></label><div class="row"><input id="qIn" autocomplete="off"><button id="qOk">OK</button><button id="qNo">Skip</button></div></div>
 <div class="card"><div id="controls"><div id="pad">
 <span></span><button data-k="ArrowUp" aria-label="Up">&#8593;</button><span></span>
@@ -155,12 +159,12 @@ async function flush(){if(busy||!out.length)return;busy=true;const events=out.sp
   busy=false;if(gone){out=[];return;}if(!sent){out.unshift(...events);return setTimeout(flush,500);}if(out.length)flush();}   // no game for this code: drop, never retry into the wrong-code lockout (the host lets go of held keys when the link goes quiet)   // a failed send is sent again, so a key is never left down
 async function tick(){
   try{const r=await fetch('/frame?code='+encodeURIComponent(code));
-    if(r.status===403||r.status===429){running=false;releaseAll();$('game').hidden=true;$('join').hidden=false;$('joinMsg').textContent=(await r.json()).error;return;}
+    if(r.status===403||r.status===429){running=false;releaseAll();window.resetSounds&&window.resetSounds();$('game').hidden=true;$('join').hidden=false;$('joinMsg').textContent=(await r.json()).error;return;}
     const d=await r.json();if(d.jpeg)$('view').src=d.jpeg;const s=d.state||{};
     $('stale').textContent=d.fresh?'':'waiting for the host';
     $('bar').innerHTML='<b>'+esc(s.name||'Guest')+'</b> '+esc(s.wallet||0)+' coins &middot; '+['Amber','Geode','Obsidian'].map(n=>esc((s.stone===n?'['+n+' ':n+' ')+((s.stones||{})[n.toLowerCase()]||0)+(s.stone===n?']':''))).join(' ')+' &middot; pack '+esc(s.pack||'');
     $('party').innerHTML=(s.party||[]).map(c=>'<span>'+esc(c)+'</span>').join('');
-    $('msg').textContent=s.msg||'';$('shop').textContent=s.shop||'';$('shop').hidden=!s.shop;$('alm').textContent=s.almanac||'';$('alm').hidden=!s.almanac;
+    $('msg').textContent=s.msg||'';window.drawStore&&window.drawStore(s.store);window.hearSounds&&window.hearSounds(s);$('alm').textContent=s.almanac||'';$('alm').hidden=!s.almanac;
     const q=s.question;
     if(q&&(q.id!==lastQ||(answeredAt&&Date.now()-answeredAt>2500))){lastQ=q.id;answeredAt=0;$('qText').textContent=q.text;$('qIn').value=q.initial||'';$('q').hidden=false;$('qIn').focus();}   // an answer that never arrived: ask again
     if(!q&&!$('q').hidden&&lastQ){$('q').hidden=true;}
@@ -184,12 +188,54 @@ for(const b of document.querySelectorAll('[data-k]')){const k=b.dataset.k;
   b.addEventListener('pointerdown',e=>{e.preventDefault();down(k);});
   for(const ev of['pointerup','pointerleave','pointercancel'])b.addEventListener(ev,()=>up(k));}
 for(const b of document.querySelectorAll('[data-seq]'))b.addEventListener('click',e=>{e.preventDefault();for(const k of b.dataset.seq.split(' ')){push({t:'down',key:k});push({t:'up',key:k});}});   // a bait button: J and the kind, then an arrow or Use picks the tile
-function join(){code=$('code').value.trim()||code;if(!code)return;history.replaceState(null,'','?code='+encodeURIComponent(code));lastQ=0;answeredAt=0;$('join').hidden=true;$('game').hidden=false;if(!running){running=true;tick();}}
+function join(){code=$('code').value.trim()||code;if(!code)return;history.replaceState(null,'','?code='+encodeURIComponent(code));lastQ=0;answeredAt=0;window.resetSounds&&window.resetSounds();$('join').hidden=true;$('game').hidden=false;if(!running){running=true;tick();}}
 $('go').onclick=join;$('code').addEventListener('keydown',e=>{if(e.key==='Enter')join();});
 if(code){$('code').value=code;join();}
 </script>
 <script type="module">
 import { padPressed, padEdges } from '/pad.js';
+import { play, audio } from '/synth.js';
+// Sound: what the host says this guest can hear, each numbered sound once. The baseline is set by the first frame of
+// a seated game, again on joining, after a refusal, and when the host page is a new one (its epoch changes), so nothing
+// old plays; a backlog (a tab that slept) plays only its newest. On by default; the switch is kept in this browser.
+let lastSound=-1,epoch=null,soundOn=true;try{soundOn=localStorage.getItem('ketchem.guest.sound')!=='off';}catch(e){}
+window.resetSounds=()=>{lastSound=-1;};
+window.hearSounds=st=>{if(!st||!st.name)return;const L=st.sounds||[],top=L.length?L[L.length-1].id:0;
+  if(st.soundEpoch!==epoch){epoch=st.soundEpoch;lastSound=-1;}
+  if(lastSound<0){lastSound=top;return;}
+  const fresh=L.filter(x=>x.id>lastSound);lastSound=Math.max(lastSound,top);
+  if(soundOn&&fresh.length)(fresh.length>3?fresh.slice(-1):fresh).forEach(x=>play(x.name));};
+const snd=$('snd');const sndText=()=>{snd.textContent=soundOn?'sound':'muted';};sndText();
+snd.onclick=()=>{soundOn=!soundOn;try{localStorage.setItem('ketchem.guest.sound',soundOn?'on':'off');}catch(e){}audio();sndText();};
+for(const ev of['pointerup','click','touchend','keydown'])document.addEventListener(ev,()=>audio());   // the browser lets audio start only after a gesture; each gesture tries until it runs
+// The store: rows of buttons, each sending one store command. A row's button stays the same element while the store's
+// rows are the same (only its numbers are rewritten in place), so a tap is never lost to a redraw. Names go in as text,
+// never as markup; an unnamed creature has no button (two would look alike and act on the first).
+let storeKey='';
+function spec(st){
+  const r=[{h:st.name+' - '+st.wallet+' coins',k:'h0'}];
+  for(const b of st.buy)r.push({label:b.item,note:b.price+' coins'+(b.left!==null&&!b.gear?' ('+b.left+' left)':'')+(b.owned?' (worn)':''),btn:b.owned?'':'Buy',cmd:'buy '+b.item});
+  r.push({h:'Sell',k:'h1'});
+  if(st.plants)r.push({label:st.plants+' plants',note:st.plantsWorth+' coins',btn:'Sell all',cmd:'sell plants'});
+  for(const c of st.sell)r.push(c.named?{label:c.name,note:'L'+c.level+', '+c.price+' coins'+(c.where==='cabinet'?' (cabinet)':''),btn:'Sell',cmd:'sell '+c.name}:{label:c.name,note:'name it first',btn:'',cmd:''});
+  if(!st.plants&&!st.sell.length)r.push({label:'nothing to sell',note:'',btn:'',cmd:''});
+  r.push({h:'Cabinet',k:'h2'});
+  for(const c of st.party)r.push(c.named?{label:c.name,note:'party',btn:'Box',cmd:'box '+c.name}:{label:c.name,note:'party, name it first',btn:'',cmd:''});
+  for(const c of st.box)r.push(c.named?{label:c.name,note:'cabinet',btn:'Take',cmd:'take '+c.name}:{label:c.name,note:'cabinet, name it first',btn:'',cmd:''});
+  if(!st.party.length&&!st.box.length)r.push({label:'empty',note:'',btn:'',cmd:''});
+  r.push({label:'Breed two of one kind: type breed Moss, Fern below',note:'',btn:'',cmd:''});
+  return r;
+}
+function build(x){
+  if(x.h!==undefined){const h=document.createElement('h2');h.textContent=x.h;return h;}
+  const r=document.createElement('div');r.className='srow';const t=document.createElement('span');t.textContent=x.label;const e=document.createElement('em');e.textContent=x.note?' '+x.note:'';t.appendChild(e);r.appendChild(t);
+  if(x.btn){const b=document.createElement('button');b.type='button';b.textContent=x.btn;b.dataset.cmd=x.cmd;b.onclick=()=>push({t:'cmd',text:x.cmd});r.appendChild(b);}
+  return r;
+}
+window.drawStore=st=>{const el=$('store');el.hidden=!st;if(!st){if(storeKey){el.textContent='';storeKey='';}return;}
+  const rows=spec(st),key=JSON.stringify(rows.map(x=>x.h!==undefined?x.k:[x.label,x.btn,x.cmd]));
+  if(key!==storeKey){storeKey=key;el.textContent='';for(const x of rows)el.appendChild(build(x));return;}
+  rows.forEach((x,i)=>{const n=el.children[i];if(!n)return;if(x.h!==undefined){if(n.textContent!==x.h)n.textContent=x.h;return;}const e=n.querySelector('em'),v=x.note?' '+x.note:'';if(e&&e.textContent!==v)e.textContent=v;});};   // same rows: numbers only
 // A gamepad here sends its button numbers; the host reads them as it reads its own pad. A and B answer a question on
 // this screen instead.
 let prev=new Set(),timer=null,index=-1;

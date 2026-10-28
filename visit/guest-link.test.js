@@ -29,6 +29,11 @@ describe('the guest link', () => {
     const js = await r.text(); expect(js).toContain('export function padKey'); expect(js).not.toMatch(/^import /m);
     expect(await (await fetch(guest + '/')).text()).toContain("from '/pad.js'");
   });
+  it('serves the game\'s sounds to the guest page too', async () => {
+    const js = await (await fetch(guest + '/synth.js')).text();
+    expect(js).toContain('export function play'); expect(js).not.toMatch(/^import /m);
+    expect(await (await fetch(guest + '/')).text()).toContain("from '/synth.js'");
+  });
   it('the guest port has no host side', async () => {
     expect((await jpost(guest, '/host/open', { code: '123456' })).status).toBe(404);
   });

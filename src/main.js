@@ -28,7 +28,7 @@ import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
 import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, freeName, freeSpeciesName, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
-import { initStores, marketTick, storeAt, shopLists, shopText, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, giveSaid, usePotion, almanacLists, almanacText, packSummary, POTIONS } from './ketchem/market.js';
+import { initStores, marketTick, storeAt, shopLists, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, giveSaid, usePotion, almanacLists, almanacText, packSummary, POTIONS } from './ketchem/market.js';
 import { storePanel, almanacPanel, closePanel, panelOpen, panelMode } from './ketchem/panel.js';
 import { hudTick } from './ketchem/hud.js';
 import { ask, asking, closeAsk, askWho, answerAsk } from './ketchem/ask.js';
@@ -36,7 +36,7 @@ import { padPressed, padEdges, padKey, padArrowUp, PAD_PICK, START as PAD_START 
 import { guestSeated, seatName, seatGuest, unseatGuest } from './ketchem/guest.js';
 import { linkAvailable, linkOpen, openLink, closeLink, askRemote, dropQuestions, guestAddress, linkCode as linkCodeNow } from './ketchem/link.js';
 import { setRemoteOk } from './ketchem/hud.js';
-import { toggleSound } from './ketchem/sound.js';
+import { toggleSound, soundsDue } from './ketchem/sound.js';
 import { growthTick, catchXP, feedSaid, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots, addToRecordCabinet, SAVE_VERSION } from './ketchem/save.js';
@@ -980,7 +980,7 @@ function padDown(i,fromLink){   // fromLink: the press came from a pad on the gu
 window.addEventListener('gamepadconnected',function(){if(!_padTimer)_padTimer=setInterval(padTick,50);});
 
 // ===== The guest link (mechanics 26): what a guest on another screen sees, and what their input does =====
-var _guestRemote=false,_linkFrame=null;
+var _guestRemote=false,_linkFrame=null,_gSoundDone=new WeakSet(),_gSounds=[],_gSoundId=0,_gSoundEpoch=Math.random().toString(36).slice(2,10);   // the remote guest's sounds: each effect once, numbered so their page plays only new ones; the epoch names this page, so a reload never confuses the numbers
 function guestFrame(){   // their corner of the world: 33 x 33 tiles around them, from the drawn canvas (fog and all)
   if(!guestSeated(K))return null;var g=K.root,R=16,side=2*R+1;
   if(!_linkFrame)_linkFrame=document.createElement('canvas');var c=_linkFrame;c.width=c.height=400;var x=c.getContext('2d');
@@ -991,7 +991,23 @@ function guestFrame(){   // their corner of the world: 33 x 33 tiles around them
 function guestState(){
   if(!guestSeated(K))return {name:null};var g=K.root,ps=packSummary(g);
   return {name:g.display,wallet:g.wallet,stones:g.stones,stone:g.stone,pack:ps.used+'/'+ps.cap,party:g.party.map(function(c){var k=creatureCard(c);return k.name+' L'+k.level+' '+k.elemental+' '+k.type;}),
-    msg:g.msg&&g.msgUntil>Date.now()?g.msg:'',shop:storeAt(K,g)?shopText(K,g):'',almanac:_gAlmanac?almanacText(K,g):''};
+    msg:g.msg&&g.msgUntil>Date.now()?g.msg:'',store:guestStore(g),sounds:_gSounds,soundEpoch:_gSoundEpoch,almanac:_gAlmanac?almanacText(K,g):''};
+}
+// What a guest on another screen hears: the sounds in their sight, checked every tick (a sound's window is a few ticks;
+// the link only posts five times a second), kept as the last eight with rising numbers.
+function queueGuestSounds(){
+  if(!K||!guestSeated(K)||!K.root.remote)return;
+  var due=soundsDue(K,[K.root],_gSoundDone);for(var i=0;i<due.length;i++)_gSounds.push({id:++_gSoundId,name:due[i]});
+  if(_gSounds.length>8)_gSounds.splice(0,_gSounds.length-8);
+}
+// The store as lists for the guest's buttons (each button sends one of the store commands); null off a store.
+function guestStore(g){
+  var s=storeAt(K,g);if(!s)return null;var L=shopLists(K,g,s),mine=g.party.concat(K.cabinet),nm=function(c){var x=mine.find(function(y){return y.id===c.id;});return !!(x&&x.name);};   // an unnamed one gets no button
+  return {name:L.store,wallet:L.wallet,
+    buy:L.buy.map(function(b){return {item:b.item,price:b.price,left:b.left===Infinity?null:b.left,gear:!!b.gear,owned:!!b.owned};}),
+    sell:L.sell.map(function(c){return {name:c.name,named:nm(c),level:c.level,price:c.price,where:c.where};}),
+    plants:L.plants.length,plantsWorth:L.plants.reduce(function(a,x){return a+x.price;},0),
+    party:L.party.map(function(c){return {name:c.name,named:nm(c)};}),box:L.box.map(function(c){return {name:c.name,named:nm(c)};})};
 }
 function guestCommand(text){   // from another screen: give X [n] and feed X[, Y] anywhere; buy X [n], sell X, box X, take X, breed X, Y at a store
   var g=K.root,m=/^(buy|sell|box|take|breed|give|feed)\s+(.+)$/i.exec(String(text||'').trim());
@@ -1574,7 +1590,7 @@ function kevinHeld(){
 }
 function kevinNews(){if(!K)return;var n=drainNews(K,'kevin');if(n.length)kevinSay(n[n.length-1]);}
 function growthNews(){var ev=growthTick(K);for(var i=0;i<ev.length;i++){var e=ev[i],owner=(K.kevin&&K.kevin.party.indexOf(e.creature)>=0)?'kevin':((K.root&&K.root.id)||'root');var line=(e.creature.name||e.creature.type)+(e.kind==='grow'?' reaches growth level '+e.level:' EVOLVED from '+e.from+' into '+e.to+(e.named?'':(owner==='kevin'?': name the species (N)':guestSeated(K)?": name the species (')":': name the species (name)')));if(owner==='kevin')kevinSay(line);else pushNews(K,owner,line);}}
-function loop(){try{if(running){step();if(K){encounterTick(K);marketTick(K);growthNews();kevinNews();if(K.kevin.moved){K.kevin.moved=false;_kCamAt=null;}if(guestSeated(K)){var gn=drainNews(K,K.root.id);if(gn.length)guestSay(gn[gn.length-1]);if(K.root.moved){K.root.moved=false;guestMoved();}}}visitTick();kevinHeld();guestHeld();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
+function loop(){try{if(running){step();if(K){encounterTick(K);marketTick(K);growthNews();kevinNews();if(K.kevin.moved){K.kevin.moved=false;_kCamAt=null;}if(guestSeated(K)){var gn=drainNews(K,K.root.id);if(gn.length)guestSay(gn[gn.length-1]);if(K.root.moved){K.root.moved=false;guestMoved();}}}visitTick();kevinHeld();guestHeld();queueGuestSounds();kevinAutosave();draw();}}catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Loop error: '+e.message+'\n'+(e.stack||'');}running=false;}var delay=Math.max(10,CFG.tickMsBase*(12/Math.max(1,speed)));if(loopTimer)clearTimeout(loopTimer);loopTimer=setTimeout(loop,delay);}
 
 // ===== Tests =====
 function runTests(){

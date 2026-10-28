@@ -68,11 +68,35 @@ ok('Sam named it Moss from their screen', await host.evaluate(() => window.__wb.
 // a store by command
 await host.evaluate(() => { const K = window.__wb.ketchem.board(), s = K.stores[K.starts[1].store]; K.root.x = s.x; K.root.y = s.y; K.root.wallet = 100; });
 await host.waitForTimeout(600);
-const shop = await guest.evaluate(() => document.getElementById('shop').hidden ? '' : document.getElementById('shop').textContent);
-ok('on a store the guest sees what it sells', /buy: /.test(shop), shop.split('\n')[0]);
+await guest.waitForSelector('#store:not([hidden])', { timeout: 8000 });
+const shop = await guest.evaluate(() => document.getElementById('store').textContent);
+ok('on a store the guest sees what it sells', /Desert Post/.test(shop) && /Amber5coinsBuy/.test(shop.replace(/\s+/g, '')), shop.slice(0, 80));
 await guest.fill('#cmd', 'buy Geode 2'); await guest.press('#cmd', 'Enter'); await host.waitForTimeout(900);
 const geode = await host.evaluate(() => window.__wb.ketchem.board().root.stones.geode);
 ok('buy Geode 2 from the guest\'s screen', geode === 2, 'geode ' + geode);
+// the store as buttons (2026-10-27): Buy, Box and Take by tapping
+await guest.waitForSelector('#store:not([hidden]) [data-cmd="buy Amber"]', { timeout: 8000 });
+const am0 = await host.evaluate(() => window.__wb.ketchem.board().root.stones.amber);
+await guest.click('#store [data-cmd="buy Amber"]'); await host.waitForTimeout(900);
+const am1 = await host.evaluate(() => window.__wb.ketchem.board().root.stones.amber);
+ok('the guest taps Buy on Amber', am1 === am0 + 1, am0 + ' -> ' + am1);
+await guest.waitForSelector('#store [data-cmd="box Moss"]', { timeout: 8000 });
+await guest.click('#store [data-cmd="box Moss"]'); await host.waitForTimeout(900);
+const inBox = await host.evaluate(() => window.__wb.ketchem.board().cabinet.some(c => c.name === 'Moss'));
+await guest.waitForSelector('#store [data-cmd="take Moss"]', { timeout: 8000 });
+ok('Box puts Moss in the cabinet, and the panel offers Take', inBox);
+await guest.screenshot({ path: `${out}/guest-store-panel.png`, fullPage: true });
+await guest.click('#store [data-cmd="take Moss"]'); await host.waitForTimeout(900);
+ok('Take brings Moss back to the party', await host.evaluate(() => window.__wb.ketchem.board().root.party.some(c => c.name === 'Moss')));
+ok('the store\'s names are text, not markup', await guest.evaluate(() => !document.querySelector('#store script, #store img')));
+// sound: a growl in Sam's sight reaches their screen as a numbered sound
+const sid = () => guest.evaluate(async c => { const d = await (await fetch('/frame?code=' + c)).json(); const L = (d.state && d.state.sounds) || []; return L.length ? L[L.length - 1] : null; }, code);
+const s0 = await sid();
+await host.evaluate(() => { const K = window.__wb.ketchem.board(), g = K.root; K.fx.push({ kind: 'pulse', x: g.x + 1, y: g.y, start: window.__wb.sim.tick }); window.__wb.ketchem.pause(false); });
+await host.waitForTimeout(300); await host.evaluate(() => window.__wb.ketchem.pause(true)); await host.waitForTimeout(600);   // sounds are queued per game tick
+const s1 = await sid();
+ok('a growl in Sam\'s sight is sent to their screen', s1 && s1.name === 'growl' && (!s0 || s1.id > s0.id), JSON.stringify(s0) + ' -> ' + JSON.stringify(s1));
+ok('the guest page has a sound switch', await guest.evaluate(() => /^(sound|muted)$/.test((document.getElementById('snd') || {}).textContent || '')));
 await guest.screenshot({ path: `${out}/guest-store.png` });
 // ===== guest parity (2026-10-27): bait, give, feed and the Almanac from the guest's screen =====
 await host.evaluate(() => { const K = window.__wb.ketchem.board(), s = K.stores[K.starts[1].store], g = K.root; g.x = s.door.x; g.y = s.door.y; K.kevin.x = g.x; K.kevin.y = g.y; for (let i = 0; i < 3; i++) g.pack.push({ type: 'grass', gen: 0 }); });
