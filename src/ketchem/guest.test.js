@@ -103,6 +103,20 @@ describe('the guest link leaves nothing behind (critic 2026-10-27)', () => {
   });
 });
 
+describe('a name for a guest on a pad (25.1)', () => {
+  it('is the first "<Type> N" nobody holds, counting both waiting records and bait payloads, and it names the catch', () => {
+    const K = world(); K.root = E.initPlayer(C.newPlayer(5, 5), 'root'); K.root.away = true;
+    const mk = name => { const f = put('herbivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(f), 1); f.name = name; return f; };
+    K.root.party.push(mk('Herbivore 1'));   // Root's, waiting
+    Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 12; g.y = 14;
+    K.kevin.party.push(mk('herbivore 2'));   // case does not make a name free
+    expect(E.freeName(K, 'Herbivore')).toBe('Herbivore 3');
+    const f = put('herbivore', 13, 14); expect(E.throwStone(K, g, f, 'Amber').caught).toBe(true);
+    expect(E.nameCatch(K, g, E.freeName(K, 'Herbivore')).ok).toBe(true); expect(f.name).toBe('Herbivore 3');
+    expect(E.freeName(K, 'Herbivore')).toBe('Herbivore 4');
+  });
+});
+
 // Guest parity (2026-10-27): bait, give, feed and the Almanac, run as the guest through the same functions Kevin's keys use.
 describe('the guest baits, gives, feeds and reads the Almanac', () => {
   const plant = () => ({ type: 'grass', gen: 0 });

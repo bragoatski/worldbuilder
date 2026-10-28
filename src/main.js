@@ -27,11 +27,12 @@ import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
 import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
-import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
+import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, freeName, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
 import { initStores, marketTick, storeAt, shopLists, shopText, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, giveSaid, usePotion, almanacLists, almanacText, packSummary, POTIONS } from './ketchem/market.js';
 import { storePanel, almanacPanel, closePanel, panelOpen, panelMode } from './ketchem/panel.js';
 import { hudTick } from './ketchem/hud.js';
-import { ask, closeAsk } from './ketchem/ask.js';
+import { ask, asking, closeAsk, askWho, answerAsk } from './ketchem/ask.js';
+import { padPressed, padEdges, padKey, padArrowUp, PAD_PICK, START as PAD_START } from './ketchem/pad.js';
 import { guestSeated, seatName, seatGuest, unseatGuest } from './ketchem/guest.js';
 import { linkAvailable, linkOpen, openLink, closeLink, askRemote, dropQuestions, guestAddress, linkCode as linkCodeNow } from './ketchem/link.js';
 import { setRemoteOk } from './ketchem/hud.js';
@@ -849,12 +850,12 @@ function throwFor(p,say,hint){
   if(!f){say('no target: '+hint);return;}
   var r=throwStone(K,p,f,p.stone);var ev=r.caught?catchXP(K,p,r.creature,r.level):[];say(r.text+eventsText(ev));if(r.caught){p.target=null;}
 }
-function nameFor(p,say,key){
+function nameFor(p,say,key,offer){   // offer: a name to start from (a pad cannot type)
   var K0=K;
   if(!p.naming&&p.namingSpecies){askFor(p,(p===K.kevin?'':(p.display||'Guest')+': ')+'your creature evolved into a new species. Name the species','').then(function(sn){if(sn===null||K!==K0)return;say(nameCatch(K,p,sn).text);draw();});return;}
   if(!p.naming){say('nothing to name');return;}
   var c=p.party.concat(K.cabinet).find(function(x){return x.id===p.naming;}),nid=p.naming;
-  askFor(p,(p===K.kevin?'':(p.display||'Guest')+': ')+'name your '+(c?c.type:'catch')+(p.namingQueue&&p.namingQueue.length?' ('+(p.namingQueue.length+1)+' waiting)':'')+'; after a comma, a nickname for its species','').then(function(name){if(name===null||K!==K0)return;if(p.naming!==nid){say('that one left your hands before you named it; '+key+' names the next');draw();return;}var parts=name.split(',');say(nameCatch(K,p,parts[0],parts[1]&&parts[1].trim()).text);draw();});
+  askFor(p,(p===K.kevin?'':(p.display||'Guest')+': ')+'name your '+(c?c.type:'catch')+(p.namingQueue&&p.namingQueue.length?' ('+(p.namingQueue.length+1)+' waiting)':'')+'; after a comma, a nickname for its species',offer||'').then(function(name){if(name===null||K!==K0)return;if(p.naming!==nid){say('that one left your hands before you named it; '+key+' names the next');draw();return;}var parts=name.split(',');say(nameCatch(K,p,parts[0],parts[1]&&parts[1].trim()).text);draw();});
 }
 function kevinCycleTarget(){cycleTargetFor(K.kevin,kevinSay);}
 function kevinThrow(){throwFor(K.kevin,kevinSay,'Tab or click a creature within 2 tiles');}
@@ -875,12 +876,13 @@ function guestHeld(){
 }
 var STONES3=['Amber','Geode','Obsidian'];
 // A question for a player: Kevin's and a guest at this keyboard use the bar; a guest on another screen gets it there.
-function askFor(p,q,init){return p&&p.remote?askRemote(q,init):ask(q,init);}
+function askFor(p,q,init){return p&&p.remote?askRemote(q,init):ask(q,init,p&&p.human?'guest':null);}
 function guestKey(e,fromLink){
   if(!K||!guestSeated(K))return false;
   if(K.root.remote&&!fromLink)return false;   // a guest on another screen: this keyboard's arrows are Kevin's again
   if(e.ctrlKey||e.metaKey||e.altKey)return false;
   var k=String(e.key||'').toLowerCase(),g=K.root;
+  if(_gPotion&&(tick-_gPotion>60||tick<_gPotion)){_gPotion=false;guestSay('potion: cancelled');}   // expired: the press acts as itself, never as a choice
   if(_gPotion){
     if(/^[1-9]$/.test(k)){e.preventDefault();_gPotion=false;var names=Object.keys(packSummary(g).potions),pn=names[+k-1];
       if(!pn){guestSay('no potion '+k);draw();return true;}
@@ -888,12 +890,11 @@ function guestKey(e,fromLink){
         var K0=K;askFor(g,(g.display||'Guest')+': '+pn+' on which party creature? '+g.party.map(function(c){return c.name||c.type;}).join(', '),g.party[0].name||g.party[0].type).then(function(w){if(w===null||K!==K0||K.root!==g||!guestSeated(K))return;var c=K.root.party.find(function(x){return (x.name||x.type).toLowerCase()===w.toLowerCase();});guestSay(c?usePotion(K,K.root,pn,c).text:'no "'+w+'" in the party');draw();});return true;}
       if(pn==='Musk'){var K1=K;askFor(g,(g.display||'Guest')+': Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore').then(function(t){if(t===null||K!==K1||K.root!==g||!guestSeated(K))return;guestSay(usePotion(K,K.root,'Musk',t).text);draw();});return true;}
       var tgt=g.target?fauna.find(function(a){return a&&a.id===g.target;}):null;guestSay(usePotion(K,g,pn,tgt).text);draw();return true;}
-    if(tick-_gPotion>60){_gPotion=false;guestSay('potion: cancelled');}   // only the guest's own pause cancels it; Kevin's keys pass through
   }
   if(_gBait){   // J, then 1-4 the kind, then an arrow for the tile or ; for here; Kevin's keys pass through, and a pause cancels it
     if(tick-_gBait.at>60||tick<_gBait.at){_gBait=null;guestSay('bait: cancelled');}
     else if(!_gBait.kind){var bk={'1':'plant','2':'scatter','3':'meat','4':'stake'}[k];
-      if(bk){e.preventDefault();_gBait.kind=bk;_gBait.at=tick||1;guestSay('bait '+bk+': which way? (an arrow, or ; for here with a plant)');draw();return true;}}
+      if(bk){e.preventDefault();_gBait.kind=bk;_gBait.at=tick||1;guestSay('bait '+bk+': which way? '+(e.pad?'(the d-pad, or Y for here with a plant)':'(an arrow, or ; for here with a plant)'));draw();return true;}}
     else{var bd=GKEYDIR[k]?dirOf(GKEYDIR[k]):(k===';'?'':null);
       if(bd!==null){e.preventDefault();var bkind=_gBait.kind;_gBait=null;guestSay(placeBait(K,g,bkind,bd,null).text);draw();return true;}}
   }
@@ -908,12 +909,12 @@ function guestKey(e,fromLink){
     '/':function(){throwFor(g,guestSay,'. picks a creature within 2 tiles');},
     '[':function(){g.stone=STONES3[(STONES3.indexOf(g.stone)+2)%3];guestSay(g.stone+' in hand ('+g.stones[g.stone.toLowerCase()]+')');},
     ']':function(){g.stone=STONES3[(STONES3.indexOf(g.stone)+1)%3];guestSay(g.stone+' in hand ('+g.stones[g.stone.toLowerCase()]+')');},
-    "'":function(){nameFor(g,guestSay,"'");},
+    "'":function(){var nc=e.pad&&g.naming?g.party.concat(K.cabinet).find(function(x){return x.id===g.naming;}):null;nameFor(g,guestSay,"'",nc?freeName(K,nc.type.charAt(0).toUpperCase()+nc.type.slice(1)):'');},
     ';':function(){if(storeAt(K,g)){if(g.remote){guestSay('the store: type buy, sell, box or take below');return;}openStore('buy',g);return;}var pk=pickPlant(K,g);guestSay(pk.ok?pk.text:interact(K,g).text);},
     ',':function(){guestSay((g.follower?recall(K,g):follow(K,g,null)).text);},
-    'l':function(){var ps=packSummary(g),pl=Object.keys(ps.potions);if(!pl.length){guestSay('no potions in the pack');return;}_gPotion=tick||1;_gBait=null;guestSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));},
+    'l':function(){var ps=packSummary(g),pl=Object.keys(ps.potions);if(!pl.length){guestSay('no potions in the pack');return;}_gPotion=tick||1;_gBait=null;guestSay('potion: '+pl.map(function(n,i){return (e.pad?(PAD_PICK[i]||''):(i+1))+' '+n+' x'+ps.potions[n];}).filter(function(x,i){return !e.pad||i<PAD_PICK.length;}).join(', ')+(e.pad&&pl.length>PAD_PICK.length?' (the rest: L and a digit on the keyboard)':''));},
     'k':function(){var pi=packSummary(g);guestSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):'')+(pi.gear.length?'; worn: '+pi.gear.join(', '):''));},
-    'j':function(){_gPotion=false;_gBait={kind:null,at:tick||1};guestSay('bait: 1 plant, 2 scatter, 3 meat, 4 stake');},
+    'j':function(){_gPotion=false;_gBait={kind:null,at:tick||1};guestSay(e.pad?'bait: A plant, B scatter, X meat, Y stake':'bait: 1 plant, 2 scatter, 3 meat, 4 stake');},
     'h':function(){var K0=K;askFor(g,(g.display||'Guest')+': '+giveQ('Kevin'),'coins 10').then(function(w){if(w===null||K!==K0||K.root!==g||!guestSeated(K))return;guestSay(giveSaid(K,K.root,w).text);draw();});},
     'u':function(){if(!g.party.length){guestSay('nobody in the party to feed');return;}var K0=K;askFor(g,(g.display||'Guest')+': '+FEED_Q,g.party[0].name||g.party[0].type).then(function(w){if(w===null||K!==K0||K.root!==g||!guestSeated(K))return;guestSay(feedSaid(K,K.root,w).text);draw();});},
     'y':function(){
@@ -927,10 +928,10 @@ function guestKey(e,fromLink){
   return false;
 }
 // The guest button in the HUD: sit down (refused while Root plays) or get up.
-function toggleGuest(remote){
+function toggleGuest(remote,fromPad){
   if(!K)return;
   if(guestSeated(K)){var gp=K.root,r=unseatGuest(K);_gPressed={};_gPotion=false;_gBait=null;_gAlmanac=false;_guestCarry=null;_guestRemote=false;if(_kPanelOwner===gp&&panelOpen()){closePanel();_kPanelOwner=null;}if(linkOpen())closeLink();kevinSay(r.text);draw();return;}
-  ask('Who joins'+(remote?' from another screen':'')+'? A name for the second player','Guest').then(function(n){
+  ask('Who joins'+(remote?' from another screen':'')+'? A name for the second player'+(fromPad?' (A on the pad for "Guest")':''),'Guest',fromPad?'guest':null).then(function(n){
     if(n===null||!K)return;var r=seatGuest(K,rootPlaying(),n);
     if(!r.ok){kevinSay(r.text);draw();return;}
     _guestCarry=K.root.display;_guestRemote=!!remote;
@@ -940,6 +941,32 @@ function toggleGuest(remote){
   });
 }
 document.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('.kh-guest');if(b){e.preventDefault();toggleGuest(b.dataset.remote==='1');}});
+
+// ===== A gamepad for the guest (mechanics 25.1): every button is a guest key, handed to guestKey =====
+// Polled while a pad is connected (the browser shows a pad only after a press on it). Start with nobody seated asks
+// for a guest; a guest on another screen plays on their own screen, so this pad does nothing for them.
+var _padPrev=new Set(),_padTimer=null,_padIndex=-1;
+function firstPad(){var ps=navigator.getGamepads?navigator.getGamepads():[];for(var i=0;i<ps.length;i++)if(ps[i]&&ps[i].connected!==false)return ps[i];return null;}
+function padTick(){
+  var gp=firstPad(),idx=gp?gp.index:-1;
+  if(idx!==_padIndex){var had=_padPrev,first=_padIndex<0;_padIndex=idx;_padPrev=new Set();had.forEach(function(b){var ak=padArrowUp(b);if(ak)delete _gPressed[ak];});   // another pad (or none): let go of the old one
+    if(!first){_padPrev=padPressed(gp);return;}}   // a second pad taking over starts from what it holds; the first pad's opening press (the one that made the browser show it) still counts
+  var now=padPressed(gp,_padPrev),ed=padEdges(_padPrev,now);_padPrev=now;
+  if(!gp&&_padTimer){clearInterval(_padTimer);_padTimer=null;}
+  if(!K)return;
+  for(var u=0;u<ed.ups.length;u++){var ak=padArrowUp(ed.ups[u]);if(ak)delete _gPressed[ak];}   // a released d-pad lets the held move go
+  for(var d=0;d<ed.downs.length;d++)padDown(ed.downs[d]);
+}
+function padDown(i){
+  if(!guestSeated(K)){if(i===PAD_START&&!asking())toggleGuest(false,true);else if(askWho()==='guest'){var a=padKey(i,{asking:true});if(a)answerAsk(a==='ok');}return;}
+  if(K.root.remote)return;
+  var live=function(at){return at&&tick>=at&&tick-at<=60;};   // the same 60-tick window guestKey keeps
+  var k=padKey(i,{asking:askWho()==='guest',picking:!!(live(_gPotion)||(_gBait&&!_gBait.kind&&live(_gBait.at)))});
+  if(!k)return;
+  if(k==='ok'||k==='cancel'){answerAsk(k==='ok');return;}
+  guestKey({key:k,repeat:false,pad:true,preventDefault:function(){}},false);draw();
+}
+window.addEventListener('gamepadconnected',function(){if(!_padTimer)_padTimer=setInterval(padTick,50);});
 
 // ===== The guest link (mechanics 26): what a guest on another screen sees, and what their input does =====
 var _guestRemote=false,_linkFrame=null;

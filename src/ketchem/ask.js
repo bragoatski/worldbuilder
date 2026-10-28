@@ -3,7 +3,7 @@
 // 2026-10-25). The bar sits above the party row; Enter answers, Esc or the X declines. One question at a time: a
 // second question waits until the first is answered, so Kevin's and a guest's never cancel each other. Keys typed
 // into it never reach the game (the page's keydown skips the bar). ask() resolves to the trimmed text, or null.
-let bar = null, pending = null;
+let bar = null, pending = null, pendingWho = null;   // pendingWho: 'guest' for the guest's questions (their pad may answer those)
 const queue = [];   // questions asked while one is open wait their turn (Kevin's and the guest's never cancel each other)
 function css() {
   const s = document.createElement('style');
@@ -32,21 +32,25 @@ function ensure() {
 function finish(v) {
   if (!bar) return;
   bar.hidden = true;
-  const cb = pending; pending = null;
+  const cb = pending; pending = null; pendingWho = null;
   const input = bar.querySelector('input'); input.blur();
   if (cb) cb(v === null ? null : String(v).trim());
-  if (!pending && queue.length) { const q = queue.shift(); show(q.question, q.initial, q.resolve); }
+  if (!pending && queue.length) { const q = queue.shift(); show(q.question, q.initial, q.resolve, q.who); }
 }
-function show(question, initial, resolve) {
+function show(question, initial, resolve, who) {
   bar.querySelector('label').textContent = question;
   const input = bar.querySelector('input'); input.value = initial;
-  bar.hidden = false; pending = resolve;
+  bar.hidden = false; pending = resolve; pendingWho = who || null;
+  bar.querySelector('.ka-hint').textContent = 'Enter to answer, Esc to cancel' + (who === 'guest' ? ', or A / B on the guest\'s pad' : '') + '. The world keeps moving.';
   setTimeout(() => { input.focus(); input.select(); }, 0);
 }
-export function ask(question, initial = '') {
+export function ask(question, initial = '', who = null) {
   if (typeof document === 'undefined') return Promise.resolve(null);
   ensure();
-  return new Promise(resolve => { if (pending) queue.push({ question, initial, resolve }); else show(question, initial, resolve); });
+  return new Promise(resolve => { if (pending) queue.push({ question, initial, resolve, who }); else show(question, initial, resolve, who); });
 }
 export function asking() { return !!pending; }
+// Whose question is open (null for Kevin's), and an answer from outside the keyboard: the guest's pad says OK or no.
+export function askWho() { return pending ? pendingWho : null; }
+export function answerAsk(ok) { if (pending && bar) finish(ok ? bar.querySelector('input').value : null); }
 export function closeAsk() { while (queue.length) queue.shift().resolve(null); if (pending) finish(null); }   // a board change answers every open question with null

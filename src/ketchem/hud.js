@@ -78,7 +78,7 @@ function hudHTML(p, guestChip = '', guest = false) {
   const stones = STONES.map(([n, k], i) => '<span class="kh-stone' + (p.stone === n ? ' on' : '') + '" title="' + (guest ? '[ and ] change the stone' : (i + 1) + ' picks ' + n) + '">' + (guest ? '' : '<i>' + (i + 1) + '</i>') + n + ' ' + p.stones[k] + '</span>').join('');
   const packTip = ps.plants + ' plants' + (potions.length ? ', ' + potions.map(n => n + ' x' + ps.potions[n]).join(', ') : '') + (ps.gear.length ? '; worn: ' + ps.gear.join(', ') : '') + (guest ? '. K for the pack, L for a potion or a shard, J to bait, H to give to Kevin, U to feed, Y the Almanac' : '. I for the pack, P for a potion or a shard');
   const fx = (p.effects || []).filter(e => e.until > tick).map(e => '<span class="kh-arc" data-potion="' + esc(e.potion) + '" title="' + esc(e.potion) + '"><b>' + esc(e.potion[0]) + '</b></span>').join('');
-  const nk = guest ? "'" : 'N', hint = p.naming ? nk + ' to name your catch' : p.namingSpecies ? nk + ' to name the new species' : p.cast ? 'homeward' : '';
+  const nk = guest ? "' (X on a pad)" : 'N', hint = p.naming ? nk + ' to name your catch' : p.namingSpecies ? nk + ' to name the new species' : p.cast ? 'homeward' : '';
   const over = ps.used > ps.cap;   // a Pack creature left the party: nothing more fits until the pack is lighter
   return '<span class="kh-wallet">' + p.wallet + ' coins</span>' + stones + '<span class="kh-pack' + (over ? ' over' : '') + '" title="' + esc(packTip + (over ? '. Over the cap: nothing more fits until the pack is lighter or a Pack creature rejoins the party' : '')) + '">pack ' + ps.used + '/' + ps.cap + '</span>' + (fx ? '<span class="kh-fx">' + fx + '</span>' : '') + (hint ? '<span class="kh-hint">' + hint + '</span>' : '') +
     '<button type="button" class="kh-sound' + (soundOn() ? '' : ' off') + '" title="Sound ' + (soundOn() ? 'on' : 'off') + ' (O)" aria-label="Sound">' + (soundOn() ? 'sound' : 'muted') + '</button>' + guestChip;
@@ -158,7 +158,7 @@ export function hudTick(K) {
   ensure();
   const p = K.kevin;
   const g = K.root && K.root.human && !K.root.away ? K.root : null;
-  const chip = '<button type="button" class="kh-guest' + (g ? ' on' : '') + '" title="' + (g ? 'The guest gets up; what they carry waits' : 'A second player on this keyboard: arrows, . / [ ] \' ; , L K J H U Y') + '">' + (g ? esc(g.display || 'Guest') + (g.remote ? ' (code ' + esc(g.remote) + ')' : '') + ' leaves' : '+ guest') + '</button>' +
+  const chip = '<button type="button" class="kh-guest' + (g ? ' on' : '') + '" title="' + (g ? 'The guest gets up; what they carry waits' : 'A second player on this keyboard (arrows, . / [ ] \' ; , L K J H U Y) or on a gamepad (Start)') + '">' + (g ? esc(g.display || 'Guest') + (g.remote ? ' (code ' + esc(g.remote) + ')' : '') + ' leaves' : '+ guest') + '</button>' +
     (!g && remoteOk ? '<button type="button" class="kh-guest" data-remote="1" title="A second player on another screen, through the guest link">+ guest on another screen</button>' : '');
   const hs = hudSig(p) + chip; if (hs !== lastHud) { lastHud = hs; hudEl.innerHTML = hudHTML(p, chip); hudEl.hidden = false; const sb = hudEl.querySelector('.kh-sound'); if (sb) sb.addEventListener('click', () => { toggleSound(); hudTick(K); }); }
   soundTick(K);

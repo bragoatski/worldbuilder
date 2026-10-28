@@ -1260,7 +1260,37 @@ J cancels a pending L and L a pending J.
 - Guest parity (2026-10-27): bait, give, feed and the Almanac, which the first build left to Kevin, are the guest's
   too (J, H, U, Y above), through the same functions Kevin's keys use. A bait carries the guest's own id, so a creature
   the guest staked comes back to the guest even after they got up and someone else sat down.
-- Not built for the guest: sending to another save (the saves are Kevin's); a gamepad.
+- Not built for the guest: sending to another save (the saves are Kevin's).
+
+### 25.1 A gamepad for the guest
+
+Built 2026-10-27 (owner ask "build the next part"). A standard gamepad plays the guest seat at the shared screen, so
+two people play on one machine without sharing a keyboard. Readings, overturnable (the button layout above all).
+- Every button is a guest key (the table in sec. 25), handed to the same code the keys use: the pad has no actions of
+  its own.
+
+| button | guest's action |
+|---|---|
+| d-pad, left stick | move (held repeats) |
+| A | throw |
+| B | next creature within 2 tiles |
+| X | name the catch: the question offers a free name, "Herbivore 1", that A accepts (a pad cannot type) |
+| Y | pick, read a signpost, or open the store; "here" when placing a bait |
+| LB / RB | previous / next stone |
+| LT | potion (then A B X Y for the first four) |
+| RT | bait (then A plant, B scatter, X meat, Y stake, then the d-pad, or Y for here) |
+| Back | give to Kevin |
+| Start | the Almanac; with nobody in the seat, asks who joins (A takes "Guest") |
+| L3 / R3 | follow or recall / feed |
+
+- While the guest's own question is open in the bar, A answers it with what the bar holds and B declines. The pad
+  never answers one of Kevin's questions (each question records whose it is).
+- On a pad, A B X Y are the choice keys, so the digit clash at the shared keyboard (sec. 25) does not arise.
+- A guest on another screen plays on their own screen; this pad does nothing for them. A pad that disconnects lets go of
+  any held direction.
+- Not built: a pad on the guest's own screen through the link; a species name from a pad (the bar opens empty, so it
+  needs a keyboard, or B to decline for now); a fifth potion or more from a pad (A B X Y reach the first four; the
+  message says so); Kevin on a pad; vibration.
 
 ## 26. The guest link: the guest seat from another screen
 

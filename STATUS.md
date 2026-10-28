@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-27 (o) - Ketch'em gamepad for the guest seat - DONE, GATE GREEN
+Owner ask: "build the next part". Of the remaining items, the gamepad is the only one with no hosting, no money and nothing public; it also removes the digit clash between Kevin and a keyboard guest. Mechanics sec. 25.1 (the button layout is a reading, overturnable). **Not deployed**; nothing pushed.
+
+What the game does now: a standard gamepad plays the guest seat. Start with nobody seated asks who joins and A takes "Guest"; the d-pad or left stick moves; A throws, B targets, X names (the question offers a free name such as "Herbivore 1", since a pad cannot type), Y picks / opens the store / means "here" for a bait; LB RB the stone, LT a potion, RT bait (then A B X Y for the kind or the potion), Back gives to Kevin, R3 feeds, L3 follows, Start opens the Almanac. A and B answer or decline the guest's own questions and never one of Kevin's (each question now records whose it is). The guest's bar and the question bar name the pad's buttons.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 281/281 (new `src/ketchem/pad.test.js`, 7; guest.test.js +1 for the free name), build green. Critic (Sonnet): 0 blockers, 4 risks, all taken: an expired potion choice could spend a potion on the next press (keyboard too: the timeout now runs first), potions past the fourth said a key the pad lacks, no hysteresis on a resting stick or trigger, a second pad's held buttons fired as presses. The rehearsal then caught my own fix swallowing the pad's opening press (the press that makes the browser show the pad); fixed. Rehearsals: rehearse16 (new, a scripted pad on the live page) 18/18 twice; rehearse14 35/35 on a scratch relay; adversary 0 findings, 0 page errors; fuzz seed 181: 0 violations, 0 page errors. Left: a species name from a pad (the bar opens empty), a fifth potion from a pad, a pad on the guest's own screen. Screenshots: `docs/04 Handoffs/img/2026-10-27-ketchem-pad/`.
+
 ## Session 2026-10-27 (n) - Ketch'em guest parity: bait, give, feed and the Almanac for the guest - DONE, GATE GREEN
 Owner ask (the parity prompt): give the guest in the second seat what Kevin has and they lacked, at the shared keyboard and through the guest link. Mechanics sections 25 and 26 updated (the items left "Not built"). **Not deployed**; nothing pushed. Still the owner's calls: opening the link to the tailnet, Root on the public site, a gamepad, several guests.
 

@@ -452,6 +452,13 @@ export function nameSpecies(K, p, raw) {
   e.nickname = n; e.namedBy = p.id;
   return { ok: true, text: 'the new species is "' + n + '"' };
 }
+// Every creature that holds a name: both seats' parties, both waiting records, the cabinet, and bait payloads.
+function named(K) { return [K.kevin, K.root, K.rootStash, K.guestStash].flatMap(q => (q && q.party) || []).concat(K.cabinet || [], (K.baits || []).map(b => b.payload).filter(Boolean)); }
+// A name nobody holds, "<Base> 1", "<Base> 2", ...: what a guest on a pad is offered, since a pad cannot type.
+export function freeName(K, base) {
+  const used = new Set(named(K).filter(x => x.name).map(x => x.name.toLowerCase()));
+  for (let n = 1; ; n++) { const name = base + ' ' + n; if (!used.has(name.toLowerCase())) return name; }
+}
 export function nameCatch(K, p, raw, speciesNick) {
   if (!p.naming && p.namingSpecies) return nameSpecies(K, p, raw);   // nothing caught to name: the evolved species takes the name
   const name = String(raw || '').trim().slice(0, 24);
@@ -460,7 +467,7 @@ export function nameCatch(K, p, raw, speciesNick) {
   pruneNaming(K, p);
   const c = p.naming ? (p.party.find(x => x.id === p.naming) || K.cabinet.find(x => x.id === p.naming)) : null;
   if (!c) return { ok: false, text: 'nothing to name' };
-  const taken = [K.kevin, K.root, K.rootStash, K.guestStash].flatMap(q => (q && q.party) || []).concat(K.cabinet || [], (K.baits || []).map(b => b.payload).filter(Boolean)).find(x => x !== c && x.name && x.name.toLowerCase() === name.toLowerCase());
+  const taken = named(K).find(x => x !== c && x.name && x.name.toLowerCase() === name.toLowerCase());
   if (taken) return { ok: false, text: 'there is a "' + taken.name + '" already; names are one to a creature, so pick another' };   // the verbs, the cabinet and give find creatures by name
   c.name = name; p.naming = (p.namingQueue || []).shift() || null;   // the next unnamed one, if any, takes the prompt
   const e = almanacEntry(K, c);
