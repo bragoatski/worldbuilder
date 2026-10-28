@@ -22,3 +22,6 @@ Never rehearse against the real visit record. A scratch relay, from PowerShell i
 
 Run one rehearsal at a time: the relay serves one live page, so two pages retire each other. Edits to the page's
 modules during a run make Vite reload the page under the script.
+
+The guest link (`visit/guest-link.mjs`) usually runs as its own node process, not under Vite: after editing its page,
+stop whatever listens on 7797 and start `node visit/guest-link.mjs` again, or rehearse15 tests the old page.
