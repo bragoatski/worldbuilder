@@ -840,9 +840,13 @@ replays initWorld's draw order and the grid is identical after a load. Remaining
 climate base is recomputed at load while the live world refreshes it every 20 ticks (a few tiles of temperature and
 aridity differ, mostly by hundredths, a few tenths on a tile at a biome edge, until the next refresh; the critic saw
 one tile change biome on 1 of 16 loads), `yearlyVariation` restarts at 1, and the ecology streams are reseeded by the
-sim's loader as they always were (only the instant of the load is reproducible). Not built yet from 18.2: autosave
-on entering a store and when Root leaves, Root's `save` verb, load / delete from the launch card (the F9 menu does
-them), and a mirror delete.
+sim's loader as they always were (only the instant of the load is reproducible). Built 2026-10-27 from the rest of 18.2:
+Root's `save` (the current slot; refused with guidance while the game has no name) and `save as <name>` (a new saved
+game, continued in); a named game saves when Root leaves a Ketch'em visit; deleting a slot in the F9 menu deletes its
+mirror. A new name is refused when this browser's saves or the relay's mirror already hold it, ignoring case (the
+mirror's files on Windows do), so naming never overwrites a game; Kevin's first save asks again the same way. A failed
+`save as` leaves the old name. Windows' reserved file names (con, nul, ...) get " game" added. Load and delete stay in
+the F9 menu rather than the launch card (a reading: the launch card is Root's, the saves are Kevin's).
 
 ## 19. Relationships, in one view
 

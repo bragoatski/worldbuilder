@@ -773,6 +773,17 @@ export async function mirrorSave(data) {
   try { return !!(await post('/page/save', data)); } catch { return false; }
 }
 
+// A deleted slot leaves the mirror too (18.2); the relay checks the name as it does for a write.
+// The slot names the relay's mirror holds (it can know a game this browser forgot); [] with no relay.
+export async function mirrorSlots() {
+  if (!LOCAL || !V) return [];
+  try { const r = await fetch(RELAY + '/page/slots'); return r.ok ? ((await r.json()).slots || []).map(m => m.slot) : []; } catch { return []; }
+}
+export async function mirrorDelete(slot) {
+  if (!LOCAL || !V) return false;
+  try { return !!(await post('/page/save/delete', { slot })); } catch { return false; }
+}
+
 function worldKey() { return 's' + _seed + '-' + W + 'x' + H; }
 
 // hooks: { draw, screenToTile, canvas, getSpeed, setSpeed, onGodMark }
@@ -973,6 +984,7 @@ function depart(line) {
   V.st.leftTick = tick;
   const K = V.hooks.ketchem && V.hooks.ketchem.board();
   if (K && K.root) { K.root.away = true; if (K.cam === 'root') K.cam = 'kevin'; }   // Root's party and stones keep; its body is not in the world
+  if (V.mode === 'ketchem' && K && K.slot && V.hooks.ketchem.save) V.hooks.ketchem.save();   // 18.2: a named game saves when Root leaves a Ketch'em visit (an unnamed one waits for Kevin's F5)
   if (V.speedBefore != null) { V.hooks.setSpeed(V.speedBefore); V.speedBefore = null; }
   logLine('s', line + (V.tokens ? ' (' + fmtTokens(V.tokens) + ' tokens so far)' : ''));
   V.hooks.draw();
@@ -1115,6 +1127,7 @@ async function pump(hooks) {
           }
           case 'almanac': text = almanacText(K, K.root) + heardPoints(); break;
           case 'breed': { const r = breedPair(K, K.root, a.a, a.b); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
+          case 'save': { const sv = V.hooks.ketchem && V.hooks.ketchem.save; text = (sv ? await sv(a.as) : 'there is nothing to save here') + heardPoints(); if (/^saved/.test(text)) logLine('s', 'Root saves the game.'); break; }
           case 'feed': { const r = feedCreature(K, K.root, a.name, a.what); logLine('s', 'Root: ' + r.text + '.'); text = r.text + heardPoints(); break; }
           case 'pack': { const ps = packSummary(K.root); text = 'pack ' + ps.used + '/' + ps.cap + ': ' + ps.plants + ' plants' + (Object.keys(ps.potions).length ? ', ' + Object.entries(ps.potions).map(x => x[0] + ' x' + x[1]).join(', ') : '') + '; stones Amber ' + K.root.stones.amber + ' Geode ' + K.root.stones.geode + ' Obsidian ' + K.root.stones.obsidian + '; ' + K.root.wallet + ' coins; party ' + (K.root.party.map(c => '"' + (c.name || c.type) + '"').join(', ') || 'none') + (ps.gear.length ? '; worn: ' + ps.gear.join(', ') : '') + heardPoints(); break; }
           case 'name': { const r = nameCatch(K, K.root, a.name, a.species); if (r.ok) logLine('s', 'Root names its catch ' + r.text + '.'); text = r.text + heardPoints(); break; }

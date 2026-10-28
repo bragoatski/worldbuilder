@@ -87,6 +87,8 @@ const KETCHEM_BODY = [
   tool('almanac', 'The Almanac: species seen and caught with nicknames, stores found, landmarks.'),
   tool('pack', 'What you carry: plants, potions, shards, stones, coins, the party, and the gear you wear.'),
   tool('breed', 'At a store: breed two of your creatures of one kind (party or cabinet) for a fee (20 + 5 x their levels); the young one is born into the cabinet with a mixed genome, and each parent rests 2,000 ticks.', { a: { type: 'string' }, b: { type: 'string' } }, ['a', 'b']),
+  tool('save', 'Save this game into its slot (Kevin\'s F5 does the same). as: save it as a new game under that name instead (letters, digits, spaces, dashes); refused if another saved game has the name.',
+    { as: { type: 'string' } }),
   tool('feed', 'Feed a party creature: what = "plant" (the first plant in the pack; grazers and omnivores) or another party creature\'s name (meat eaters; it is eaten). Feeding is XP; XP moves the genome; a genome that crosses a species bucket is a new species.', { name: { type: 'string' }, what: { type: 'string' } }, ['name']),
 ];
 

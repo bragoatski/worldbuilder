@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-27 (q) - Ketch'em saves, the rest of 18.2 - DONE, GATE GREEN
+Owner ask: "keep going", "we have lots of tokens to use so keep building". The design's own unbuilt list was the next source: mechanics 18.2's leftovers. **Not deployed**; nothing pushed.
+
+What the game does now: Root can `save` the game (or `save as` a new name) through its door; a named game saves itself when Root leaves; deleting a saved game in the F9 menu also deletes the relay's copy. Naming a game (Root or Kevin) never overwrites another one: a name this browser or the relay already holds, in any case, is refused and Kevin is asked again.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 284/284 (visit.test.js: save only on a board), build green. Critic (Sonnet): 0 blockers, 2 risks, both taken (a failed `save as` renamed the game anyway; uniqueness was checked case-sensitively and against this browser only, while the mirror is Windows files), plus nits taken (Kevin's naming while Root names, the brief overstating autosaves, a non-Ketch'em leave saving the board, Windows' reserved names). Kevin's own first save had the same overwrite hole and now asks again. Rehearsal: rehearse17 (new, Root through the door on a scratch relay) 11/11. Screenshot: `docs/04 Handoffs/img/2026-10-27-ketchem-saves/`.
+
 ## Session 2026-10-27 (p) - Ketch'em the gamepad finished: a pad on the guest's own screen, species names, every potion - DONE, GATE GREEN
 Owner ask: "after you are done with this session build the next", then "keep working on this until the entire build is finished". The next part closed the gamepad's own "not built" list. Mechanics 25.1 and 26. **Not deployed**; nothing pushed.
 

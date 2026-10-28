@@ -459,6 +459,14 @@ const server = http.createServer(async (req, res) => {
       fs.renameSync(f + '.tmp', f);
       return sendJSON(res, 200, { ok: true, file: f });
     }
+    if (req.method === 'POST' && url === '/page/save/delete') {   // a slot deleted on the page leaves the mirror too (18.2)
+      if (stale()) return sendJSON(res, 409, { error: 'a newer page has taken over' });
+      const b = await body(req);
+      const f = slotFile(b && b.slot);
+      if (!f) return sendJSON(res, 400, { error: 'bad slot' });
+      const had = fs.existsSync(f); if (had) fs.unlinkSync(f);
+      return sendJSON(res, 200, { ok: true, deleted: had });
+    }
     if (req.method === 'GET' && url === '/page/slots') return sendJSON(res, 200, { slots: listSlotFiles() });
     if (req.method === 'GET' && url === '/page/save') {    // read a mirrored slot back (a browser that lost its IndexedDB)
       const f = slotFile(u.searchParams.get('slot'));

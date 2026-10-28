@@ -367,6 +367,7 @@ describe('visit: modes', () => {
     expect(m.verbsFor('shaper')).not.toContain('weather');
     expect(m.verbsFor('sky')).toEqual(expect.arrayContaining(['survey', 'zoom', 'shape', 'weather', 'sea', 'name_place', 'leave']));
     expect(m.verbsFor('sky')).not.toContain('walk');
+    expect(m.verbsFor('ketchem')).toContain('save'); expect(m.verbsFor('visitor')).not.toContain('save');   // 18.2: only a board has a game to save
     expect(m.modeOf('god')).toBe('visitor');
     expect(m.modeOf('constructor')).toBe('visitor');
     expect(m.modeOf('__proto__')).toBe('visitor');

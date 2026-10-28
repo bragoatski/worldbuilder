@@ -41,7 +41,7 @@ import { growthTick, catchXP, feedSaid, eventsText, breed as breedPair } from '.
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots, addToRecordCabinet, SAVE_VERSION } from './ketchem/save.js';
 import { saveMenu } from './ketchem/menu.js';
-import { mirrorSave } from './visit.js';
+import { mirrorSave, mirrorDelete, mirrorSlots } from './visit.js';
 
 // ===== Panel collapse =====
 window.togglePanel = function(id){
@@ -1035,23 +1035,43 @@ window.addEventListener('keydown',function(e){if(!K&&e.key==='F9'&&!/INPUT|SELEC
 // relay; F9 opens the menu (load / delete / export / import). Autosave every 2,000 ticks and on leaving the page.
 var AUTOSAVE_TICKS=2000,_kAutoAt=0,_kMenuEl=null;
 function _kMenu(){
-  if(!_kMenuEl)_kMenuEl=saveMenu({slots:listSlots,load:loadGame,del:function(slot){if(K&&K.slot===slot)K.slot=null;return deleteSlot(slot);},saveNow:saveGame,hasGame:function(){return !!K;},
+  if(!_kMenuEl)_kMenuEl=saveMenu({slots:listSlots,load:loadGame,del:function(slot){if(K&&K.slot===slot)K.slot=null;return deleteSlot(slot).then(function(r){mirrorDelete(slot);return r;});},saveNow:saveGame,hasGame:function(){return !!K;},
     exportNow:function(){if(!K)return;var json=exportSave(buildSave(K,K.slot));var blob=new Blob([json],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ketchem_'+(K.slot||K.seed)+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);},
     importFile:function(file){var r=new FileReader();r.onload=function(){try{adoptBoard(importSave(String(r.result)));kevinSay('imported '+(K.slot||''));}catch(e){showErr('Import failed: '+e.message);}};r.readAsText(file);}});
   return _kMenuEl;
 }
 function showErr(text){var eb=document.getElementById('err');if(eb){eb.style.display='block';eb.textContent=text;}}
 // A slot name as both the page and the relay accept it (relay: ^[\w][\w -]{0,63}$): word characters, spaces and dashes, starting with a word character.
-function slotName(raw){return String(raw||'').replace(/[^\w -]/g,'').replace(/^[^\w]+/,'').trim().slice(0,64);}
+function slotName(raw){var n=String(raw||'').replace(/[^\w -]/g,'').replace(/^[^\w]+/,'').trim().slice(0,58);return /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(n)?n+' game':n;}   // Windows reserves a few file names; the mirror is files
+// Is this name another saved game's? Asked of this browser's saves and the relay's mirror, ignoring case (the mirror's
+// files on Windows do), so a new name never overwrites a game.
+function slotTaken(n,mine){var low=n.toLowerCase();if(mine&&mine.toLowerCase()===low)return Promise.resolve(false);return Promise.all([listSlots(),mirrorSlots()]).then(function(r){return r[0].map(function(m){return m.slot;}).concat(r[1]).some(function(x){return String(x).toLowerCase()===low;});});}
 // Save: build in memory, write IndexedDB, then mirror; a failed mirror never fails the save (18.1).
 var _kSaving=false;
 function saveGame(){
   if(!K||_kSaving)return Promise.resolve(false);
-  if(!K.slot){var K0=K;return ask('Name this game',String(K.seed)).then(function(name){if(name===null||K!==K0)return false;if(!K.slot)K.slot=slotName(name)||String(K.seed);return saveGame();});}
+  if(!K.slot){var K0=K;return ask('Name this game',String(K.seed)).then(function(name){if(name===null||K!==K0)return false;if(K.slot){kevinSay('this game is already called "'+K.slot+'"');return saveGame();}var n=slotName(name)||String(K.seed);
+    return slotTaken(n).then(function(taken){if(K!==K0)return false;if(K.slot)return saveGame();if(taken){kevinSay('there is already a saved game called "'+n+'"; pick another name');return false;}K.slot=n;return saveGame();});});}
   _kSaving=true;_kAutoAt=tick;   // the autosave clock advances now, so a slow or failed write is never retried every tick
   var data=buildSave(K,K.slot);
   return putSlot(data).then(function(){return mirrorSave(data);}).then(function(mirrored){kevinSay('saved "'+K.slot+'"'+(mirrored?'':', not mirrored'));draw();return true;})
     .catch(function(e){showErr('Save failed: '+e.message);return false;}).finally(function(){_kSaving=false;});
+}
+// Root's save (18.2): the current slot, or "save as" a new one. A name another saved game holds is refused, never
+// overwritten; a game nobody has named yet needs a name (Kevin's F5 asks him for one).
+function rootSave(as){
+  if(!K)return Promise.resolve('there is no game to save');
+  if(as===undefined||as===null||as===''){if(!K.slot)return Promise.resolve('this game has no name yet: save as <name>, or Kevin names it with F5');return saveGame().then(function(ok){return ok?'saved "'+K.slot+'"':'the save did not go through';});}
+  var n=slotName(as);if(!n)return Promise.resolve('a save name is letters, digits, spaces and dashes');
+  if(_kSaving)return Promise.resolve('a save is already being written; try again in a moment');
+  var K0=K;
+  return slotTaken(n,K.slot).then(function(taken){
+    if(K!==K0)return 'the game changed before it could be saved';
+    if(taken)return 'there is already a saved game called "'+n+'"; pick another name';
+    if(_kSaving)return 'a save is already being written; try again in a moment';
+    var was=K.slot;K.slot=n;
+    return saveGame().then(function(ok){if(ok)return 'saved "'+K.slot+'"';if(K===K0&&K.slot===n)K.slot=was;return 'the save did not go through; the game is still called '+(was?'"'+was+'"':'nothing yet');});   // a failed write never renames the game
+  });
 }
 function loadGame(slot){
   return getSlot(slot).then(function(data){if(!data)throw new Error('no save "'+slot+'"');adoptBoard(applySave(data));kevinSay('loaded "'+slot+'"');draw();})
@@ -1592,7 +1612,7 @@ function dismissIntro(){
 bootVisit({draw:draw,screenToTile:screenToTile,canvas:canvas,getSpeed:function(){return speed;},
   setSpeed:function(s){speed=s;var sp=document.getElementById('speed');if(sp)sp.value=s;},
   onGodMark:refreshUndoBtn,     // Root's shaping is one act in the Hand's undo, so the button must wake for it
-  ketchem:{board:function(){return K;},building:function(){return !!_kProgress;},start:function(setting,seed,cb){startKetchem(setting,seed,96,cb);}}});   // the game mode builds a board first
+  ketchem:{board:function(){return K;},building:function(){return !!_kProgress;},start:function(setting,seed,cb){startKetchem(setting,seed,96,cb);},save:rootSave}});   // the game mode builds a board first
 
 // Verification handle, active ONLY with ?debug in the URL (inert for normal users). Lets the
 // gate-blind river visual verify drive load->rivers->draw from one script call, no file dialog.
