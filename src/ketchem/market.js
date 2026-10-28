@@ -218,6 +218,12 @@ export function give(K, p, what, amount) {
     return { ok: true, text: 'gave "' + (c.name || c.type) + '"' }; }
   return { ok: false, text: 'nothing called "' + what + '" to give' };
 }
+// A give typed as words, as Kevin's G and the guest's H and command line take it: "coins 10", "Amber 2", "Tonic",
+// "plant", "Pip". A number, if any, is the last word.
+export function giveSaid(K, p, text) {
+  const m = /^(.*?)(?:\s+(\d+))?$/.exec(String(text || '').trim());
+  return give(K, p, m[1], m[2] ? +m[2] : undefined);
+}
 
 // ---------- potions (21) ----------
 function effect(p, potion, duration) { p.effects = (p.effects || []).filter(e => e.potion !== potion); p.effects.push({ potion, until: tick + duration }); }

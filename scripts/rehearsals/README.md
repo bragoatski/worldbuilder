@@ -10,8 +10,8 @@ as its first argument. They drive the dev server at http://127.0.0.1:5173 with P
 | rehearse11.mjs | the finishing pass: question bar, icons, cabinet drag, sound chip, Root on load and Reset | scratch relay |
 | rehearse12.mjs | items: shards and gear, Kevin and Root | scratch relay |
 | rehearse13.mjs | trading between saves (two saves) | nothing |
-| rehearse14.mjs | a guest at the same keyboard; Call Root refused while seated | scratch relay |
-| rehearse15.mjs | a guest on another screen through the guest link (two browsers) | the guest link (the dev server starts it) |
+| rehearse14.mjs | a guest at the same keyboard (bait, give, feed, the Almanac, a stake across a seat swap); Call Root refused while seated | scratch relay |
+| rehearse15.mjs | a guest on another screen through the guest link (two browsers; bait, give, feed, the Almanac as text) | the guest link (the dev server starts it) |
 
 Never rehearse against the real visit record. A scratch relay, from PowerShell in the repo:
 

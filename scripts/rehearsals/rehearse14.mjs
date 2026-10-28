@@ -1,7 +1,8 @@
 /* global window, document, getComputedStyle */
 // Guest-seat rehearsal (2026-10-26): a second person joins from the HUD, plays on the arrows and the right-hand keys
 // while Kevin keeps WASD, catches and names a creature, opens a store, and leaves; Root's launch card refuses the
-// seat while the guest holds it. Runs against a scratch relay (the launch card needs one; nothing is summoned).
+// seat while the guest holds it. Then (2026-10-27) Sam baits (J), gives (H), feeds (U) and opens the Almanac (Y), and a
+// creature Sam staked comes back to Sam after Sam leaves and the stake rots. Runs against a scratch relay (the launch card needs one; nothing is summoned).
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 const require = createRequire('C:/Users/KevinReilly/taipan/package.json');
@@ -80,5 +81,59 @@ await page.click('#kHud .kh-guest'); await page.waitForTimeout(300);
 s = await st(); ok('Sam leaves; the seat is free and the HUD offers it again', !s.guest && await page.evaluate(() => /\+ guest/.test(document.querySelector('#kHud .kh-guest').textContent)) && await page.evaluate(() => document.getElementById('kHud2').hidden), s.kmsg);
 await page.click('#kHud .kh-guest'); await answer('Sam'); await page.waitForTimeout(300);
 s = await st(); ok('and Sam comes back with Moss', s.gparty.includes('Moss'), JSON.stringify(s.gparty));
+// ===== guest parity (2026-10-27): Sam baits, gives, feeds and reads the Almanac at this keyboard =====
+const plants = n => page.evaluate(n => { const K = window.__wb.ketchem.board(), g = K.root; for (let i = 0; i < n; i++) g.pack.push({ type: 'grass', gen: 0 }); }, n);
+await page.evaluate(() => { window.__wb.ketchem.pause(true); const K = window.__wb.ketchem.board(), g = K.root; K.kevin.x = g.x; K.kevin.y = g.y; g.wallet = 20; });
+await plants(3);
+const dirKey = await page.evaluate(() => { const sim = window.__wb.sim, g = window.__wb.ketchem.board().root; for (const [k, dx, dy] of [['ArrowUp', 0, -1], ['ArrowDown', 0, 1], ['ArrowLeft', -1, 0], ['ArrowRight', 1, 0]]) { const t = sim.grid[sim.idx(g.x + dx, g.y + dy)]; if (![0, 1, 5, 11, 12].includes(t)) return k; } return 'ArrowUp'; });
+const gBaits = () => page.evaluate(() => { const K = window.__wb.ketchem.board(); return K.baits.filter(b => b.by === 'guest').map(b => ({ kind: b.kind, x: b.x, y: b.y, payload: b.payload && b.payload.name })); });
+ok('Sam\'s bar names the new keys', await page.evaluate(() => /J to bait, H to give to Kevin, U to feed, Y the Almanac/.test(document.querySelector('#kHud2 .kh-pack').title)));
+await page.keyboard.press('j'); s = await st(); ok('J asks Sam for a bait kind', /1 plant, 2 scatter, 3 meat, 4 stake/.test(s.gmsg || ''), s.gmsg);
+await page.keyboard.press('1'); s = await st(); ok('1 picks a plant bait and asks which way', /bait plant: which way/.test(s.gmsg || ''), s.gmsg);
+const kb0 = (await st()).kevin; await page.keyboard.press('d'); await page.waitForTimeout(100); const kb1 = (await st()).kevin;
+ok('Kevin\'s keys pass through Sam\'s pending bait', kb1[0] !== kb0[0] || kb1[1] !== kb0[1], JSON.stringify(kb0) + ' -> ' + JSON.stringify(kb1));
+const gb0 = (await st()).guest; await page.keyboard.press(dirKey); await page.waitForTimeout(100);
+let bs = await gBaits(); s = await st();
+ok('an arrow sets Sam\'s plant bait on that tile, and Sam stays put', bs.length === 1 && bs[0].kind === 'plant' && s.guest[0] === gb0[0] && s.guest[1] === gb0[1] && /bait set/.test(s.gmsg || ''), JSON.stringify(bs) + ' ' + s.gmsg);
+await page.screenshot({ path: `${out}/guest-bait.png` });
+await page.keyboard.press('j'); await page.keyboard.press('1'); await page.keyboard.press(';'); await page.waitForTimeout(100);
+bs = await gBaits(); s = await st();
+ok('J 1 ; sets it under Sam, replacing the first', bs.length === 1 && bs[0].x === s.guest[0] && bs[0].y === s.guest[1], JSON.stringify(bs));
+// give
+await page.evaluate(() => { const K = window.__wb.ketchem.board(); K.kevin.x = K.root.x; K.kevin.y = K.root.y; });
+const kw0 = await page.evaluate(() => window.__wb.ketchem.board().kevin.wallet);
+await page.keyboard.press('h');
+const hq = await page.evaluate(() => document.querySelector('#kAsk label').textContent);
+ok('H asks Sam what to give Kevin', /^Sam: Give Kevin what\?/.test(hq), hq);
+await page.fill('#kAskIn', 'coins 3'); await page.press('#kAskIn', 'Enter'); await page.waitForTimeout(200);
+const kw1 = await page.evaluate(() => window.__wb.ketchem.board().kevin.wallet); s = await st();
+ok('Sam gives Kevin 3 coins', kw1 === kw0 + 3 && /gave 3 coins/.test(s.gmsg || ''), kw0 + ' -> ' + kw1 + ' ' + s.gmsg);
+// feed
+await page.keyboard.press('u');
+const uq = await page.evaluate(() => document.querySelector('#kAsk label').textContent);
+ok('U asks Sam the feed question', /^Sam: Feed which party creature, and what\?/.test(uq), uq);
+await page.fill('#kAskIn', 'Moss'); await page.press('#kAskIn', 'Enter'); await page.waitForTimeout(200);
+s = await st(); ok('Sam feeds Moss a plant', /"Moss" eats a (rare )?plant/.test(s.gmsg || ''), s.gmsg);
+// the Almanac
+await page.keyboard.press('y'); await page.waitForTimeout(200);
+const ah = await page.evaluate(() => { const p = document.getElementById('kPanel'); return p && !p.hidden ? p.querySelector('.kp-head span').textContent : null; });
+ok('Y opens the Almanac for Sam', /^Almanac/.test(ah || ''), ah);
+await page.screenshot({ path: `${out}/guest-almanac.png` });
+await page.keyboard.press('w'); await page.waitForTimeout(100);
+ok('Kevin walking does not close Sam\'s Almanac', await page.evaluate(() => !document.getElementById('kPanel').hidden));
+await page.keyboard.press('y'); await page.waitForTimeout(100);
+ok('Y again closes it', await page.evaluate(() => document.getElementById('kPanel').hidden));
+// a stake survives the seat changing hands
+await page.keyboard.press('j'); await page.keyboard.press('4'); await page.keyboard.press(dirKey); await page.waitForTimeout(100);
+bs = await gBaits(); s = await st();
+ok('J 4 and an arrow stake Moss', bs.length === 1 && bs[0].kind === 'stake' && bs[0].payload === 'Moss' && !s.gparty.includes('Moss'), JSON.stringify(bs) + ' ' + s.gmsg);
+await page.click('#kHud .kh-guest'); await page.waitForTimeout(300);
+await page.evaluate(() => { for (const b of window.__wb.ketchem.board().baits) if (b.by === 'guest') b.until = 0; window.__wb.ketchem.pause(false); });
+await page.waitForTimeout(1500);
+const stash = await page.evaluate(() => { const K = window.__wb.ketchem.board(); window.__wb.ketchem.pause(true); return { stash: (K.guestStash && K.guestStash.party || []).map(c => c.name), seat: K.root ? K.root.id : null, baits: K.baits.filter(b => b.by === 'guest').length }; });
+ok('with Sam away, the rotted stake returns Moss to Sam\'s waiting record', stash.stash.includes('Moss') && stash.baits === 0, JSON.stringify(stash));
+await page.click('#kHud .kh-guest'); await answer('Sam'); await page.waitForTimeout(300);
+s = await st(); ok('and Sam sits down with Moss', s.gparty.includes('Moss'), JSON.stringify(s.gparty));
+await page.evaluate(() => window.__wb.ketchem.pause(false));
 console.log('console errors: ' + (errors.length ? '\n  ' + errors.join('\n  ') : 'none'));
 await browser.close();

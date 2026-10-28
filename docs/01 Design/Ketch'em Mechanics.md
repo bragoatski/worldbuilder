@@ -1245,11 +1245,22 @@ Root on the public site (model calls paid for strangers). Readings, overturnable
 | , | let the first party creature follow, or recall it |
 | L then a digit | drink a potion or use a shard (Tonic and shards ask which creature) |
 | K | what the guest carries |
+| J, a digit, then an arrow or ; | bait (added 2026-10-27): 1 plant, 2 scatter, 3 meat, 4 stake; an arrow picks the tile beside them, ; the tile underfoot (a plant only). Meat and stake set down the first party creature, as Kevin's B does |
+| H | give to Kevin (added 2026-10-27): the question Kevin's G asks, "coins N, Amber N, a potion name, plant, or a party creature name"; adjacent only |
+| U | feed a party creature (added 2026-10-27): the question Kevin's T asks |
+| Y | the Almanac (added 2026-10-27), with bearings from the guest; Y again closes it, and Kevin's moves leave it open |
+
+A pending J or L waits about ten seconds (60 ticks) for the guest's next key; Kevin's keys pass through it meanwhile,
+except the digits: while J waits for a kind (or L for a potion), a 1, 2 or 3 is the guest's, so Kevin's stone key in that
+moment picks the guest's bait instead (known and left: the spec gives the guest digits; a board change clears both).
+J cancels a pending L and L a pending J.
 
 - The guest has their own bar (top right, in green) and party row (bottom right); their character is a green dot with
   a green sight square. Their questions use the same bar as Kevin's; a second question waits for the first.
-- Not built for the guest: bait (B), give (G), feed (T) and breeding (the PEN tab works for them at a store; G and T
-  are Kevin's); sending to another save (the saves are Kevin's); a gamepad.
+- Guest parity (2026-10-27): bait, give, feed and the Almanac, which the first build left to Kevin, are the guest's
+  too (J, H, U, Y above), through the same functions Kevin's keys use. A bait carries the guest's own id, so a creature
+  the guest staked comes back to the guest even after they got up and someone else sat down.
+- Not built for the guest: sending to another save (the saves are Kevin's); a gamepad.
 
 ## 26. The guest link: the guest seat from another screen
 
@@ -1262,10 +1273,13 @@ between the two pages. Readings, overturnable.
   name, seats them, and shows the address and a six-digit join code. The guest opens the address, types the code,
   and sees a live picture of the 33 x 33 tiles around them (the same drawing, fog and all, about five a second),
   their coins, stones, pack and party, and their last message.
-- The guest plays with their own keyboard (the same keys as sec. 25) or with buttons on a phone: a d-pad and Target,
-  Throw, Stone, Name, Use, Follow, Potion, Pack. Questions (a name, which creature a potion is for) appear on the
-  guest's screen. On a store tile the guest sees what it sells and types `buy Geode 2`, `sell Moss`, `sell plant 2`,
-  `box Moss`, `take Moss` or `breed Moss, Fern`. While a guest plays from another screen, the arrows on Kevin's
+- The guest plays with their own keyboard (the same keys as sec. 25, J H U Y included) or with buttons on a phone: a
+  d-pad and Target, Throw, Stone, Name, Use, Follow, Potion, Pack, then Bait plant, Scatter, Bait meat, Stake (each
+  then waits for a d-pad arrow, or Use for here), Give, Feed and Almanac. Questions (a name, which creature a potion
+  is for, what to give) appear on the guest's screen. Anywhere, the command line takes `give coins 5` and `feed Moss`
+  or `feed Wolf, Moss`; on a store tile the guest sees what it sells and types `buy Geode 2`, `sell Moss`,
+  `sell plant 2`, `box Moss`, `take Moss` or `breed Moss, Fern`. The Almanac (Y or the button) appears as text under
+  the picture, with bearings from the guest, until Y again; nothing opens on Kevin's screen. While a guest plays from another screen, the arrows on Kevin's
   keyboard are Kevin's again.
 - When the guest leaves (the chip), the link closes and their page asks for a code again. A load or a new board keeps
   the same guest on the other screen; if Root holds the seat in the loaded game, the link closes.
@@ -1278,5 +1292,6 @@ between the two pages. Readings, overturnable.
   the dev server from PowerShell with `$env:GUEST_HOST = (tailscale ip -4); npm run dev` (the link it starts binds the
   guest port to this machine's Tailscale address; a link already running must be stopped first). Only devices on the owner's tailnet can reach that address; the host port stays on this machine.
   Kevin's message then shows that address. Without it, the link answers this machine only.
-- Not built: sound on the guest's screen, the Almanac and the full store panel for a remote guest (the text and the
-  command line stand in), bait, give and feed for the guest (as in sec. 25), several guests at once.
+- Not built: sound on the guest's screen, the full store panel and the Almanac's drawings for a remote guest (the
+  text and the command line stand in), several guests at once. Bait, give, feed and the Almanac were added
+  2026-10-27; the link's input kinds are unchanged (keys, answers, commands).

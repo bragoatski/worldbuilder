@@ -2,7 +2,8 @@
 // Guest link rehearsal (2026-10-27): Kevin's page on the dev server, a guest's page in a second browser through the
 // guest link on 127.0.0.1:7797. The guest joins with the code, sees their corner of the world, moves with the arrows on
 // their own screen, catches and names a creature (the name question on their screen), buys at a store by command;
-// Kevin's arrows move Kevin while the guest is remote; the guest leaves and the link closes.
+// Kevin's arrows move Kevin while the guest is remote; then (2026-10-27) the guest baits by button and by key, gives and
+// feeds by command and by button, and reads the Almanac as text; the guest leaves and the link closes.
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 const require = createRequire('C:/Users/KevinReilly/taipan/package.json');
@@ -69,6 +70,45 @@ await guest.fill('#cmd', 'buy Geode 2'); await guest.press('#cmd', 'Enter'); awa
 const geode = await host.evaluate(() => window.__wb.ketchem.board().root.stones.geode);
 ok('buy Geode 2 from the guest\'s screen', geode === 2, 'geode ' + geode);
 await guest.screenshot({ path: `${out}/guest-store.png` });
+// ===== guest parity (2026-10-27): bait, give, feed and the Almanac from the guest's screen =====
+await host.evaluate(() => { const K = window.__wb.ketchem.board(), s = K.stores[K.starts[1].store], g = K.root; g.x = s.door.x; g.y = s.door.y; K.kevin.x = g.x; K.kevin.y = g.y; for (let i = 0; i < 3; i++) g.pack.push({ type: 'grass', gen: 0 }); });
+await host.waitForTimeout(400);
+const dirKey15 = await host.evaluate(() => { const sim = window.__wb.sim, g = window.__wb.ketchem.board().root; for (const [k, dx, dy] of [['ArrowUp', 0, -1], ['ArrowDown', 0, 1], ['ArrowLeft', -1, 0], ['ArrowRight', 1, 0]]) { const t = sim.grid[sim.idx(g.x + dx, g.y + dy)]; if (![0, 1, 5, 11, 12].includes(t)) return k; } return 'ArrowUp'; });
+const gBaits15 = () => host.evaluate(() => { const K = window.__wb.ketchem.board(); return K.baits.filter(b => b.by === 'guest').map(b => ({ kind: b.kind, x: b.x, y: b.y, payload: b.payload && b.payload.name })); });
+const padSel = '#pad [data-k="' + dirKey15 + '"]';
+const gmsg = () => host.evaluate(() => window.__wb.ketchem.board().root.msg || '');
+await guest.click('#more [data-seq="j 1"]'); await host.waitForTimeout(800);
+let m15 = await gmsg(); ok('the Bait plant button asks which way', /bait plant: which way/.test(m15), m15);
+await guest.tap(padSel); await host.waitForTimeout(800);
+let b15 = await gBaits15(); ok('a d-pad tap sets the guest\'s plant bait', b15.length === 1 && b15[0].kind === 'plant', JSON.stringify(b15) + ' ' + await gmsg());
+const kw = () => host.evaluate(() => { const k = window.__wb.ketchem.board().kevin; return { wallet: k.wallet, amber: k.stones.amber }; });
+const kw15 = await kw();
+await guest.fill('#cmd', 'give coins 4'); await guest.press('#cmd', 'Enter'); await host.waitForTimeout(900);
+let kw15b = await kw(); ok('give coins 4 on the command line reaches Kevin', kw15b.wallet === kw15.wallet + 4, JSON.stringify(kw15) + ' -> ' + JSON.stringify(kw15b));
+await guest.fill('#cmd', 'feed Moss'); await guest.press('#cmd', 'Enter'); await host.waitForTimeout(900);
+m15 = await gmsg(); ok('feed Moss on the command line', /"Moss" eats a (rare )?plant/.test(m15), m15);
+await guest.click('#more [data-k="h"]');
+await guest.waitForSelector('#q:not([hidden])', { timeout: 8000 });
+let q15 = await guest.evaluate(() => document.getElementById('qText').textContent);
+ok('the Give button asks on the guest\'s screen', /Give Kevin what\?/.test(q15) && await host.evaluate(() => document.getElementById('kAsk') === null || document.getElementById('kAsk').hidden), q15);
+await guest.fill('#qIn', 'Amber 1'); await guest.press('#qIn', 'Enter'); await host.waitForTimeout(900);
+kw15b = await kw(); ok('Sam gives Kevin an Amber from their screen', kw15b.amber === kw15.amber + 1, JSON.stringify(kw15b));
+await guest.keyboard.press('u');
+await guest.waitForSelector('#q:not([hidden])', { timeout: 8000 });
+q15 = await guest.evaluate(() => document.getElementById('qText').textContent);
+ok('U on the guest\'s keyboard asks the feed question there', /Feed which party creature, and what\?/.test(q15), q15);
+await guest.fill('#qIn', 'Moss'); await guest.press('#qIn', 'Enter'); await host.waitForTimeout(900);
+m15 = await gmsg(); ok('and Moss eats', /"Moss" eats a (rare )?plant/.test(m15), m15);
+await guest.click('#more [data-k="y"]'); await host.waitForTimeout(900);
+const alm = await guest.evaluate(() => document.getElementById('alm').hidden ? '' : document.getElementById('alm').textContent);
+ok('the Almanac button shows the Almanac as text on the guest\'s screen', /^Almanac: \d+ species, \d\/4 stores found/.test(alm) && /caught 1/.test(alm), alm.split('\n').slice(0, 2).join(' | '));
+ok('and no panel opens on Kevin\'s screen', await host.evaluate(() => document.getElementById('kPanel') === null || document.getElementById('kPanel').hidden));
+await guest.screenshot({ path: `${out}/guest-almanac.png`, fullPage: true });
+await guest.keyboard.press('y'); await host.waitForTimeout(900);
+ok('Y on the guest\'s keyboard hides it', await guest.evaluate(() => document.getElementById('alm').hidden));
+await guest.keyboard.press('j'); await guest.keyboard.press('4'); await guest.keyboard.press(dirKey15); await host.waitForTimeout(900);
+b15 = await gBaits15(); ok('J 4 and an arrow on the guest\'s keyboard stake Moss', b15.length === 1 && b15[0].kind === 'stake' && b15[0].payload === 'Moss', JSON.stringify(b15) + ' ' + await gmsg());
+await guest.screenshot({ path: `${out}/guest-parity.png`, fullPage: true });
 await host.evaluate(() => window.__wb.ketchem.pause(false));
 await host.screenshot({ path: `${out}/host.png` });
 // leaving closes the link

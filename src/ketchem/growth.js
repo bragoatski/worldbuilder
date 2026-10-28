@@ -126,6 +126,12 @@ export function feed(K, p, which, what) {
   const ev = addXP(K, p, c, XP_MEAT_PER_LEVEL * L, 'meat');
   return { ok: true, text: '"' + (c.name || c.type) + '" eats "' + (m.name || m.type) + '" (+' + XP_MEAT_PER_LEVEL * L + ' XP)' + eventsText(ev), events: ev };
 }
+// A feed typed as words, as Kevin's T and the guest's U and command line take it: "Goat" feeds Goat the first plant in
+// the pack; "Wolf, Snack" feeds Wolf the party creature Snack.
+export function feedSaid(K, p, text) {
+  const f = String(text || '').split(',').map(x => x.trim());
+  return feed(K, p, f[0], f[1] || 'plant');
+}
 export function eventsText(events) {
   return events.map(e => e.kind === 'grow' ? '; growth level ' + e.level : '; EVOLVED from ' + e.from + ' into ' + e.to + (e.named ? '' : ': name the species')).join('');
 }

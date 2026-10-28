@@ -28,15 +28,15 @@ import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
 import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
-import { initStores, marketTick, storeAt, shopLists, shopText, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, give as giveItem, usePotion, almanacLists, packSummary, POTIONS } from './ketchem/market.js';
-import { storePanel, almanacPanel, closePanel, panelOpen } from './ketchem/panel.js';
+import { initStores, marketTick, storeAt, shopLists, shopText, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, giveSaid, usePotion, almanacLists, almanacText, packSummary, POTIONS } from './ketchem/market.js';
+import { storePanel, almanacPanel, closePanel, panelOpen, panelMode } from './ketchem/panel.js';
 import { hudTick } from './ketchem/hud.js';
 import { ask, closeAsk } from './ketchem/ask.js';
-import { guestSeated, seatGuest, unseatGuest } from './ketchem/guest.js';
+import { guestSeated, seatName, seatGuest, unseatGuest } from './ketchem/guest.js';
 import { linkAvailable, linkOpen, openLink, closeLink, askRemote, dropQuestions, guestAddress, linkCode as linkCodeNow } from './ketchem/link.js';
 import { setRemoteOk } from './ketchem/hud.js';
 import { toggleSound } from './ketchem/sound.js';
-import { growthTick, catchXP, feed as feedCreature, eventsText, breed as breedPair } from './ketchem/growth.js';
+import { growthTick, catchXP, feedSaid, eventsText, breed as breedPair } from './ketchem/growth.js';
 import { drawEncounters } from './ketchem/render.js';
 import { buildSave, applySave, exportSave, importSave, putSlot, getSlot, deleteSlot, listSlots, addToRecordCabinet, SAVE_VERSION } from './ketchem/save.js';
 import { saveMenu } from './ketchem/menu.js';
@@ -768,7 +768,7 @@ function ketchemKey(e){
   if(k==='p'){e.preventDefault();var ps=packSummary(p);var pl=Object.keys(ps.potions);if(!pl.length){kevinSay('no potions in the pack');draw();return true;}_kPotion=true;kevinSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));draw();return true;}
   if(k==='i'){e.preventDefault();var pi=packSummary(p);kevinSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):'')+(pi.gear.length?'; worn: '+pi.gear.join(', '):''));draw();return true;}
   if(k==='m'){e.preventDefault();if(panelOpen())closePanel();else{_kPanelOwner=K.kevin;almanacPanel(almanacLists(K,p));}return true;}
-  if(k==='g'){e.preventDefault();ask('Give Root what? coins N, Amber N, a potion name, plant, or a party creature name','coins 10').then(function(gw){if(gw===null||!K)return;var gm=/^(.*?)(?:\s+(\d+))?$/.exec(gw);kevinSay(giveItem(K,K.kevin,gm[1],gm[2]?+gm[2]:undefined).text);draw();});return true;}
+  if(k==='g'){e.preventDefault();ask(giveQ(seatName(K)),'coins 10').then(function(gw){if(gw===null||!K)return;kevinSay(giveSaid(K,K.kevin,gw).text);draw();});return true;}
   if(k==='o'){e.preventDefault();kevinSay('sound '+(toggleSound()?'on':'off'));draw();return true;}
   if(k==='v'){e.preventDefault();K.cam=(K.cam==='root')?'kevin':'root';_kCamAt=null;draw();return true;}
   if(k==='tab'){e.preventDefault();kevinCycleTarget();draw();return true;}
@@ -777,7 +777,7 @@ function ketchemKey(e){
   if(k==='b'){e.preventDefault();_kBait={kind:null};kevinSay('bait: P plant, S scatter, M meat, T stake');draw();return true;}
   if(k==='f'){e.preventDefault();var rf=p.follower?recall(K,p):follow(K,p,null);kevinSay(rf.text);draw();return true;}
   if(k==='n'){e.preventDefault();kevinName();draw();return true;}
-  if(k==='t'){e.preventDefault();ask('Feed which party creature, and what? "Goat" feeds it the first plant in the pack; "Wolf, Snack" feeds Wolf the party creature Snack',(p.party[0]&&(p.party[0].name||p.party[0].type))||'').then(function(fw){if(fw===null||!K)return;var fp=fw.split(',').map(function(x){return x.trim();});kevinSay(feedCreature(K,K.kevin,fp[0],fp[1]||'plant').text);draw();});return true;}
+  if(k==='t'){e.preventDefault();ask(FEED_Q,(p.party[0]&&(p.party[0].name||p.party[0].type))||'').then(function(fw){if(fw===null||!K)return;kevinSay(feedSaid(K,K.kevin,fw).text);draw();});return true;}
   if(k==='f5'){e.preventDefault();saveGame();return true;}
   if(k==='f9'){e.preventDefault();_kMenu().toggle();return true;}
   if(k==='escape'||k==='enter'||k==='t'||/^f\d+$/.test(k))return false;   // R is NOT let through: it would reset the world under both players (the Reset button still does)
@@ -787,6 +787,9 @@ function ketchemKey(e){
 // hand at it, 1 / 2 / 3 pick the stone, B then P / S / M / T then a direction baits, F lets the follower out or
 // recalls it, N names the last catch, E picks the plant underfoot (else reads what is there).
 var _kBait=null,_kPotion=false;
+// The give and feed questions, the same for Kevin (G, T) and the guest (H, U).
+function giveQ(to){return 'Give '+to+' what? coins N, Amber N, a potion name, plant, or a party creature name';}
+var FEED_Q='Feed which party creature, and what? "Goat" feeds it the first plant in the pack; "Wolf, Snack" feeds Wolf the party creature Snack';
 // The store (E or C on a store tile): BUY / SELL / BOX; entering autosaves (18.2).
 var _kPanelOwner=null;   // whose store panel is open: Kevin's moves close only his, the guest's only theirs
 function openStore(tab,who){
@@ -859,9 +862,10 @@ function kevinName(){nameFor(K.kevin,kevinSay,'N');}
 
 // ===== The guest in the second seat (mechanics 25): the arrows and the keys on the right of the keyboard =====
 // arrows move (held keys repeat), . next target, / throw, [ ] the stone, ' name, ; pick / read / the store,
-// , follow or recall, L then a digit a potion or a shard, K the pack. Kevin keeps WASD and his letters.
+// , follow or recall, L then a digit a potion or a shard, K the pack, J bait (a digit for the kind, then an arrow or ;
+// for here), H give to Kevin, U feed, Y the Almanac. Kevin keeps WASD and his letters.
 var GKEYDIR={arrowup:[0,-1],arrowleft:[-1,0],arrowdown:[0,1],arrowright:[1,0]};
-var _gPressed={},_gPotion=false,_guestCarry=null;   // _guestCarry: the seated guest's name, so a new board or a load seats them again
+var _gPressed={},_gPotion=false,_gBait=null,_gAlmanac=false,_guestCarry=null;   // _gBait: { kind, at } while J waits for a kind and a tile; _gAlmanac: a remote guest's Almanac text is on   // _guestCarry: the seated guest's name, so a new board or a load seats them again
 function guestSay(text){var g=K&&K.root;if(!g)return;g.msg=text;g.msgUntil=Date.now()+4000;}
 function guestMoved(){var g=K.root;if(!storeAt(K,g)&&panelOpen()&&_kPanelOwner===g){closePanel();_kPanelOwner=null;}}
 function guestHeld(){
@@ -881,10 +885,17 @@ function guestKey(e,fromLink){
     if(/^[1-9]$/.test(k)){e.preventDefault();_gPotion=false;var names=Object.keys(packSummary(g).potions),pn=names[+k-1];
       if(!pn){guestSay('no potion '+k);draw();return true;}
       if(POTIONS[pn]&&POTIONS[pn].kind==='creature'){if(!g.party.length){guestSay(pn+' wants a party creature');draw();return true;}
-        var K0=K;askFor(g,(g.display||'Guest')+': '+pn+' on which party creature? '+g.party.map(function(c){return c.name||c.type;}).join(', '),g.party[0].name||g.party[0].type).then(function(w){if(w===null||K!==K0||!guestSeated(K))return;var c=K.root.party.find(function(x){return (x.name||x.type).toLowerCase()===w.toLowerCase();});guestSay(c?usePotion(K,K.root,pn,c).text:'no "'+w+'" in the party');draw();});return true;}
-      if(pn==='Musk'){var K1=K;askFor(g,(g.display||'Guest')+': Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore').then(function(t){if(t===null||K!==K1||!guestSeated(K))return;guestSay(usePotion(K,K.root,'Musk',t).text);draw();});return true;}
+        var K0=K;askFor(g,(g.display||'Guest')+': '+pn+' on which party creature? '+g.party.map(function(c){return c.name||c.type;}).join(', '),g.party[0].name||g.party[0].type).then(function(w){if(w===null||K!==K0||K.root!==g||!guestSeated(K))return;var c=K.root.party.find(function(x){return (x.name||x.type).toLowerCase()===w.toLowerCase();});guestSay(c?usePotion(K,K.root,pn,c).text:'no "'+w+'" in the party');draw();});return true;}
+      if(pn==='Musk'){var K1=K;askFor(g,(g.display||'Guest')+': Musk for which type? herbivore, carnivore, omnivore, scavenger, apex','herbivore').then(function(t){if(t===null||K!==K1||K.root!==g||!guestSeated(K))return;guestSay(usePotion(K,K.root,'Musk',t).text);draw();});return true;}
       var tgt=g.target?fauna.find(function(a){return a&&a.id===g.target;}):null;guestSay(usePotion(K,g,pn,tgt).text);draw();return true;}
     if(tick-_gPotion>60){_gPotion=false;guestSay('potion: cancelled');}   // only the guest's own pause cancels it; Kevin's keys pass through
+  }
+  if(_gBait){   // J, then 1-4 the kind, then an arrow for the tile or ; for here; Kevin's keys pass through, and a pause cancels it
+    if(tick-_gBait.at>60||tick<_gBait.at){_gBait=null;guestSay('bait: cancelled');}
+    else if(!_gBait.kind){var bk={'1':'plant','2':'scatter','3':'meat','4':'stake'}[k];
+      if(bk){e.preventDefault();_gBait.kind=bk;_gBait.at=tick||1;guestSay('bait '+bk+': which way? (an arrow, or ; for here with a plant)');draw();return true;}}
+    else{var bd=GKEYDIR[k]?dirOf(GKEYDIR[k]):(k===';'?'':null);
+      if(bd!==null){e.preventDefault();var bkind=_gBait.kind;_gBait=null;guestSay(placeBait(K,g,bkind,bd,null).text);draw();return true;}}
   }
   if(GKEYDIR[k]){
     e.preventDefault();if(e.repeat)return true;_gPressed[k]=tick;
@@ -900,8 +911,16 @@ function guestKey(e,fromLink){
     "'":function(){nameFor(g,guestSay,"'");},
     ';':function(){if(storeAt(K,g)){if(g.remote){guestSay('the store: type buy, sell, box or take below');return;}openStore('buy',g);return;}var pk=pickPlant(K,g);guestSay(pk.ok?pk.text:interact(K,g).text);},
     ',':function(){guestSay((g.follower?recall(K,g):follow(K,g,null)).text);},
-    'l':function(){var ps=packSummary(g),pl=Object.keys(ps.potions);if(!pl.length){guestSay('no potions in the pack');return;}_gPotion=tick||1;guestSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));},
-    'k':function(){var pi=packSummary(g);guestSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):'')+(pi.gear.length?'; worn: '+pi.gear.join(', '):''));}
+    'l':function(){var ps=packSummary(g),pl=Object.keys(ps.potions);if(!pl.length){guestSay('no potions in the pack');return;}_gPotion=tick||1;_gBait=null;guestSay('potion: '+pl.map(function(n,i){return (i+1)+' '+n+' x'+ps.potions[n];}).join(', '));},
+    'k':function(){var pi=packSummary(g);guestSay('pack '+pi.used+'/'+pi.cap+': '+pi.plants+' plants'+(Object.keys(pi.potions).length?', '+Object.entries(pi.potions).map(function(x){return x[0]+' x'+x[1];}).join(', '):'')+(pi.gear.length?'; worn: '+pi.gear.join(', '):''));},
+    'j':function(){_gPotion=false;_gBait={kind:null,at:tick||1};guestSay('bait: 1 plant, 2 scatter, 3 meat, 4 stake');},
+    'h':function(){var K0=K;askFor(g,(g.display||'Guest')+': '+giveQ('Kevin'),'coins 10').then(function(w){if(w===null||K!==K0||K.root!==g||!guestSeated(K))return;guestSay(giveSaid(K,K.root,w).text);draw();});},
+    'u':function(){if(!g.party.length){guestSay('nobody in the party to feed');return;}var K0=K;askFor(g,(g.display||'Guest')+': '+FEED_Q,g.party[0].name||g.party[0].type).then(function(w){if(w===null||K!==K0||K.root!==g||!guestSeated(K))return;guestSay(feedSaid(K,K.root,w).text);draw();});},
+    'y':function(){
+      if(g.remote){_gAlmanac=!_gAlmanac;guestSay(_gAlmanac?'the Almanac is below the picture (Y hides it)':'the Almanac is hidden');return;}   // their page has no panel: the text rides in the state
+      if(panelOpen()&&_kPanelOwner!==g){guestSay('Kevin has a panel open; Esc closes it');return;}
+      if(panelMode()==='almanac'){closePanel();_kPanelOwner=null;return;}
+      _kPanelOwner=g;almanacPanel(almanacLists(K,g));}
   };
   var act=Object.prototype.hasOwnProperty.call(acts,k)?acts[k]:null;   // a key such as __proto__ from a guest's page is not an action
   if(act){e.preventDefault();if(e.repeat)return true;act();draw();return true;}
@@ -910,7 +929,7 @@ function guestKey(e,fromLink){
 // The guest button in the HUD: sit down (refused while Root plays) or get up.
 function toggleGuest(remote){
   if(!K)return;
-  if(guestSeated(K)){var gp=K.root,r=unseatGuest(K);_gPressed={};_gPotion=false;_guestCarry=null;_guestRemote=false;if(_kPanelOwner===gp&&panelOpen()){closePanel();_kPanelOwner=null;}if(linkOpen())closeLink();kevinSay(r.text);draw();return;}
+  if(guestSeated(K)){var gp=K.root,r=unseatGuest(K);_gPressed={};_gPotion=false;_gBait=null;_gAlmanac=false;_guestCarry=null;_guestRemote=false;if(_kPanelOwner===gp&&panelOpen()){closePanel();_kPanelOwner=null;}if(linkOpen())closeLink();kevinSay(r.text);draw();return;}
   ask('Who joins'+(remote?' from another screen':'')+'? A name for the second player','Guest').then(function(n){
     if(n===null||!K)return;var r=seatGuest(K,rootPlaying(),n);
     if(!r.ok){kevinSay(r.text);draw();return;}
@@ -934,13 +953,15 @@ function guestFrame(){   // their corner of the world: 33 x 33 tiles around them
 function guestState(){
   if(!guestSeated(K))return {name:null};var g=K.root,ps=packSummary(g);
   return {name:g.display,wallet:g.wallet,stones:g.stones,stone:g.stone,pack:ps.used+'/'+ps.cap,party:g.party.map(function(c){var k=creatureCard(c);return k.name+' L'+k.level+' '+k.elemental+' '+k.type;}),
-    msg:g.msg&&g.msgUntil>Date.now()?g.msg:'',shop:storeAt(K,g)?shopText(K,g):''};
+    msg:g.msg&&g.msgUntil>Date.now()?g.msg:'',shop:storeAt(K,g)?shopText(K,g):'',almanac:_gAlmanac?almanacText(K,g):''};
 }
-function guestCommand(text){   // the store from another screen: buy X [n], sell X, box X, take X, breed X, Y
-  var g=K.root,m=/^(buy|sell|box|take|breed)\s+(.+)$/i.exec(String(text||'').trim());
-  if(!m){guestSay('at a store: buy Geode 2, sell Moss, sell plant 2, box Moss, take Moss, breed Moss, Fern');return;}
-  if(!storeAt(K,g)){guestSay('that is done at a store');return;}
+function guestCommand(text){   // from another screen: give X [n] and feed X[, Y] anywhere; buy X [n], sell X, box X, take X, breed X, Y at a store
+  var g=K.root,m=/^(buy|sell|box|take|breed|give|feed)\s+(.+)$/i.exec(String(text||'').trim());
+  if(!m){guestSay('give coins 5, feed Moss, feed Wolf, Moss; at a store: buy Geode 2, sell Moss, sell plant 2, box Moss, take Moss, breed Moss, Fern');return;}
   var v=m[1].toLowerCase(),rest=m[2].trim(),r;
+  if(v==='give'){guestSay(giveSaid(K,g,rest).text);return;}
+  if(v==='feed'){guestSay(feedSaid(K,g,rest).text);return;}
+  if(!storeAt(K,g)){guestSay('that is done at a store');return;}
   if(v==='buy'){var q=/^(.+?)\s+(\d+)$/.exec(rest);r=buyItem(K,g,q?q[1]:rest,q?+q[2]:1);}   // only buy takes a number: "sell plant 2" and a creature named "Blob 2" keep theirs
   else if(v==='sell')r=sellItem(K,g,rest);
   else if(v==='breed'){var pr=rest.indexOf(',')>=0?rest.split(','):rest.split(/\s+/);if(pr.length!==2){guestSay('breed two: breed Moss, Fern');return;}r=breedPair(K,g,pr[0].trim(),pr[1].trim());}
@@ -999,7 +1020,7 @@ function loadGame(slot){
 // A board arriving from the Worker or from a save becomes the page's game.
 function adoptBoard(board){
   abandonBuild();followId=null;godCancelMark(null);
-  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);initStores(K);closePanel();if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_gPressed={};_gPotion=false;_kBait=null;_kPotion=false;_kOnStore=false;_kAutoAt=tick;
+  K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);initStores(K);closePanel();if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_gPressed={};_gPotion=false;_gBait=null;_gAlmanac=false;_kBait=null;_kPotion=false;_kOnStore=false;_kAutoAt=tick;
   setHandTool('none');document.body.classList.add('ketchem');
   placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
   speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
@@ -1545,7 +1566,7 @@ if(typeof location!=='undefined'&&/[?&]debug(\b|=)/.test(location.search)){
       step:function(dx,dy){if(!K||!K.kevin)return null;var r=tryStep(K,K.kevin,dx,dy);draw();return r;},interact:function(){return K&&K.kevin?interact(K,K.kevin):null;},
       // saves (step 5): the record as the page would write it, a save without the prompt, a load by slot or from a record
       saveJSON:function(){return K?exportSave(buildSave(K,K.slot||String(K.seed))):null;},save:function(slot){if(K){K.slot=slot||K.slot||String(K.seed);}return saveGame();},
-      load:loadGame,loadData:function(data){adoptBoard(applySave(data));},guest:function(on,name){if(!K)return null;var r=on?seatGuest(K,rootPlaying(),name):unseatGuest(K);if(!on){_guestCarry=null;_guestRemote=false;if(linkOpen())closeLink();}draw();return r;},slots:listSlots,pause:function(on){_kHold=!!on;running=!_kHold;if(running)loop();}}};
+      load:loadGame,loadData:function(data){adoptBoard(applySave(data));},guest:function(on,name){if(!K)return null;var r=on?seatGuest(K,rootPlaying(),name):unseatGuest(K);if(!on){_guestCarry=null;_guestRemote=false;_gPotion=false;_gBait=null;_gAlmanac=false;if(linkOpen())closeLink();}draw();return r;},slots:listSlots,pause:function(on){_kHold=!!on;running=!_kHold;if(running)loop();}}};
 }
 
 // ===== Snapshot / restore (headless A/B: warm the slow terrain once, replay ecology many times) =====

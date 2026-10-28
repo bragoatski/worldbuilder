@@ -8,6 +8,7 @@ const C = await import('./controls.js');
 const E = await import('./encounter.js');
 const M = await import('./market.js');
 const Gst = await import('./guest.js');
+const Gr = await import('./growth.js');
 
 const at = (x, y) => sim.idx(x, y);
 function world() {
@@ -99,5 +100,71 @@ describe('the guest link leaves nothing behind (critic 2026-10-27)', () => {
     const K = world(); Gst.seatGuest(K, false, 'Sam'); K.root.remote = '482913';
     Gst.unseatGuest(K); expect(K.guestStash.remote).toBeUndefined();
     Gst.seatGuest(K, false, 'Sam'); expect(K.root.remote).toBeUndefined();
+  });
+});
+
+// Guest parity (2026-10-27): bait, give, feed and the Almanac, run as the guest through the same functions Kevin's keys use.
+describe('the guest baits, gives, feeds and reads the Almanac', () => {
+  const plant = () => ({ type: 'grass', gen: 0 });
+  it('a plant bait and a scatter belong to the guest and cost the guest\'s plants', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 12; g.y = 14;
+    g.pack.push(plant(), plant(), plant(), plant());
+    expect(E.placeBait(K, g, 'plant', 'N', null).ok).toBe(true);
+    expect(K.baits).toHaveLength(1); expect(K.baits[0].by).toBe('guest'); expect(g.pack).toHaveLength(3);
+    expect(E.placeBait(K, g, 'scatter', 'E', null).ok).toBe(true);   // one bait per player: the scatter replaces the plant
+    expect(K.baits.filter(b => b.by === 'guest')).toHaveLength(3); expect(g.pack).toHaveLength(0);
+    expect(E.placeBait(K, g, 'plant', '', null).text).toBe('no plant in the pack');
+  });
+  it('a creature the guest staked comes back to the guest after a seat swap, never to Root', () => {
+    const K = world();
+    K.root = E.initPlayer(C.newPlayer(5, 5), 'root'); K.root.away = true;
+    Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 12; g.y = 14;
+    const pet = put('herbivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(pet), 1); pet.name = 'Bait'; g.party.push(pet);
+    expect(E.placeBait(K, g, 'stake', 'S', null).ok).toBe(true); expect(g.party).toHaveLength(0);
+    Gst.unseatGuest(K);   // the guest gets up; Root's record is back in the seat
+    expect(K.root.id).toBe('root');
+    for (const b of K.baits) b.until = sim.tick;   // the stake rots with nobody feeding
+    E.encounterTick(K); sim.step(); E.encounterTick(K);
+    expect(K.guestStash.party.map(c => c.name)).toContain('Bait'); expect(K.root.party).toHaveLength(0);
+    Gst.seatGuest(K, false, 'Sam'); expect(K.root.party.map(c => c.name)).toEqual(['Bait']);
+  });
+  it('meat bait sets down the guest\'s first party creature beside them, not on their tile', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 12; g.y = 14;
+    const pet = put('herbivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(pet), 1); pet.name = 'Snack'; g.party.push(pet);
+    expect(E.placeBait(K, g, 'meat', '', null).ok).toBe(false);
+    expect(E.placeBait(K, g, 'meat', 'W', null).ok).toBe(true);
+    expect(K.baits[0]).toMatchObject({ by: 'guest', kind: 'meat', x: 11, y: 14 }); expect(K.baits[0].payload.name).toBe('Snack');
+  });
+  it('the guest gives to Kevin through the words of the question and the command line', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 12; g.y = 13;
+    g.wallet = 20; g.stones.geode = 2; g.pack.push(plant());
+    const kStart = { wallet: K.kevin.wallet, geode: K.kevin.stones.geode, pack: K.kevin.pack.length };
+    expect(M.giveSaid(K, g, 'coins 5').ok).toBe(true); expect(g.wallet).toBe(15); expect(K.kevin.wallet).toBe(kStart.wallet + 5);
+    expect(M.giveSaid(K, g, ' Geode 2 ').ok).toBe(true); expect(g.stones.geode).toBe(0); expect(K.kevin.stones.geode).toBe(kStart.geode + 2);
+    expect(M.giveSaid(K, g, 'plant').ok).toBe(true); expect(K.kevin.pack).toHaveLength(kStart.pack + 1);
+    const pip = put('herbivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(pip), 1); pip.name = 'Pip'; g.party.push(pip);
+    expect(M.giveSaid(K, g, 'Pip').ok).toBe(true); expect(K.kevin.party).toContain(pip); expect(g.party).toHaveLength(0);
+    expect(M.giveSaid(K, g, 'coins 500').ok).toBe(false);
+    g.x = 20; expect(M.giveSaid(K, g, 'coins 1').text).toBe('not adjacent');
+  });
+  it('the guest feeds their own party creature, and the XP is theirs', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root;
+    const goat = put('herbivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(goat), 1); goat.name = 'Goat'; g.party.push(goat);
+    const wolf = put('carnivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(wolf), 1); wolf.name = 'Wolf'; g.party.push(wolf);
+    g.pack.push(plant());
+    const xp0 = goat.growthXP || 0;
+    const r = Gr.feedSaid(K, g, 'Goat'); expect(r.ok).toBe(true); expect(goat.growthXP).toBeGreaterThan(xp0); expect(g.pack).toHaveLength(0);
+    expect(Gr.feedSaid(K, g, 'Wolf').text).toMatch(/does not eat plants/);
+    expect(Gr.feedSaid(K, g, 'Wolf, Goat').ok).toBe(true); expect(g.party.map(c => c.name)).toEqual(['Wolf']);
+    expect(Gr.feedSaid(K, K.kevin, 'Wolf').ok).toBe(false);   // Kevin cannot feed the guest's creature
+  });
+  it('the Almanac reads bearings from the guest, and its text names the species and places', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root; g.x = 12; g.y = 14;
+    const f = put('herbivore', 13, 14); expect(E.throwStone(K, g, f, 'Amber').caught).toBe(true);
+    const A = M.almanacLists(K, g), Ak = M.almanacLists(K, K.kevin);
+    expect(A.species.length).toBeGreaterThan(0); expect(A.species.some(e => e.caught >= 1)).toBe(true);
+    expect(A.stores.map(s => s.bearing)).not.toEqual(Ak.stores.map(s => s.bearing));
+    const t = M.almanacText(K, g);   // what a guest on another screen reads
+    expect(t).toMatch(/^Almanac: \d+ species, 3\/4 stores found/); expect(t).toMatch(/\(herbivore\): seen \d+, caught 1/); expect(t).toContain('store A at 2,24 ');
   });
 });

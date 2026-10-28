@@ -120,14 +120,15 @@ button{cursor:pointer;background:transparent}button:active{background:rgba(255,2
 #party{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}#party span{border:1px solid var(--border);border-radius:6px;padding:2px 7px;color:var(--dim)}
 #q[hidden],#join[hidden],#game[hidden]{display:none}#q label{display:block;color:var(--dim);margin-bottom:6px}.row{display:flex;gap:8px}.row input{flex:1;min-width:0}
 #pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:6px}#pad button{font-size:18px}
-#acts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;flex:1}#controls{display:flex;gap:12px;align-items:flex-start}
-.keys{color:var(--faint);font-size:11px;margin-top:8px}#stale{color:var(--faint)}#shop{white-space:pre-wrap;margin:8px 0 0;color:var(--dim);font:inherit}
+#acts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;flex:1;min-width:0}#acts button,#more button{padding:7px 4px;min-width:0}#controls{display:flex;gap:12px;align-items:flex-start}
+.keys{color:var(--faint);font-size:11px;margin-top:8px}#stale{color:var(--faint)}#shop,#alm{white-space:pre-wrap;margin:8px 0 0;color:var(--dim);font:inherit}
+#more{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:10px}
 </style></head><body>
 <h1>Ketch'em, the guest seat</h1>
 <div id="join" class="card"><label for="code">The join code on the host's screen</label><div class="row" style="margin-top:6px"><input id="code" inputmode="numeric" autocomplete="off"><button id="go">Join</button></div><div id="joinMsg" class="keys"></div></div>
 <div id="game" hidden>
 <img id="view" alt="Your corner of the world">
-<div class="card"><div id="bar"></div><div id="party"></div><div id="msg"></div><pre id="shop" hidden></pre><div id="stale"></div></div>
+<div class="card"><div id="bar"></div><div id="party"></div><div id="msg"></div><pre id="shop" hidden></pre><pre id="alm" hidden></pre><div id="stale"></div></div>
 <div id="q" class="card" hidden><label id="qText"></label><div class="row"><input id="qIn" autocomplete="off"><button id="qOk">OK</button><button id="qNo">Skip</button></div></div>
 <div class="card"><div id="controls"><div id="pad">
 <span></span><button data-k="ArrowUp" aria-label="Up">&#8593;</button><span></span>
@@ -136,8 +137,10 @@ button{cursor:pointer;background:transparent}button:active{background:rgba(255,2
 <div id="acts"><button data-k=".">Target</button><button data-k="/">Throw</button><button data-k="]">Stone</button>
 <button data-k="'">Name</button><button data-k=";">Use</button><button data-k=",">Follow</button>
 <button data-k="l">Potion</button><button data-k="k">Pack</button><button data-k="[">Stone back</button></div></div>
-<div class="row" style="margin-top:10px"><input id="cmd" placeholder="At a store: buy Geode 2, sell Moss, box Moss, take Moss" autocomplete="off"><button id="cmdGo">Send</button></div>
-<div class="keys">Keys: arrows move, . target, / throw, [ ] stone, ' name, ; pick or the store, , follow, L then a number for a potion, K the pack.</div></div>
+<div id="more"><button data-seq="j 1">Bait plant</button><button data-seq="j 2">Scatter</button><button data-seq="j 3">Bait meat</button><button data-seq="j 4">Stake</button>
+<button data-k="h">Give</button><button data-k="u">Feed</button><button data-k="y">Almanac</button></div>
+<div class="row" style="margin-top:10px"><input id="cmd" placeholder="give coins 5, feed Moss; at a store: buy Geode 2, sell Moss" autocomplete="off"><button id="cmdGo">Send</button></div>
+<div class="keys">Keys: arrows move, . target, / throw, [ ] stone, ' name, ; pick or the store, , follow, L then a number for a potion, K the pack, J bait (1 plant, 2 scatter, 3 meat, 4 stake, then an arrow, or ; for here), H give to the host, U feed, Y the Almanac. A bait button waits for an arrow or Use.</div></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);let code=new URLSearchParams(location.search).get('code')||'';let lastQ=0,answeredAt=0,out=[],busy=false,running=false;const held=new Set();
@@ -152,7 +155,7 @@ async function tick(){
     $('stale').textContent=d.fresh?'':'waiting for the host';
     $('bar').innerHTML='<b>'+esc(s.name||'Guest')+'</b> '+esc(s.wallet||0)+' coins &middot; '+['Amber','Geode','Obsidian'].map(n=>esc((s.stone===n?'['+n+' ':n+' ')+((s.stones||{})[n.toLowerCase()]||0)+(s.stone===n?']':''))).join(' ')+' &middot; pack '+esc(s.pack||'');
     $('party').innerHTML=(s.party||[]).map(c=>'<span>'+esc(c)+'</span>').join('');
-    $('msg').textContent=s.msg||'';$('shop').textContent=s.shop||'';$('shop').hidden=!s.shop;
+    $('msg').textContent=s.msg||'';$('shop').textContent=s.shop||'';$('shop').hidden=!s.shop;$('alm').textContent=s.almanac||'';$('alm').hidden=!s.almanac;
     const q=s.question;
     if(q&&(q.id!==lastQ||(answeredAt&&Date.now()-answeredAt>2500))){lastQ=q.id;answeredAt=0;$('qText').textContent=q.text;$('qIn').value=q.initial||'';$('q').hidden=false;$('qIn').focus();}   // an answer that never arrived: ask again
     if(!q&&!$('q').hidden&&lastQ){$('q').hidden=true;}
@@ -164,7 +167,7 @@ $('qOk').onclick=()=>answer($('qIn').value);$('qNo').onclick=()=>answer(null);
 $('qIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();answer($('qIn').value);}else if(e.key==='Escape'){e.preventDefault();answer(null);}e.stopPropagation();});
 $('cmd').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('cmdGo').click();}e.stopPropagation();});
 $('cmdGo').onclick=()=>{const t=$('cmd').value.trim();if(t){push({t:'cmd',text:t});$('cmd').value='';}};
-const KEYS=new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','.','/','[',']',"'",';',',','l','k','1','2','3','4','5','6','7','8','9']);
+const KEYS=new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','.','/','[',']',"'",';',',','l','k','j','h','u','y','1','2','3','4','5','6','7','8','9']);
 const norm=k=>k.length===1?k.toLowerCase():k;   // Caps Lock does not change L or K
 function down(k){if(held.has(k))return;held.add(k);push({t:'down',key:k});}
 function up(k){if(!held.has(k))return;held.delete(k);push({t:'up',key:k});}
@@ -175,6 +178,7 @@ window.addEventListener('blur',releaseAll);document.addEventListener('visibility
 for(const b of document.querySelectorAll('[data-k]')){const k=b.dataset.k;
   b.addEventListener('pointerdown',e=>{e.preventDefault();down(k);});
   for(const ev of['pointerup','pointerleave','pointercancel'])b.addEventListener(ev,()=>up(k));}
+for(const b of document.querySelectorAll('[data-seq]'))b.addEventListener('click',e=>{e.preventDefault();for(const k of b.dataset.seq.split(' ')){push({t:'down',key:k});push({t:'up',key:k});}});   // a bait button: J and the kind, then an arrow or Use picks the tile
 function join(){code=$('code').value.trim()||code;if(!code)return;history.replaceState(null,'','?code='+encodeURIComponent(code));lastQ=0;answeredAt=0;$('join').hidden=true;$('game').hidden=false;if(!running){running=true;tick();}}
 $('go').onclick=join;$('code').addEventListener('keydown',e=>{if(e.key==='Enter')join();});
 if(code){$('code').value=code;join();}
