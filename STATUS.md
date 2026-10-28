@@ -2,6 +2,9 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Deployed 2026-10-28T00:15-07:00 (owner ask: "deploy")
+Sessions (i) through (t) are live: main pushed at eaf462d (16 commits), CI verify + Pages deploy green, the live site serves the same bundle as the local build (index-DHLc1O7-.js). Checked as a visitor first on the production build over the LAN, then on the live site: a plain world and a `?ketchem=` board, no console errors, no requests to the relay (7796), the guest link (7797 / 7798) or localhost; the "guest on another screen" chip is never offered. Root and the guest link stay local-only by design. Still the owner's calls: the playtest, several guests, the tailnet, Root on the public site.
+
 ## Session 2026-10-27 (t) - Ketch'em breeding and gear extras - DONE, GATE GREEN
 Owner ask: chose "Breeding and gear extras", then approved the proposal as written ("Build as proposed"). Mechanics sec. 20 (the pen) and 23 (gear). **Not deployed**; nothing pushed.
 
