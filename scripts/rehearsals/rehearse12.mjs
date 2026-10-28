@@ -75,7 +75,7 @@ const rdir = await page.evaluate(() => { const K = window.__wb.ketchem.board(); 
 const dirName = (rdir.dy < 0 ? 'N' : rdir.dy > 0 ? 'S' : '') + (rdir.dx < 0 ? 'W' : rdir.dx > 0 ? 'E' : '');
 await call('walk', { direction: dirName, steps: 1 });
 const shop = await call('shop');
-ok('Root\'s shop lists the gear line', /gear \(once, worn for good\): Satchel 120, Trail Boots 180, Lucky Charm 300/.test(shop), shop.split('\n').find(l => l.startsWith('gear')) || '');
+ok('Root\'s shop lists the gear line', /gear \(one item per slot[^)]*\): Satchel 120 \[pack\], Pannier 260 \[pack\], Trail Boots 180 \[feet\], Waders 160 \[feet\], Lucky Charm 300 \[charm\], Quiet Bell 240 \[charm\]/.test(shop), shop.split('\n').find(l => l.startsWith('gear')) || '');
 const rb = await call('buy', { item: 'Lucky Charm' }); ok('Root buys the Lucky Charm', /put it on/.test(rb), rb.split('\n')[0]);
 const rb2 = await call('buy', { item: 'Lucky Charm' }); ok('and cannot buy it twice', /already wear/.test(rb2), rb2.split('\n')[0]);
 const sh = rdir.shards[0];

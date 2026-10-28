@@ -3,10 +3,23 @@
 // stride, and E to read what you stand on. Pure over the sim's arrays and the board K; the page wires the keys.
 import { T, grid, riverData, road, volcActive, idx, inb, tick } from '../sim.js';
 import { revealSquare, SIGHT_HALF } from './fog.js';
+import { news } from './encounter.js';
 
 export const WINDOW_TICKS = 6;        // the stride budget refills every this many ticks (22.1)
 export const PATH_MAX = 9;            // tiles one walk(path) may cover (as a visitor's walk)
 const STEEP = { [T.MOUNTAIN]: 1, [T.GLACIER]: 1 };
+// Gear that wears out (23): what counts as one use and how many it lasts. p.gear[name] = { left }; an old save's `true`
+// is a fresh one. Gear not listed here never wears (Satchel, Pannier).
+export const GEAR_WEAR = { 'Trail Boots': { per: 'step', max: 2000 }, Waders: { per: 'step', max: 2000 }, 'Lucky Charm': { per: 'throw', max: 40 }, 'Quiet Bell': { per: 'tick', max: 3000 } };
+export function gearLeft(p, name) { const g = p && p.gear && p.gear[name], w = GEAR_WEAR[name]; return !g ? 0 : !w ? Infinity : g === true ? w.max : g.left; }
+// One use of worn gear; at 0 it comes off with a message to the wearer. Returns true when it just wore out.
+export function wearGear(K, p, name) {
+  const w = GEAR_WEAR[name]; if (!w || !gearLeft(p, name)) return false;
+  const left = gearLeft(p, name) - 1;
+  if (left > 0) { p.gear[name] = { left }; return false; }
+  delete p.gear[name]; p.msg = 'your ' + name + ' wore out'; p.msgUntil = Date.now() + 4000; news(K, p.id || 'root', 'your ' + name + ' wore out');   // Root's visit body has no id: it is 'root'
+  return true;
+}
 
 // What the ground under tile i means for a walker: its stride (tiles per window / per leg) or why it is closed.
 export function groundOf(i) {
@@ -36,9 +49,11 @@ export function tryStep(K, p, dx, dy, budget = true) {
   if (budget) {
     if (tick - p.windowStart >= WINDOW_TICKS || tick < p.windowStart) { p.spent = 0; p.windowStart = tick; }
     const boots = p.gear && p.gear['Trail Boots'] && (g.kind === 'open' || g.kind === 'river');   // Trail Boots (23): open ground only
-    const cost = 1 / (g.stride + (fleet && g.kind !== 'steep' ? 1 : 0) + (boots ? 1 : 0));
+    const waders = p.gear && p.gear.Waders && (g.kind === 'river' || grid[i] === T.WETLAND) && g.kind !== 'road';   // Waders: river and marsh (wetland), a road over them is still a road
+    const cost = 1 / (g.stride + (fleet && g.kind !== 'steep' ? 1 : 0) + (boots || waders ? 1 : 0));
     if (p.spent + cost > 1 + 1e-9) return { ok: false, why: 'winded', kind: g.kind };
     p.spent += cost;
+    if (boots) wearGear(K, p, 'Trail Boots'); else if (waders) wearGear(K, p, 'Waders');   // a step counts when the bonus applies
   }
   p.x = nx; p.y = ny; p.boat = g.kind === 'water'; p.facing = [dx, dy];
   if (p.trail) { p.trail.push([nx, ny]); if (p.trail.length > 400) p.trail.shift(); }

@@ -27,7 +27,7 @@ import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
 import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
 import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js';
-import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, freeName, freeSpeciesName, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
+import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, freeName, freeSpeciesName, follow, recall, drainNews, news as pushNews, isEgg, eggText } from './ketchem/encounter.js';
 import { initStores, marketTick, storeAt, shopLists, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, giveSaid, usePotion, almanacLists, almanacText, packSummary, POTIONS } from './ketchem/market.js';
 import { storePanel, almanacPanel, closePanel, panelOpen, panelMode } from './ketchem/panel.js';
 import { hudTick, drawGlyph } from './ketchem/hud.js';
@@ -807,6 +807,7 @@ function openStore(tab,who){
 var _kSending=false;
 function sendCreature(id){
   if(!K||_kSending)return;var K0=K,c=K.cabinet.find(function(x){return x.id===id;});if(!c)return;var nm=c.name||c.type;
+  if(isEgg(c)){kevinSay(eggText(c));draw();return;}
   if(!K.slot){kevinSay('save this game first (F5), then send');draw();return;}   // naming it mid-send could pick the other save's name
   if(K.kevin.naming===c.id||(K.kevin.namingQueue||[]).indexOf(c.id)>=0){kevinSay('name "'+nm+'" first (N), then send it');draw();return;}
   _kSending=true;
@@ -1014,9 +1015,9 @@ function guestStore(g){
   var s=storeAt(K,g);if(!s)return null;var L=shopLists(K,g,s),mine=g.party.concat(K.cabinet),nm=function(c){var x=mine.find(function(y){return y.id===c.id;});return !!(x&&x.name);};   // an unnamed one gets no button
   return {name:L.store,wallet:L.wallet,
     buy:L.buy.map(function(b){return {item:b.item,price:b.price,left:b.left===Infinity?null:b.left,gear:!!b.gear,owned:!!b.owned};}),
-    sell:L.sell.map(function(c){return {name:c.name,named:nm(c),level:c.level,price:c.price,where:c.where};}),
+    sell:L.sell.map(function(c){return {name:c.name,named:nm(c),level:c.level,price:c.price,where:c.where};}).concat(L.gearSell.map(function(x){return {name:x.item,named:true,gear:true,note:x.label,price:x.price};})),   // worn gear sells by its name, like a creature
     plants:L.plants.length,plantsWorth:L.plants.reduce(function(a,x){return a+x.price;},0),
-    party:L.party.map(function(c){return {name:c.name,named:nm(c)};}),box:L.box.map(function(c){return {name:c.name,named:nm(c)};})};
+    party:L.party.map(function(c){return {name:c.name,named:nm(c)};}),box:L.box.map(function(c){return {name:c.name,named:nm(c),egg:!!c.egg};})};
 }
 function guestCommand(text){   // from another screen: give X [n] and feed X[, Y] anywhere; buy X [n], sell X, box X, take X, breed X, Y at a store
   var g=K.root,m=/^(buy|sell|box|take|breed|give|feed)\s+(.+)$/i.exec(String(text||'').trim());

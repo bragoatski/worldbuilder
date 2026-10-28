@@ -5,7 +5,7 @@
 // only when what it shows changes; the arcs alone move every tick. The module loads without a document (tests).
 import { tick } from '../sim.js';
 import { drawCreatureShape } from '../render.js';
-import { creatureCard, packSummary, POTIONS } from './market.js';
+import { creatureCard, packSummary, gearSig, POTIONS } from './market.js';
 import { TYPE_COLOUR } from './render.js';
 import { STRENGTH } from './rules.js';
 import { soundOn, toggleSound, soundTick } from './sound.js';
@@ -83,7 +83,7 @@ function hudHTML(p, guestChip = '', guest = false) {
   return '<span class="kh-wallet">' + p.wallet + ' coins</span>' + stones + '<span class="kh-pack' + (over ? ' over' : '') + '" title="' + esc(packTip + (over ? '. Over the cap: nothing more fits until the pack is lighter or a Pack creature rejoins the party' : '')) + '">pack ' + ps.used + '/' + ps.cap + '</span>' + (fx ? '<span class="kh-fx">' + fx + '</span>' : '') + (hint ? '<span class="kh-hint">' + hint + '</span>' : '') +
     '<button type="button" class="kh-sound' + (soundOn() ? '' : ' off') + '" title="Sound ' + (soundOn() ? 'on' : 'off') + ' (O)" aria-label="Sound">' + (soundOn() ? 'sound' : 'muted') + '</button>' + guestChip;
 }
-function hudSig(p) { return JSON.stringify([p.wallet, p.stone, p.stones, (p.pack || []).length, packSummary(p).cap, (p.pack || []).filter(x => x.potion).map(x => x.potion), (p.effects || []).filter(e => e.until > tick).map(e => e.potion), !!p.naming, !!p.namingSpecies, !!p.cast, soundOn(), Object.keys(p.gear || {})]); }
+function hudSig(p) { return JSON.stringify([p.wallet, p.stone, p.stones, (p.pack || []).length, packSummary(p).cap, (p.pack || []).filter(x => x.potion).map(x => x.potion), (p.effects || []).filter(e => e.until > tick).map(e => e.potion), !!p.naming, !!p.namingSpecies, !!p.cast, soundOn(), gearSig(p)]); }
 // The arcs: the fraction of each potion's duration left, as a conic sweep; the sweep moves every tick, the hover
 // text once a second (a rewritten title would reset the tooltip under the pointer).
 function arcs(el, p) {

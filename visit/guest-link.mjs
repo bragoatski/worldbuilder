@@ -224,11 +224,11 @@ function spec(st){
   for(const b of st.buy)r.push({label:b.item,note:b.price+' coins'+(b.left!==null&&!b.gear?' ('+b.left+' left)':'')+(b.owned?' (worn)':''),btn:b.owned?'':'Buy',cmd:'buy '+b.item});
   r.push({h:'Sell',k:'h1'});
   if(st.plants)r.push({label:st.plants+' plants',note:st.plantsWorth+' coins',btn:'Sell all',cmd:'sell plants'});
-  for(const c of st.sell)r.push(c.named?{label:c.name,note:'L'+c.level+', '+c.price+' coins'+(c.where==='cabinet'?' (cabinet)':''),btn:'Sell',cmd:'sell '+c.name}:{label:c.name,note:'name it first',btn:'',cmd:''});
+  for(const c of st.sell)r.push(c.gear?{label:c.note,note:c.price+' coins, worn gear',btn:'Sell',cmd:'sell '+c.name}:c.named?{label:c.name,note:'L'+c.level+', '+c.price+' coins'+(c.where==='cabinet'?' (cabinet)':''),btn:'Sell',cmd:'sell '+c.name}:{label:c.name,note:'name it first',btn:'',cmd:''});
   if(!st.plants&&!st.sell.length)r.push({label:'nothing to sell',note:'',btn:'',cmd:''});
   r.push({h:'Cabinet',k:'h2'});
   for(const c of st.party)r.push(c.named?{label:c.name,note:'party',btn:'Box',cmd:'box '+c.name}:{label:c.name,note:'party, name it first',btn:'',cmd:''});
-  for(const c of st.box)r.push(c.named?{label:c.name,note:'cabinet',btn:'Take',cmd:'take '+c.name}:{label:c.name,note:'cabinet, name it first',btn:'',cmd:''});
+  for(const c of st.box)r.push(c.egg?{label:'egg',note:'cabinet, hatching',btn:'',cmd:''}:c.named?{label:c.name,note:'cabinet',btn:'Take',cmd:'take '+c.name}:{label:c.name,note:'cabinet, name it first',btn:'',cmd:''});
   if(!st.party.length&&!st.box.length)r.push({label:'empty',note:'',btn:'',cmd:''});
   r.push({label:'Breed two of one kind: type breed Moss, Fern below',note:'',btn:'',cmd:''});
   return r;

@@ -5,7 +5,7 @@
 import { T, grid, tick, idx, speciesKey, getSpeciesName, fauna, makeFauna } from '../sim.js';
 import { onStore } from './encounter.js';
 import { elementalType, levelOf, populationOf, prefBucket } from './rules.js';
-import { almanacEntry, fx, learnSpecies } from './encounter.js';
+import { almanacEntry, fx, learnSpecies, isEgg, eggText, playerById, news } from './encounter.js';
 // An evolved species still waiting for its name from this player (the HUD keeps asking until it is named or gone).
 function pendingUnnamed(K, p) { if (!p.namingSpecies) return false; const c = (p.party || []).find(x => x.id === p.namingSpecies) || (K.cabinet || []).find(x => x.id === p.namingSpecies); if (!c) { p.namingSpecies = null; return false; } return !almanacEntry(K, c).nickname; }
 
@@ -85,6 +85,7 @@ function evolve(K, p, c, oldKey, oldName) {
 // Per tick: time in the party (1 per 100 ticks), following (2), exposure to its own type's biome (10 per 500).
 export function growthTick(K) {
   const out = [];
+  hatchTick(K);
   for (const p of players(K)) {
     const here = grid[idx(p.x, p.y)];
     for (const c of p.party || []) {
@@ -96,6 +97,17 @@ export function growthTick(K) {
     }
   }
   return out;
+}
+// An egg in the cabinet hatches at its hatchAt: the young one is born then (a newborn breeds once it has grown a level, counted from
+// here) and its owner, wherever the seat is, is asked for a name.
+function hatchTick(K) {
+  for (const c of K.cabinet || []) {
+    if (!isEgg(c) || tick < c.hatchAt) continue;
+    delete c.hatchAt; c.bornAt = tick;
+    const owner = playerById(K, c.by); if (!owner) continue;
+    if (owner.naming) (owner.namingQueue || (owner.namingQueue = [])).push(c.id); else owner.naming = c.id;   // a pending catch name keeps its turn
+    news(K, owner.id || 'root', 'an egg hatched in the cabinet: name it');
+  }
 }
 // Every party creature present at a catch gains the caught creature's level (20.1).
 export function catchXP(K, p, caught, level) {
@@ -109,6 +121,7 @@ export function feed(K, p, which, what) {
   const w = String(which || '').toLowerCase();
   const c = (p.party || []).find(x => (x.name ? x.name.toLowerCase() === w : x.type === w));
   if (!c) return { ok: false, text: 'no "' + which + '" in the party' };
+  if (isEgg(c)) return { ok: false, text: eggText(c) };
   if (!what || String(what).toLowerCase() === 'plant') {
     if (!(c.type === 'herbivore' || c.type === 'omnivore')) return { ok: false, text: (c.name || c.type) + ' does not eat plants' };
     const k = (p.pack || []).findIndex(x => !x.potion); if (k < 0) return { ok: false, text: 'no plant in the pack' };
@@ -121,6 +134,7 @@ export function feed(K, p, which, what) {
   const mw = String(what).toLowerCase();
   const m = (p.party || []).find(x => x !== c && (x.name ? x.name.toLowerCase() === mw : x.type === mw));
   if (!m) return { ok: false, text: 'no "' + what + '" in the party to feed it' };
+  if (isEgg(m)) return { ok: false, text: eggText(m) };
   const L = levelOf(m, populationOf(m, fauna, speciesKey));
   p.party = p.party.filter(x => x !== m); if (p.follower === m.id) { p.follower = null; p.followerAt = null; } if (p.naming === m.id) p.naming = null; if (p.namingSpecies === m.id) p.namingSpecies = null;
   const ev = addXP(K, p, c, XP_MEAT_PER_LEVEL * L, 'meat');
@@ -136,13 +150,20 @@ export function eventsText(events) {
   return events.map(e => e.kind === 'grow' ? '; growth level ' + e.level : '; EVOLVED from ' + e.from + ' into ' + e.to + (e.named ? '' : ': name the species')).join('');
 }
 // ---------- the pen (step 9, the Breeder): two of yours, a fee, an offspring in the cabinet ----------
-export const BREED_COOLDOWN = 2000, BREED_FEE_BASE = 20, BREED_FEE_PER_LEVEL = 5;
-export function breedFee(a, b) { const L = c => levelOf(c, populationOf(c, fauna, speciesKey)); return BREED_FEE_BASE + BREED_FEE_PER_LEVEL * (L(a) + L(b)); }
+export const BREED_COOLDOWN = 2000, BREED_FEE_BASE = 20, BREED_FEE_PER_LEVEL = 5, HATCH_TICKS = 600, PEN_FAR_FEE = 0.75;
+// The pen's fee: the two stores at the starts charge it in full, every other store three quarters of it. Without a store
+// (no K, no s) the full fee.
+export function breedFee(a, b, K, s) {
+  const L = c => levelOf(c, populationOf(c, fauna, speciesKey)), full = BREED_FEE_BASE + BREED_FEE_PER_LEVEL * (L(a) + L(b));
+  return homeStore(K, s) ? full : Math.round(full * PEN_FAR_FEE);
+}
+export function homeStore(K, s) { return !K || !s || [0, 1].some(i => K.starts && K.starts[i] && K.stores[K.starts[i].store] === s); }
 // A creature of the player's by id (the panel), by name, or, unnamed, by type; `not` keeps two picks distinct.
 function mine(K, p, which, not) {
   const w = String(which || '').toLowerCase(), all = (p.party || []).concat(K.cabinet || []);
   if (/^\d+$/.test(w)) return all.find(x => x.id === +w && x !== not) || null;
-  return all.find(x => x !== not && (x.name ? x.name.toLowerCase() === w : x.type === w)) || null;
+  const is = x => x !== not && (x.name ? x.name.toLowerCase() === w : x.type === w);
+  return all.find(x => is(x) && !isEgg(x)) || all.find(is) || null;   // an egg matches by type only when nothing hatched does
 }
 // The offspring's genome: each preference the parents' midpoint with a small drift from the board's stream, size
 // and tolerance the mean, the colour from one parent, vivid half the time if either parent is, a generation on.
@@ -162,21 +183,21 @@ export function breed(K, p, aName, bName) {
   const a = mine(K, p, aName), b = mine(K, p, bName, a);
   if (!a || !b) return { ok: false, text: 'no "' + (a ? bName : aName) + '" in the party or the cabinet' + (a && String(aName).toLowerCase() === String(bName).toLowerCase() ? ' (two different creatures)' : '') };
   if (a === b) return { ok: false, text: 'two different creatures' };
+  for (const c of [a, b]) if (isEgg(c)) return { ok: false, text: eggText(c) };
   for (const c of [a, b]) if (c.bornAt !== undefined && !(c.growthLevel >= 1)) return { ok: false, text: '"' + (c.name || c.type) + '" is a newborn: it breeds once it has grown a level' };
   if (a.type !== b.type) return { ok: false, text: 'a ' + a.type + ' and a ' + b.type + ' do not breed' };
   for (const c of [a, b]) if (c.bredAt !== undefined && tick - c.bredAt < BREED_COOLDOWN) return { ok: false, text: '"' + (c.name || c.type) + '" bred ' + (tick - c.bredAt) + ' ticks ago; ' + (BREED_COOLDOWN - (tick - c.bredAt)) + ' to wait' };
-  const fee = breedFee(a, b);
+  const fee = breedFee(a, b, K, K.stores.find(s => s.x === p.x && s.y === p.y));
   if (p.wallet < fee) return { ok: false, text: 'the fee is ' + fee + ' coins (you have ' + p.wallet + ')' };
   p.wallet -= fee; a.bredAt = tick; b.bredAt = tick;
   const child = makeFauna(p.x, p.y, a.type, offspringGenome(a, b, K.rng));
   if (a.shaped || b.shaped) child.shaped = true;   // a line shaped by shards stays cultivated: no scarcity bonus by breeding either (23)
-  child.age = 0; child.energy = child.maxEnergy; child.bornAt = tick; child.by = p.id; child.parents = [a.name || a.type, b.name || b.type]; delete child._speciesName;
+  child.age = 0; child.energy = child.maxEnergy; child.hatchAt = tick + HATCH_TICKS; child.by = p.id; child.parents = [a.name || a.type, b.name || b.type]; delete child._speciesName;
   K.cabinet.push(child);
   const e = almanacEntry(K, child); e.variants = e.variants || []; if (!e.variants.includes('bred')) e.variants.push('bred'); learnSpecies(e, child);
   const seen = K.seenIds || (K.seenIds = {}); if (!seen[child.id]) { seen[child.id] = 1; e.seen++; } e.caught++;   // a newborn is seen and in hand
-  if (p.naming) (p.namingQueue || (p.namingQueue = [])).push(child.id); else p.naming = child.id;   // a pending catch name keeps its turn
   fx(K, 'bred', { len: 12, x: p.x, y: p.y });
-  return { ok: true, text: 'bred "' + (a.name || a.type) + '" and "' + (b.name || b.type) + '" for ' + fee + ' coins: a young ' + child.type + ' L' + levelOf(child, populationOf(child, fauna, speciesKey)) + ' ' + elementalType(child).typ + ' in the cabinet. name it', child, fee };
+  return { ok: true, text: 'bred "' + (a.name || a.type) + '" and "' + (b.name || b.type) + '" for ' + fee + ' coins: an egg (' + child.type + ' L' + levelOf(child, populationOf(child, fauna, speciesKey)) + ' ' + elementalType(child).typ + ') in the cabinet: it hatches in ' + HATCH_TICKS + ' ticks, then name it', child, fee };
 }
 export function breedHook(a, b) { return { a, b, note: 'use breed(K, p, aName, bName)' }; }
 // A creature's growth line for cards and looks: "G2 40/90".

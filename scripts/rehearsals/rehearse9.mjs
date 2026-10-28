@@ -40,6 +40,9 @@ console.log('Breed ->', JSON.stringify(await msg()));
 const after = await page.evaluate(() => { const K = window.__wb.ketchem.board(); return { wallet: K.kevin.wallet, cabinet: K.cabinet.map(c => ({ type: c.type, age: c.age, gen: c.gen, parents: c.parents })), naming: !!K.kevin.naming, rests: K.kevin.party.map(c => c.bredAt !== undefined) }; });
 console.log('after:', JSON.stringify(after));
 await page.keyboard.press('Escape');
+// since 2026-10-27 the young one is an egg: hatch it now, then it asks for its name
+await page.evaluate(() => { const K = window.__wb.ketchem.board(); for (const c of K.cabinet) if (c.hatchAt !== undefined) c.hatchAt = window.__wb.sim.tick; });
+await page.waitForTimeout(800);
 await page.keyboard.press('n'); await answer(names.shift() || 'x'); console.log('N ->', JSON.stringify(await msg()), 'cabinet names', JSON.stringify(await page.evaluate(() => window.__wb.ketchem.board().cabinet.map(c => c.name))));
 // Root
 const door = spawn(process.execPath, ['visit/door.mjs'], { cwd: 'C:/Users/KevinReilly/worldbuilder', env: { ...process.env, VISIT_MODE: 'ketchem' }, stdio: ['pipe', 'pipe', 'inherit'] });
@@ -57,6 +60,7 @@ const dirName = (rdir.dy < 0 ? 'N' : rdir.dy > 0 ? 'S' : '') + (rdir.dx < 0 ? 'W
 console.log('walk onto the store:', (await call('walk', { direction: dirName, steps: 1 })).split('\n')[0]);
 console.log('shop (pen line):', (await call('shop')).split('\n').find(l => l.startsWith('pen')));
 console.log('breed ->', (await call('breed', { a: 'Ant', b: 'Bee' })).split('\n')[0]);
+await page.evaluate(() => { const K = window.__wb.ketchem.board(); for (const c of K.cabinet) if (c.hatchAt !== undefined) c.hatchAt = window.__wb.sim.tick; }); await page.waitForTimeout(800);   // the egg hatches (2026-10-27)
 console.log('name ->', (await call('name', { name: 'Larva' })).split('\n')[0]);
 console.log('breed again ->', (await call('breed', { a: 'Ant', b: 'Bee' })).split('\n')[0]);
 console.log('leave ->', (await call('leave', { title: 'Step 9 rehearsal', field_note: 'I bred Ant and Bee. (scripted)' })).split('\n')[0]);

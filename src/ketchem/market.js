@@ -3,10 +3,10 @@
 // the board K, like encounter.js; the page and Root's door call it. Prices come from rules.js.
 import { W, H, grid as gridRef, fauna, tick, speciesKey, getSpeciesName } from '../sim.js';
 import { priceOf, priceTerms, levelOf, populationOf, abilitiesOf, elementalType, glyphOf, TYPES } from './rules.js';
-import { STONE_KEY, PARTY_CAP, PACK_CAP, partyAbilities, onStore, hasEffect } from './encounter.js';
+import { STONE_KEY, PARTY_CAP, PACK_CAP, partyAbilities, onStore, hasEffect, isEgg, eggText } from './encounter.js';
 import { revealSquare } from './fog.js';
-import { bearingTo } from './controls.js';
-import { growthText, breedFee, addXP, eventsText, applyShard } from './growth.js';
+import { bearingTo, GEAR_WEAR, gearLeft, wearGear } from './controls.js';
+import { growthText, breedFee, homeStore, HATCH_TICKS, addXP, eventsText, applyShard } from './growth.js';
 
 export const STONE_PRICE = { Amber: 5, Geode: 25, Obsidian: 150 };
 export const RESTOCK_TICKS = 2000, RESTOCK_COUNT = 3;
@@ -34,14 +34,25 @@ const SHARD_PRICE = { common: 30, uncommon: 45, rare: 70, 'very rare': 100 };
 const AXIS_WORD = { A: ['drier', 'wetter'], P: ['warmer', 'colder'], S: ['sunnier', 'shadier'], E: ['higher', 'lower'] };
 for (const t of SHARD_TYPES) POTIONS[t + ' Shard'] = { kind: 'creature', shard: t, price: SHARD_PRICE[TYPES[t].cls], blurb: 'a party creature leans ' + AXIS_WORD[TYPES[t].axis][TYPES[t].high ? 0 : 1] + ', one step toward ' + t + '; cross a species line and it evolves' };
 export const POTION_NAMES = Object.keys(POTIONS);
-// Gear: bought once, worn, kept (a knock-down takes what is carried, not what is worn); every store sells it.
+// Gear: bought, worn, kept (a knock-down takes what is carried, not what is worn); every store sells it. One item per
+// slot (buying into a full slot sells the old one back), most wears out (controls.GEAR_WEAR), and worn gear sells back.
 export const GEAR = {
-  Satchel: { price: 120, blurb: '+5 pack slots, worn for good' },
-  'Trail Boots': { price: 180, blurb: 'stride +1 on open ground (land and river banks), worn for good' },
-  'Lucky Charm': { price: 300, blurb: 'catch odds +5 with Amber and Geode, worn for good' },
+  Satchel: { price: 120, slot: 'pack', blurb: '+5 pack slots, worn for good' },
+  Pannier: { price: 260, slot: 'pack', blurb: '+8 pack slots, worn for good' },
+  'Trail Boots': { price: 180, slot: 'feet', wear: GEAR_WEAR['Trail Boots'], blurb: 'stride +1 on open ground (land and river banks), wears out after 2000 steps' },
+  Waders: { price: 160, slot: 'feet', wear: GEAR_WEAR.Waders, blurb: 'stride +1 on rivers and marsh, wears out after 2000 steps' },
+  'Lucky Charm': { price: 300, slot: 'charm', wear: GEAR_WEAR['Lucky Charm'], blurb: 'catch odds +5 with Amber and Geode, wears out after 40 throws' },
+  'Quiet Bell': { price: 240, slot: 'charm', wear: GEAR_WEAR['Quiet Bell'], blurb: 'creatures notice you one tile later, wears out after 3000 ticks' },
 };
 export const GEAR_NAMES = Object.keys(GEAR);
 export function wears(p, name) { return !!(p && p.gear && p.gear[name]); }
+const WEAR_UNIT = { step: 'step', throw: 'throw', tick: 'tick' };
+// Worn gear as the pack, the HUD and Root read it: "Trail Boots (1240 steps left)"; gear that never wears is its name.
+export function gearLabel(p, name) { const w = GEAR[name].wear; if (!w) return name; const n = gearLeft(p, name); return name + ' (' + n + ' ' + WEAR_UNIT[w.per] + (n === 1 ? '' : 's') + ' left)'; }
+// What the HUD redraws on: each worn item with what is left, to the nearest ten except for throws (a step or a tick is not worth a redraw).
+export function gearSig(p) { return GEAR_NAMES.filter(n => wears(p, n)).map(n => [n, GEAR[n].wear ? (GEAR[n].wear.per === 'throw' ? gearLeft(p, n) : Math.ceil(gearLeft(p, n) / 10)) : 0]); }
+// Half the price, scaled by what is left of it (no wear: half).
+export function gearSellBack(p, name) { const w = GEAR[name].wear; return Math.floor(w ? GEAR[name].price / 2 * gearLeft(p, name) / w.max : GEAR[name].price / 2); }
 
 // ---------- stock ----------
 export function stockFor(storeIndex) {
@@ -68,9 +79,12 @@ export function restockTick(K) {
 export function storeAt(K, p) { return K.stores.find(s => s.x === p.x && s.y === p.y) || null; }
 
 // ---------- prices ----------
+// A young one that has not yet grown a level sells for half (the pen's young: bornAt set, no growth level).
+const isYoung = c => c.bornAt !== undefined && !(c.growthLevel >= 1);
 export function creaturePrice(c) {
   const N = populationOf(c, fauna, speciesKey), L = levelOf(c, N);
-  return priceOf(c, N, L, abilitiesOf(c, L).abilities.length);
+  const price = priceOf(c, N, L, abilitiesOf(c, L).abilities.length);
+  return isYoung(c) ? Math.floor(price / 2) : price;
 }
 // Plants: common 1-3 by health; rare (gen >= 10 or a preference within 1 of an extreme) 15-40 by health; Forager doubles.
 export function plantPrice(f, p) {
@@ -89,17 +103,18 @@ export function priceBreakdown(terms, nAbilities) {
     nAbilities + (nAbilities === 1 ? ' ability' : ' abilities') + ' x' + n2(terms.abilityF), fx('condition', terms.conditionF), fx('elder', terms.elderF)].filter(Boolean).join(' · ');
 }
 export function creatureCard(c) {
-  const N = populationOf(c, fauna, speciesKey), L = levelOf(c, N), ab = abilitiesOf(c, L).abilities, pr = priceTerms(c, N, L, ab.length);
-  return { id: c.id, name: c.name || c.type, type: c.type, elemental: elementalType(c).typ, level: L, growth: growthText(c), abilities: ab.map(a => a.name + (a.strength > 1 ? ' ' + ['', 'I', 'II', 'III'][a.strength] : '')),
-    abilityList: ab.map(a => ({ name: a.name, strength: a.strength })), price: pr.price, breakdown: priceBreakdown(pr.terms, ab.length), species: getSpeciesName(c) || '', glyph: glyphOf(c) };
+  const N = populationOf(c, fauna, speciesKey), L = levelOf(c, N), ab = abilitiesOf(c, L).abilities, pr = priceTerms(c, N, L, ab.length), egg = isEgg(c), young = isYoung(c);
+  return { id: c.id, name: egg ? 'egg' : c.name || c.type, type: c.type, elemental: elementalType(c).typ, level: L, growth: egg ? 'egg, hatches in ' + Math.max(0, c.hatchAt - tick) + ' ticks' : growthText(c), abilities: ab.map(a => a.name + (a.strength > 1 ? ' ' + ['', 'I', 'II', 'III'][a.strength] : '')),
+    abilityList: ab.map(a => ({ name: a.name, strength: a.strength })), price: young ? Math.floor(pr.price / 2) : pr.price, breakdown: priceBreakdown(pr.terms, ab.length) + (young ? ' · x0.5 young (not yet grown a level)' : ''), species: getSpeciesName(c) || '', glyph: glyphOf(c),
+    egg, hatchIn: egg ? Math.max(0, c.hatchAt - tick) : 0 };
 }
 
 // ---------- the pack: plants and potions share its slots ----------
-export function packCap(p) { return PACK_CAP + 5 * (partyAbilities(p).Pack || 0) + (wears(p, 'Satchel') ? 5 : 0); }
+export function packCap(p) { return PACK_CAP + 5 * (partyAbilities(p).Pack || 0) + (wears(p, 'Satchel') ? 5 : 0) + (wears(p, 'Pannier') ? 8 : 0); }
 export function packSummary(p) {
   const plants = (p.pack || []).filter(x => !x.potion).length, potions = {};
   for (const x of p.pack || []) if (x.potion) potions[x.potion] = (potions[x.potion] || 0) + 1;
-  return { plants, potions, used: (p.pack || []).length, cap: packCap(p), gear: GEAR_NAMES.filter(n => wears(p, n)) };
+  return { plants, potions, used: (p.pack || []).length, cap: packCap(p), gear: GEAR_NAMES.filter(n => wears(p, n)).map(n => gearLabel(p, n)) };
 }
 function takePotion(p, name) { const k = (p.pack || []).findIndex(x => x.potion === name); if (k < 0) return null; return p.pack.splice(k, 1)[0]; }
 
@@ -108,23 +123,25 @@ export function shopLists(K, p, s) {
   const buy = Object.keys(STONE_PRICE).map(n => ({ item: n, price: STONE_PRICE[n], left: Infinity }))
     .concat(Object.entries(s.stock.potions).filter(([name, n]) => n > 0 && POTIONS[name]).map(([name, n]) => ({ item: name, price: POTIONS[name].price, left: n, blurb: POTIONS[name].blurb })))
     .concat(GEAR_NAMES.map(n => ({ item: n, price: GEAR[n].price, left: Infinity, blurb: GEAR[n].blurb, gear: true, owned: wears(p, n) })));
-  const sell = (p.party || []).map(c => ({ ...creatureCard(c), where: 'party' })).concat((K.cabinet || []).map(c => ({ ...creatureCard(c), where: 'cabinet' })));
+  const sell = (p.party || []).filter(c => !isEgg(c)).map(c => ({ ...creatureCard(c), where: 'party' })).concat((K.cabinet || []).filter(c => !isEgg(c)).map(c => ({ ...creatureCard(c), where: 'cabinet' })));   // an egg cannot be sold
+  const gearSell = GEAR_NAMES.filter(n => wears(p, n)).map(n => ({ item: n, label: gearLabel(p, n), price: gearSellBack(p, n) }));
   const plants = (p.pack || []).filter(x => !x.potion).map(f => ({ plant: true, gen: f.gen || 0, health: f.health, price: plantPrice(f, p) }));
   const mine = (p.party || []).concat(K.cabinet || []);
-  return { store: s.name, wallet: p.wallet, buy, sell, plants, box: (K.cabinet || []).map(c => creatureCard(c)), party: (p.party || []).map(c => creatureCard(c)),
-    pen: mine.map(c => ({ ...creatureCard(c), id: c.id, cooldown: c.bredAt !== undefined ? Math.max(0, 2000 - (tick - c.bredAt)) : 0, newborn: c.bornAt !== undefined && !(c.growthLevel >= 1) })),
-    fee: (x, y) => { const A = mine.find(c => c.id === +x), B = mine.find(c => c.id === +y); return A && B ? breedFee(A, B) : 0; } };
+  return { store: s.name, wallet: p.wallet, buy, sell, gearSell, plants, box: (K.cabinet || []).map(c => creatureCard(c)), party: (p.party || []).map(c => creatureCard(c)),
+    pen: mine.map(c => ({ ...creatureCard(c), id: c.id, cooldown: c.bredAt !== undefined ? Math.max(0, 2000 - (tick - c.bredAt)) : 0, newborn: isYoung(c) })),
+    fee: (x, y) => { const A = mine.find(c => c.id === +x), B = mine.find(c => c.id === +y); return A && B ? breedFee(A, B, K, s) : 0; } };
 }
 export function shopText(K, p) {
   const s = storeAt(K, p); if (!s) return 'no store here';
   const L = shopLists(K, p, s);
   const out = [s.name + '. wallet ' + L.wallet + ' coins'];
   out.push('buy: ' + L.buy.filter(b => !b.gear).map(b => b.item + ' ' + b.price + (b.left === Infinity ? '' : ' (' + b.left + ')')).join(', '));
-  out.push('gear (once, worn for good): ' + L.buy.filter(b => b.gear).map(b => b.item + ' ' + b.price + (b.owned ? ' (worn)' : '')).join(', '));
-  out.push('sell: ' + (L.sell.length ? L.sell.map(c => '"' + c.name + '" L' + c.level + ' ' + c.elemental + ' ' + c.price + (c.where === 'cabinet' ? ' (cabinet)' : '')).join(', ') : 'nothing'));
+  out.push('gear (one item per slot, a new one swaps the old back to the store): ' + L.buy.filter(b => b.gear).map(b => b.item + ' ' + b.price + ' [' + GEAR[b.item].slot + ']' + (b.owned ? ' (worn)' : '')).join(', '));
+  const sells = L.sell.map(c => '"' + c.name + '" L' + c.level + ' ' + c.elemental + ' ' + c.price + (c.where === 'cabinet' ? ' (cabinet)' : '') + (c.breakdown.includes('young') ? ' (young: half price)' : '')).concat(L.gearSell.map(g => g.label + ' (worn gear) ' + g.price));
+  out.push('sell: ' + (sells.length ? sells.join(', ') : 'nothing'));
   if (L.plants.length) out.push('plants: ' + L.plants.map(x => x.price).join(' + ') + ' = ' + L.plants.reduce((a, x) => a + x.price, 0) + ' coins');
-  out.push('cabinet: ' + (L.box.length ? L.box.map(c => '"' + c.name + '"').join(', ') : 'empty'));
-  out.push('pen: breed <a> <b> (two of one type; fee 20 + 5 x their levels; each parent once per 2,000 ticks)');
+  out.push('cabinet: ' + (L.box.length ? L.box.map(c => c.egg ? 'egg (hatches in ' + c.hatchIn + ' ticks)' : '"' + c.name + '"').join(', ') : 'empty'));
+  out.push('pen: breed <a> <b> (two of one type; fee 20 + 5 x their levels' + (homeStore(K, s) ? '' : ', x0.75 at this store') + '; each parent once per 2,000 ticks; the young one is an egg for ' + HATCH_TICKS + ' ticks, then half price until it has grown a level)');
   return out.join('\n');
 }
 export function buy(K, p, item, qty = 1) {
@@ -133,10 +150,13 @@ export function buy(K, p, item, qty = 1) {
   const stone = Object.keys(STONE_PRICE).find(n => n.toLowerCase() === String(item || '').toLowerCase());
   const potion = POTION_NAMES.find(n => n.toLowerCase() === String(item || '').toLowerCase());
   const gear = GEAR_NAMES.find(n => n.toLowerCase() === String(item || '').toLowerCase());
-  if (gear) {   // once: it is worn, not carried
+  if (gear) {   // one at a time: it is worn, not carried, and a worn item in its slot goes back to the store
     if (wears(p, gear)) return { ok: false, text: 'you already wear the ' + gear };
-    if (p.wallet < GEAR[gear].price) return { ok: false, text: 'not enough coins (' + GEAR[gear].price + ' for the ' + gear + ', you have ' + p.wallet + ')' };
-    p.wallet -= GEAR[gear].price; p.gear = { ...(p.gear || {}), [gear]: true };
+    const old = GEAR_NAMES.find(n => n !== gear && GEAR[n].slot === GEAR[gear].slot && wears(p, n)), back = old ? gearSellBack(p, old) : 0;
+    if (p.wallet + back < GEAR[gear].price) return { ok: false, text: 'not enough coins (' + GEAR[gear].price + ' for the ' + gear + ', you have ' + p.wallet + (old ? ' and ' + back + ' for the ' + old + ' sold back' : '') + ')' };
+    p.wallet += back - GEAR[gear].price; p.gear = p.gear || {}; if (old) delete p.gear[old];
+    p.gear[gear] = GEAR[gear].wear ? { left: GEAR[gear].wear.max } : true;
+    if (old) return { ok: true, text: 'swapped ' + old + ' for ' + gear + ' (' + old + ' sold back for ' + back + '; ' + p.wallet + ' left)' };
     return { ok: true, text: 'bought the ' + gear + ' for ' + GEAR[gear].price + ' coins and put it on (' + GEAR[gear].blurb.split(',')[0] + '; ' + p.wallet + ' left)' };
   }
   if (!stone && !potion) return { ok: false, text: 'the store does not sell "' + item + '"' };
@@ -157,7 +177,7 @@ function findMine(K, p, which, cabinetFirst = false) {
   const w = byId ? which : String(which || '').toLowerCase();
   const is = byId ? (x => x.id === w) : (x => (x.name ? x.name.toLowerCase() === w : x.type === w));
   const lists = cabinetFirst ? [[K.cabinet || [], 'cabinet'], [p.party || [], 'party']] : [[p.party || [], 'party'], [K.cabinet || [], 'cabinet']];
-  for (const [list, where] of lists) { const c = list.find(is); if (c) return { c, where }; }
+  for (const egg of [false, true]) for (const [list, where] of lists) { const c = list.find(x => is(x) && isEgg(x) === egg); if (c) return { c, where }; }   // an egg matches by type only when nothing hatched does
   return null;
 }
 // A creature leaving the player's hands altogether: the naming prompts and the follower let go (pruneNaming in
@@ -178,7 +198,14 @@ export function sell(K, p, which) {
     p.pack = p.pack.filter(x => x.potion); p.wallet += coins;
     return { ok: true, text: 'sold ' + plants.length + ' plants for ' + coins + ' coins (' + p.wallet + ')' };
   }
+  const gear = typeof which === 'string' ? GEAR_NAMES.find(n => n.toLowerCase() === which.trim().toLowerCase()) : null;   // gear names are reserved: never a creature
+  if (gear) {
+    if (!wears(p, gear)) return { ok: false, text: 'you do not wear the ' + gear };
+    const coins = gearSellBack(p, gear); delete p.gear[gear]; p.wallet += coins;
+    return { ok: true, text: 'sold the ' + gear + ' for ' + coins + ' coins (' + p.wallet + ')', price: coins };
+  }
   const m = findMine(K, p, which); if (!m) return { ok: false, text: 'no "' + which + '" in the party or the cabinet' };
+  if (isEgg(m.c)) return { ok: false, text: eggText(m.c) };
   const price = creaturePrice(m.c);
   leaving(p, m.c);
   if (m.where === 'party') p.party = p.party.filter(x => x !== m.c);
@@ -190,6 +217,7 @@ export function sell(K, p, which) {
 export function box(K, p, which, take = false) {
   if (!onStore(K, p)) return { ok: false, text: 'the cabinet is at a store' };
   const m = findMine(K, p, which, take); if (!m) return { ok: false, text: 'no "' + which + '"' };
+  if (isEgg(m.c)) return { ok: false, text: eggText(m.c) };
   if (take) {
     if (m.where !== 'cabinet') return { ok: false, text: '"' + which + '" is already in the party' };
     if (p.party.length >= PARTY_CAP) return { ok: false, text: 'the party is full (' + PARTY_CAP + ')' };
@@ -213,6 +241,7 @@ export function give(K, p, what, amount) {
   if (potion) { if ((other.pack || []).length >= packCap(other)) return { ok: false, text: 'their pack is full' }; const it = takePotion(p, potion); if (!it) return { ok: false, text: 'no ' + potion + ' in the pack' }; other.pack.push(it); return { ok: true, text: 'gave a ' + potion }; }
   if (w === 'plant') { const k = (p.pack || []).findIndex(x => !x.potion); if (k < 0) return { ok: false, text: 'no plant in the pack' }; if ((other.pack || []).length >= packCap(other)) return { ok: false, text: 'their pack is full' }; other.pack.push(p.pack.splice(k, 1)[0]); return { ok: true, text: 'gave a plant' }; }
   const c = (p.party || []).find(x => (x.name ? x.name.toLowerCase() === w : x.type === w));
+  if (c && isEgg(c)) return { ok: false, text: eggText(c) };
   if (c) { if (other.party.length >= PARTY_CAP) return { ok: false, text: 'their party is full' }; p.party = p.party.filter(x => x !== c); leaving(p, c); other.party.push(c);
     if (!c.name) { if (other.naming) (other.namingQueue || (other.namingQueue = [])).push(c.id); else other.naming = c.id; }   // an unnamed one is theirs to name now
     return { ok: true, text: 'gave "' + (c.name || c.type) + '"' }; }
@@ -231,6 +260,7 @@ export { hasEffect };
 export function effectsTick(K) {
   for (const p of [K.kevin, K.root]) {
     if (!p || !p.effects) continue;
+    if (!p.away && p.gear && p.gear['Quiet Bell']) wearGear(K, p, 'Quiet Bell');   // the Bell wears a tick at a time while its wearer is on the board
     p.effects = p.effects.filter(e => e.until > tick);
     if (p.cast && tick >= p.cast.until) { const s = p.cast.store; p.x = s.door.x; p.y = s.door.y; p.boat = false; p.moved = true; p.cast = null; p.msg = 'you reappear at ' + s.name; p.msgUntil = Date.now() + 4000; }
   }
@@ -247,6 +277,7 @@ export function usePotion(K, p, name, target) {
   if (spec.shard) {   // a shard on a party creature (23): one step toward its type, an evolution if a species line is crossed
     const c = target && target.id !== undefined ? (p.party || []).find(x => x.id === target.id) : null;
     if (!c) return { ok: false, text: potion + ' wants a party creature (by name)' };
+    if (isEgg(c)) return { ok: false, text: eggText(c) };
     const r = applyShard(K, p, c, spec.shard); takePotion(p, potion);
     return { ok: true, text: r.text + eventsText(r.events) };
   }
@@ -273,7 +304,7 @@ export function usePotion(K, p, name, target) {
       let best = null, bd = Infinity; for (const s of found) { const d = Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y)); if (d < bd) { bd = d; best = s; } }
       p.cast = { until: tick + spec.duration, store: best }; text = 'homeward: ' + best.name + ' in ' + spec.duration + ' ticks (an attack interrupts it)'; break;
     }
-    case 'Tonic': { const c = target && target.id !== undefined ? (p.party || []).find(x => x.id === target.id) : null; if (!c) return { ok: false, text: 'Tonic wants a party creature (by name)' }; const ev = addXP(K, p, c, 10, 'tonic'); text = '"' + (c.name || c.type) + '" +10 XP' + eventsText(ev); break; }   // the level applies at once (20.2)
+    case 'Tonic': { const c = target && target.id !== undefined ? (p.party || []).find(x => x.id === target.id) : null; if (!c) return { ok: false, text: 'Tonic wants a party creature (by name)' }; if (isEgg(c)) return { ok: false, text: eggText(c) }; const ev = addXP(K, p, c, 10, 'tonic'); text = '"' + (c.name || c.type) + '" +10 XP' + eventsText(ev); break; }   // the level applies at once (20.2)
     case 'Survey': revealSquare(K, p.x, p.y, 12); text = 'survey: the fog clears 25x25 around you'; break;
     case 'Spice': { const b = (K.baits || []).filter(x => x.by === p.id); if (!b.length) return { ok: false, text: 'no bait of yours to spice' }; for (const x of b) x.spiced = true; text = 'bait spiced'; break; }
     default: return { ok: false, text: potion + ' is not usable yet' };

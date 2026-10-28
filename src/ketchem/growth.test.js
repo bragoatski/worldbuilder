@@ -121,13 +121,13 @@ describe('the pen (step 9)', () => {
     expect(G.breed(K, p, 'Ma', 'Pa').text).toMatch(/the fee is/);
     p.wallet = 500;
     const r = G.breed(K, p, 'Ma', 'Pa');
-    expect(r.ok).toBe(true); expect(p.wallet).toBe(500 - fee); expect(r.text).toMatch(/in the cabinet\. name it/);
+    expect(r.ok).toBe(true); expect(p.wallet).toBe(500 - fee); expect(r.text).toMatch(/an egg .* in the cabinet: it hatches in 600 ticks, then name it/);
     const c = r.child;
     expect(K.cabinet).toContain(c); expect(c.type).toBe('herbivore'); expect(c.age).toBe(0); expect(c.gen).toBe(4);
     expect(c.prefArid).toBeGreaterThan(5); expect(c.prefArid).toBeLessThan(9);       // around the midpoint 7
     expect(c.prefTemp).toBeGreaterThan(3.5); expect(c.prefTemp).toBeLessThan(6.5);   // around 5
     expect(c.size).toBeGreaterThan(0.9); expect(c.size).toBeLessThan(1.3);
-    expect(c.parents).toEqual(['Ma', 'Pa']); expect(p.naming).toBe(c.id);
+    expect(c.parents).toEqual(['Ma', 'Pa']); expect(p.naming).toBeFalsy(); expect(c.hatchAt).toBe(sim.tick + G.HATCH_TICKS);   // an egg: named at hatching, not at birth
     expect(E.almanacEntry(K, c).variants).toContain('bred');
     expect(G.breed(K, p, 'Ma', 'Pa').text).toMatch(/bred 0 ticks ago/);
     p.x = 10; expect(G.breed(K, p, 'Ma', 'Pa').text).toMatch(/at a store/);
@@ -145,6 +145,8 @@ describe('the pen, after the critic', () => {
     for (let k = 0; k < 20; k++) { const g = G.offspringGenome(a, b, K.rng); expect(R.prefBucket(g.prefArid)).toBe(3); expect(R.prefBucket(g.prefTemp)).toBe(2); }
     const r = G.breed(K, p, 'herbivore', 'herbivore');
     expect(r.ok).toBe(true); expect(r.child).not.toBe(a); expect(a.bredAt).toBeDefined(); expect(b.bredAt).toBeDefined();
+    expect(p.naming).toBe(z.id); expect(p.namingQueue || []).toEqual([]);   // an egg has no name prompt yet
+    r.child.hatchAt = sim.tick; G.growthTick(K);                              // hatches: the prompt queues behind the catch still waiting
     expect(p.naming).toBe(z.id); expect(p.namingQueue).toEqual([r.child.id]);
     expect(E.nameCatch(K, p, 'Zed').ok).toBe(true); expect(p.naming).toBe(r.child.id);
     expect(G.breed(K, p, String(r.child.id), String(z.id)).text).toMatch(/newborn/);

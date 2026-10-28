@@ -5,7 +5,7 @@
 // animations (K.fx). Tick-driven work happens in encounterTick(K), called after every sim step while a board is up.
 import { T, grid, riverData, fauna, flora, road, tick, idx, inb, mulberry32, speciesKey, getSpeciesName } from '../sim.js';
 import { levelOf, populationOf, abilitiesOf, oddsOf, elementalType, genomeHash, glyphOf, TROPHIC } from './rules.js';
-import { groundOf, bearingTo } from './controls.js';
+import { groundOf, bearingTo, wearGear } from './controls.js';
 
 export const ENCOUNTER_RANGE = 6, ENCOUNTER_RESET = 100, ALERT_RANGE = { carnivore: 3, apex: 3 }, ALERT_DEFAULT = 2;
 export const ALERT_CLEAR = 50, WARY_TICKS = 200, BOLT_TICKS = 4, FLEE_TICKS = 6, ATTACK_COOLDOWN = 50, HARDY_COOLDOWN = 500;
@@ -48,6 +48,10 @@ export function fx(K, kind, o) { K.fx.push({ kind, start: tick, ...o }); K.fxCou
 // News for a player from tick-driven events (an attack that came when the pulses ran out): the page shows Kevin's as
 // a bubble, Root's ride on its next result.
 export function news(K, pid, text) { (K.news || (K.news = [])).push({ pid, text, tick }); }
+// A young one bred at the pen is an egg in the cabinet until it hatches (hatchAt): it cannot be named, sold, taken out, bred,
+// fed, given, followed, baited, sent or shaped.
+export function isEgg(c) { return !!c && c.hatchAt !== undefined; }
+export function eggText(c) { return 'that egg hatches in ' + Math.max(0, c.hatchAt - tick) + ' ticks'; }
 export function drainNews(K, pid) { if (!K.news) return []; const mine = K.news.filter(n => n.pid === pid); K.news = K.news.filter(n => n.pid !== pid); return mine.map(n => n.text); }
 // Ground a wild creature can stand on: land that is not steep, not a lake, and not a bridge (a road over water is
 // still water for a creature: the sim deletes fauna on an ocean tile).
@@ -131,7 +135,7 @@ export function targetsNear(K, p, range = 2) {
 
 // ---------- plants: pick and the pack ----------
 export function pickPlant(K, p) {
-  const cap = PACK_CAP + 5 * (partyAbilities(p).Pack || 0) + (p.gear && p.gear.Satchel ? 5 : 0);   // the same cap as market.packCap, the Satchel included
+  const cap = PACK_CAP + 5 * (partyAbilities(p).Pack || 0) + (p.gear && p.gear.Satchel ? 5 : 0) + (p.gear && p.gear.Pannier ? 8 : 0);   // the same cap as market.packCap, the Satchel and Pannier included
   if (p.pack.length >= cap) return { ok: false, text: 'pack full (' + cap + ')' };
   const k = flora.findIndex(f => f && f.x === p.x && f.y === p.y);
   if (k < 0) return { ok: false, text: 'no plant here' };
@@ -179,6 +183,7 @@ export function placeBait(K, p, kind, dir, which) {
   if (!d[0] && !d[1]) return { ok: false, text: kind + ' bait goes on a tile beside you' };
   const k = (p.party || []).findIndex(c => (which && c.name && c.name.toLowerCase() === String(which).toLowerCase()) || (!which && true));
   if (k < 0) return { ok: false, text: which ? 'no "' + which + '" in the party' : 'the party is empty' };
+  if (isEgg(p.party[k])) return { ok: false, text: eggText(p.party[k]) };
   clearPlayerBaits(K, p);
   const c = p.party.splice(k, 1)[0];
   dropBait(K, p, kind, x, y, c);
@@ -223,7 +228,7 @@ function baitTick(K) {
   }
 }
 // Whoever owns an id, seated or waiting: a bait, a growl or a payload stays with its own player across a seat swap.
-function playerById(K, id) { return [K.kevin, K.root, K.rootStash, K.guestStash].find(q => q && (q.id || 'root') === id) || null; }
+export function playerById(K, id) { return [K.kevin, K.root, K.rootStash, K.guestStash].find(q => q && (q.id || 'root') === id) || null; }
 
 // ---------- awareness (6) and the predator's warning (11) ----------
 function pulsesFor(L, rng) { return L >= 10 ? 1 : L >= 8 ? 1 + (rng() < 0.5 ? 1 : 0) : L >= 7 ? 2 + (rng() < 0.5 ? 1 : 0) : L >= 6 ? 3 + (rng() < 0.5 ? 1 : 0) : 4 + (rng() < 0.5 ? 1 : 0); }
@@ -266,7 +271,7 @@ function awarenessTick(K) {
     const near = np ? np[2] : Infinity, p = np ? np[1] : null, pid = np ? np[0] : null;
     const ab = p ? abilitiesOfPlayer(p) : {};
     const facts = (near <= 4 || st.state !== 'calm') ? factsOf(f) : null;
-    const alertRange = ALERT_RANGE[f.type] || ALERT_DEFAULT;
+    const alertRange = Math.max(1, (ALERT_RANGE[f.type] || ALERT_DEFAULT) - (p && p.gear && p.gear['Quiet Bell'] ? 1 : 0));   // the Quiet Bell (23): noticed one tile later
     // wary wears off; alert clears after 50 ticks with no player within 3
     if (st.state === 'wary' && tick >= st.until) { st.state = near <= alertRange ? 'alert' : 'calm'; st.until = tick + ALERT_CLEAR; }
     if (st.state === 'calm' && near <= alertRange && !(ab.Stalk >= 1)) { st.state = 'alert'; st.until = tick + ALERT_CLEAR; fx(K, 'alert', { id: f.id, len: 10 }); }
@@ -361,6 +366,7 @@ export function throwStone(K, p, f, stone = p.stone) {
   if (st.state === 'fled') return { ok: false, text: 'it has fled' };
   const odds = oddsFor(K, p, f, stone), facts = factsOf(f);
   p.stones[key]--;
+  if (stone !== 'Obsidian' && !(stone === 'Amber' && facts.L >= 10) && p.gear && p.gear['Lucky Charm']) wearGear(K, p, 'Lucky Charm');   // only a throw the charm helped (rules.js: Obsidian is sure, Amber on L10 stays 0), as the boots wear only where they help
   const roll = Math.floor(K.rng() * 100) + 1;   // 1..100; caught when roll <= odds
   const caught = roll <= odds;
   if (!caught && st.asleep && K.rng() < 0.25) { delete st.asleep; f.held = !!st.baitId; }   // Slumber: each throw at a sleeper has a 25% chance to wake it
@@ -430,7 +436,7 @@ export function learnSpecies(e, f) {
 }
 const NAME_OK = /^[A-Za-z0-9' ]+$/;
 // Words the store and the pack commands read: a creature carrying one would be sold or fed in its place.
-const RESERVED = /^(plants?( \d+)?|all plants|coins?|amber|geode|obsidian|herbivore|carnivore|omnivore|scavenger|apex|fleetfoot|hawkeye|slumber|hush|musk|smoke|decoy|homeward|tonic|survey|spice|mirror|(dune|marsh|ember|frost|sun|shade|peak|vale) shard|satchel|trail boots|lucky charm)$/i;
+const RESERVED = /^(plants?( \d+)?|all plants|coins?|amber|geode|obsidian|herbivore|carnivore|omnivore|scavenger|apex|fleetfoot|hawkeye|slumber|hush|musk|smoke|decoy|homeward|tonic|survey|spice|mirror|(dune|marsh|ember|frost|sun|shade|peak|vale) shard|satchel|trail boots|lucky charm|waders|pannier|quiet bell)$/i;
 // Naming prompts point at creatures the player still owns; a creature sold, given, eaten, taken or fed away drops
 // out of them (and the queue moves up), so N never sticks on a creature that is gone. Called every tick.
 export function pruneNaming(K, p) {
@@ -472,6 +478,7 @@ export function nameCatch(K, p, raw, speciesNick) {
   pruneNaming(K, p);
   const c = p.naming ? (p.party.find(x => x.id === p.naming) || K.cabinet.find(x => x.id === p.naming)) : null;
   if (!c) return { ok: false, text: 'nothing to name' };
+  if (isEgg(c)) return { ok: false, text: eggText(c) };
   const taken = named(K).find(x => x !== c && x.name && x.name.toLowerCase() === name.toLowerCase());
   if (taken) return { ok: false, text: 'there is a "' + taken.name + '" already; names are one to a creature, so pick another' };   // the verbs, the cabinet and give find creatures by name
   c.name = name; p.naming = (p.namingQueue || []).shift() || null;   // the next unnamed one, if any, takes the prompt
@@ -486,6 +493,7 @@ export function nameCatch(K, p, raw, speciesNick) {
 export function follow(K, p, which) {
   const c = which ? p.party.find(x => (x.name || '').toLowerCase() === String(which).toLowerCase()) : p.party[0];   // F with no name: the first in the party
   if (!c) return { ok: false, text: which ? 'no "' + which + '" in the party' : 'the party is empty' };
+  if (isEgg(c)) return { ok: false, text: eggText(c) };
   p.follower = c.id; p.followerAt = { x: p.x, y: p.y };
   return { ok: true, text: '"' + (c.name || c.type) + '" follows' };
 }

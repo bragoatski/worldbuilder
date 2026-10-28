@@ -950,7 +950,19 @@ clamped into that bucket, so two parents of one species breed true; where they d
 A newborn breeds once it has grown a level (otherwise a newborn and any third creature would be a coin loop: a
 bred L5 grazer sells for far more than its 70-coin fee; the economics of breeding are the owner's call). A pending
 catch name keeps its turn: the newborn queues for the naming prompt. The panel pairs creatures by id, so two unnamed
-ones of a kind can be bred. Not built: a pen fee that varies by store, selling at a pen, hatching time.
+ones of a kind can be bred.
+
+Breeding extras (owner-approved proposal 2026-10-27; the numbers are first readings, overturnable after the playtest):
+- An egg: a bred young one lies in the cabinet as an egg for 600 ticks (about two minutes at the default speed). An
+  egg cannot be named, sold, boxed or taken, bred, fed, given, followed, used as bait, shaped by a shard or sent to
+  another save; the panel shows "egg, hatches in N ticks" with no buttons. It hatches into its breeder's naming
+  question (whoever holds the seat by then: the owner is found by id) with a message; it is born at the hatch, so the
+  newborn rule (it breeds once it has grown a level) counts from there.
+- The pen fee by store: the two start stores charge the full fee (20 + 5 per parent level); a found store charges
+  three quarters, rounded (a reason to travel).
+- A young one that has not grown a level sells at half (the price breakdown says "x0.5 young"), which closes the coin
+  loop the earlier note flagged (a bred L5 grazer sold for far more than its fee). This also applies to young ones
+  already in a save.
 
 ### 20.4 Alternatives considered
 | idea | verdict |
@@ -1198,8 +1210,23 @@ readings, all overturnable: the kinds, the numbers and whether gear survives a k
   carnivore or breeds saves for. They are the long-game coin sink the market lacked after the potions.
 - Shown: the BUY tab lists gear with "worn" once bought; the HUD's pack tooltip and I list what is worn; Root's
   `shop` has a gear line and `pack` says what Root wears. Saves carry it.
-- Not built: gear that wears out, selling gear back, gear slots, more gear (a spyglass would need sight to be one rule
-  across the page and Root's look first).
+- Gear extras (owner-approved proposal 2026-10-27, numbers overturnable): three slots, pack, feet and charm, one item
+  each; buying into a filled slot swaps, selling the old item back first (its refund counts toward the price). Wear:
+  Trail Boots 2,000 steps and Waders 2,000 steps (a step counts only where the bonus applies, not on a road or a
+  winded step), Lucky Charm 40 throws (only throws it helps: not Obsidian, not Amber at L10), Quiet Bell 3,000 ticks
+  worn on the board (not while away); the Satchel and the Pannier never wear. Worn-out gear comes off with a message.
+  The HUD, I and Root's pack say what is left. Selling back at any store pays half the price, scaled by what is left.
+
+| gear | slot | price | effect | wears |
+|---|---|---|---|---|
+| Satchel | pack | 120 | +5 pack slots | never |
+| Pannier | pack | 260 | +8 pack slots | never |
+| Trail Boots | feet | 180 | stride +1 on open ground and river banks | 2,000 steps |
+| Waders | feet | 160 | stride +1 on river and wetland tiles | 2,000 steps |
+| Lucky Charm | charm | 300 | odds +5 with Amber and Geode | 40 throws |
+| Quiet Bell | charm | 240 | creatures notice the wearer one tile later (alert range -1, never below 1) | 3,000 ticks |
+
+- Not built: a spyglass (sight would need to be one rule across the page and Root's look first).
 
 ## 24. Trading between saves
 

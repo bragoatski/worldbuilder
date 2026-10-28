@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-27 (t) - Ketch'em breeding and gear extras - DONE, GATE GREEN
+Owner ask: chose "Breeding and gear extras", then approved the proposal as written ("Build as proposed"). Mechanics sec. 20 (the pen) and 23 (gear). **Not deployed**; nothing pushed.
+
+What the game does now: a bred young one is an egg for about two minutes, then asks its breeder for a name; a found store's pen charges three quarters; a young one that has not grown a level sells at half (no more coin loop). Gear has three slots (pack, feet, charm), and buying into a full slot swaps with the old item sold back; Boots, Waders, the Charm and the Bell wear out (the HUD says what is left), and any gear sells back at half, less wear. New: Waders (rivers and wetland), Pannier (+8 slots), Quiet Bell (noticed a tile later). Root does all of it through its door; the guest's store page sells gear too.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 310/310 (new `src/ketchem/extras.test.js`, 21; growth.test.js updated for eggs), build green. Built by a builder subagent from an exact spec; gate re-run here. Critic (Sonnet): 0 blockers, 4 minor; taken: the Charm wore on throws it could not help (Amber at L10), an egg carried a birth time before hatching, the Pannier's sell-back copy; left: a hatch with no owner (cannot happen: every player has an id), an open panel not redrawing on a hatch (cosmetic). My own patch then commented out half of the breed line with a mid-line comment; three tests caught it. Rehearsals: rehearse18 (new) 12/12 twice; rehearse12 (items, with Root) 11/11 and rehearse9 (the pen, with Root) updated for eggs, both on a scratch relay; adversary 0 findings; fuzz seed 223: 0 violations, 0 page errors. Screenshots: `docs/04 Handoffs/img/2026-10-27-ketchem-extras/`.
+
 ## Session 2026-10-27 (s) - Ketch'em the Almanac's drawings on the guest's screen - DONE, GATE GREEN
 Owner ask: "keep going". The last item with no owner decision in it (mechanics 26). **Not deployed**; nothing pushed.
 
