@@ -1274,10 +1274,10 @@ two people play on one machine without sharing a keyboard. Readings, overturnabl
 | d-pad, left stick | move (held repeats) |
 | A | throw |
 | B | next creature within 2 tiles |
-| X | name the catch: the question offers a free name, "Herbivore 1", that A accepts (a pad cannot type) |
+| X | name the catch, or a new species: the question offers a free name ("Herbivore 1", "New herbivore 1") that A accepts, since a pad cannot type |
 | Y | pick, read a signpost, or open the store; "here" when placing a bait |
 | LB / RB | previous / next stone |
-| LT | potion (then A B X Y for the first four) |
+| LT | potion (then A B X Y for four at a time; RB turns to the next four) |
 | RT | bait (then A plant, B scatter, X meat, Y stake, then the d-pad, or Y for here) |
 | Back | give to Kevin |
 | Start | the Almanac; with nobody in the seat, asks who joins (A takes "Guest") |
@@ -1288,9 +1288,9 @@ two people play on one machine without sharing a keyboard. Readings, overturnabl
 - On a pad, A B X Y are the choice keys, so the digit clash at the shared keyboard (sec. 25) does not arise.
 - A guest on another screen plays on their own screen; this pad does nothing for them. A pad that disconnects lets go of
   any held direction.
-- Not built: a pad on the guest's own screen through the link; a species name from a pad (the bar opens empty, so it
-  needs a keyboard, or B to decline for now); a fifth potion or more from a pad (A B X Y reach the first four; the
-  message says so); Kevin on a pad; vibration.
+- A guest on another screen can use a pad on their own device (sec. 26): the same buttons, and A / B answer the
+  question on their screen. This machine's pad never drives them, and theirs never drives a guest here.
+- Not built: Kevin on a pad; vibration.
 
 ## 26. The guest link: the guest seat from another screen
 
@@ -1309,7 +1309,9 @@ between the two pages. Readings, overturnable.
   is for, what to give) appear on the guest's screen. Anywhere, the command line takes `give coins 5` and `feed Moss`
   or `feed Wolf, Moss`; on a store tile the guest sees what it sells and types `buy Geode 2`, `sell Moss`,
   `sell plant 2`, `box Moss`, `take Moss` or `breed Moss, Fern`. The Almanac (Y or the button) appears as text under
-  the picture, with bearings from the guest, until Y again; nothing opens on Kevin's screen. While a guest plays from another screen, the arrows on Kevin's
+  the picture, with bearings from the guest, until Y again; nothing opens on Kevin's screen. A gamepad on the guest's
+  device plays too, with the buttons of sec. 25.1 (added 2026-10-27): the page loads the game's own pad mapping from
+  the link and sends button numbers through the same key input; A and B answer the question on the guest's screen. While a guest plays from another screen, the arrows on Kevin's
   keyboard are Kevin's again.
 - When the guest leaves (the chip), the link closes and their page asks for a code again. A load or a new board keeps
   the same guest on the other screen; if Root holds the seat in the loaded game, the link closes.

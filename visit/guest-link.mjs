@@ -16,6 +16,10 @@
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+// The pad mapping the game uses (pure, no imports), served to the guest's page so a pad there reads the same way.
+const PAD_JS = readFileSync(new URL('../src/ketchem/pad.js', import.meta.url), 'utf8');
 
 const MAX_BODY = 2e6, MAX_INPUTS = 200, HOST_PORT_DEFAULT = 7798;
 const WRONG_LIMIT = 20, WRONG_WINDOW = 60000, LOCKOUT = 60000;   // per guest address: 20 wrong codes a minute, then a minute's pause
@@ -78,6 +82,7 @@ export function createGuestLink(opts = {}) {
     const url = new URL(req.url, 'http://x'), path = url.pathname;
     try {
       if (path === '/' || path === '/index.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(GUEST_PAGE); }
+      if (path === '/pad.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(PAD_JS); }   // public code, no game data
       if (path !== '/frame' && path !== '/input') return send(res, 404, { error: 'not here' });
       const who = req.socket.remoteAddress || '?', now = Date.now(), w = wrong.get(who);
       if (w && w.until > now) return send(res, 429, { error: 'too many wrong codes; wait a minute' });
@@ -140,14 +145,14 @@ button{cursor:pointer;background:transparent}button:active{background:rgba(255,2
 <div id="more"><button data-seq="j 1">Bait plant</button><button data-seq="j 2">Scatter</button><button data-seq="j 3">Bait meat</button><button data-seq="j 4">Stake</button>
 <button data-k="h">Give</button><button data-k="u">Feed</button><button data-k="y">Almanac</button></div>
 <div class="row" style="margin-top:10px"><input id="cmd" placeholder="give coins 5, feed Moss; at a store: buy Geode 2, sell Moss" autocomplete="off"><button id="cmdGo">Send</button></div>
-<div class="keys">Keys: arrows move, . target, / throw, [ ] stone, ' name, ; pick or the store, , follow, L then a number for a potion, K the pack, J bait (1 plant, 2 scatter, 3 meat, 4 stake, then an arrow, or ; for here), H give to the host, U feed, Y the Almanac. A bait button waits for an arrow or Use.</div></div>
+<div class="keys">Keys: arrows move, . target, / throw, [ ] stone, ' name, ; pick or the store, , follow, L then a number for a potion, K the pack, J bait (1 plant, 2 scatter, 3 meat, 4 stake, then an arrow, or ; for here), H give to the host, U feed, Y the Almanac. A bait button waits for an arrow or Use. A gamepad works too: A throw, B target, X name, Y use, RT bait, LT potion, Back give, R3 feed, Start the Almanac; A and B answer a question here.</div></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);let code=new URLSearchParams(location.search).get('code')||'';let lastQ=0,answeredAt=0,out=[],busy=false,running=false;const held=new Set();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function push(ev){out.push(ev);flush();}
-async function flush(){if(busy||!out.length)return;busy=true;const events=out.splice(0,50);let sent=false;try{sent=(await fetch('/input?code='+encodeURIComponent(code),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({events})})).ok;}catch(e){}
-  busy=false;if(!sent){out.unshift(...events);return setTimeout(flush,500);}if(out.length)flush();}   // a failed send is sent again, so a key is never left down
+async function flush(){if(busy||!out.length)return;busy=true;const events=out.splice(0,50);let sent=false,gone=false;try{const r=await fetch('/input?code='+encodeURIComponent(code),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({events})});sent=r.ok;gone=r.status===403||r.status===429;}catch(e){}
+  busy=false;if(gone){out=[];return;}if(!sent){out.unshift(...events);return setTimeout(flush,500);}if(out.length)flush();}   // no game for this code: drop, never retry into the wrong-code lockout (the host lets go of held keys when the link goes quiet)   // a failed send is sent again, so a key is never left down
 async function tick(){
   try{const r=await fetch('/frame?code='+encodeURIComponent(code));
     if(r.status===403||r.status===429){running=false;releaseAll();$('game').hidden=true;$('join').hidden=false;$('joinMsg').textContent=(await r.json()).error;return;}
@@ -182,6 +187,27 @@ for(const b of document.querySelectorAll('[data-seq]'))b.addEventListener('click
 function join(){code=$('code').value.trim()||code;if(!code)return;history.replaceState(null,'','?code='+encodeURIComponent(code));lastQ=0;answeredAt=0;$('join').hidden=true;$('game').hidden=false;if(!running){running=true;tick();}}
 $('go').onclick=join;$('code').addEventListener('keydown',e=>{if(e.key==='Enter')join();});
 if(code){$('code').value=code;join();}
+</script>
+<script type="module">
+import { padPressed, padEdges } from '/pad.js';
+// A gamepad here sends its button numbers; the host reads them as it reads its own pad. A and B answer a question on
+// this screen instead.
+let prev=new Set(),timer=null,index=-1;
+function poll(){
+  const pads=navigator.getGamepads?[...navigator.getGamepads()].filter(p=>p&&p.connected!==false):[],gp=pads[0]||null;
+  if(!gp){for(const b of prev)push({t:'up',key:'pad'+b});prev=new Set();index=-1;clearInterval(timer);timer=null;return;}
+  if(gp.index!==index){for(const b of prev)push({t:'up',key:'pad'+b});const first=index<0;index=gp.index;prev=first?new Set():padPressed(gp);if(!first)return;}
+  if($('game').hidden){prev=new Set();return;}   // no game: nothing to send (the host lets go when the link goes quiet)
+  const now=padPressed(gp,prev),ed=padEdges(prev,now),qOpen=!$('q').hidden;prev=now;
+  for(const b of ed.ups)push({t:'up',key:'pad'+b});
+  for(const b of ed.downs){
+    if(qOpen&&(b===0||b===1)){if($('q').hidden)continue;answer(b===0?$('qIn').value:null);continue;}   // A answers, B declines; both in one look answer once
+    push({t:'down',key:'pad'+b});
+  }
+}
+window.addEventListener('gamepadconnected',()=>{if(!timer)timer=setInterval(poll,50);});
+function padLetGo(){if(!$('game').hidden)for(const b of prev)push({t:'up',key:'pad'+b});prev=new Set();}
+window.addEventListener('blur',padLetGo);document.addEventListener('visibilitychange',()=>{if(document.hidden)padLetGo();});   // as the keys do: away from the page lets go
 </script></body></html>`;
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

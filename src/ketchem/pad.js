@@ -31,10 +31,11 @@ export function padEdges(prev, now) {
   return { downs: [...now].filter(i => !prev.has(i)), ups: [...prev].filter(i => !now.has(i)) };
 }
 // What a button press means now. ctx.asking: the guest's own question is open; ctx.picking: the guest is choosing a
-// bait kind or a potion. Returns a guest key, 'ok' / 'cancel' for the question, or null (nothing).
+// bait kind or a potion; ctx.page: which four of the potion list A B X Y stand for (RB turns the page). Returns a guest
+// key, 'ok' / 'cancel' for the question, or null (nothing).
 export function padKey(i, ctx = {}) {
   if (ctx.asking) return i === 0 ? 'ok' : i === 1 ? 'cancel' : null;
-  if (ctx.picking && i >= 0 && i < PAD_PICK.length) return String(i + 1);
+  if (ctx.picking && i >= 0 && i < PAD_PICK.length) return String((ctx.page || 0) * PAD_PICK.length + i + 1);
   return Object.hasOwn(PAD_KEYS, i) ? PAD_KEYS[i] : null;
 }
 // The arrow a released button let go of, so a held move stops (lower case, as guestKey keeps them).

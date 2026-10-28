@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-27 (p) - Ketch'em the gamepad finished: a pad on the guest's own screen, species names, every potion - DONE, GATE GREEN
+Owner ask: "after you are done with this session build the next", then "keep working on this until the entire build is finished". The next part closed the gamepad's own "not built" list. Mechanics 25.1 and 26. **Not deployed**; nothing pushed.
+
+What the game does now: a guest on another screen can play with a gamepad on their device (the same buttons as at the shared screen; A and B answer the question on their page). A pad now names a new species ("New herbivore 1", offered, A accepts) and reaches every potion (RB turns the list four at a time). This machine's pad drives only a guest here, and a remote guest's pad only them.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 284/284 (pad +1, guest +1, guest-link +1 for `/pad.js`), build green. Critic (Sonnet): 1 blocker, a hand-built request could pick a two-digit potion without a pad (now pad only), and 3 risks, all taken: this machine's pad releasing could stop a remote guest's held arrow; the guest page dropped pad releases while it had no game and kept them on blur; events retried after a 403 into the wrong-code lockout (now dropped). Rehearsals: rehearse15 31/31 (the guest's own pad: move, give by A on their screen, bait here, the Almanac), rehearse16 21/21 (RB to the fifth potion), rehearse14 35/35 on a scratch relay; adversary 0 findings; fuzz seed 197: 0 violations, 0 page errors. Note: `visit/guest-link.mjs` now reads `src/ketchem/pad.js` at start, so an edit to pad.js also needs a link restart.
+
 ## Session 2026-10-27 (o) - Ketch'em gamepad for the guest seat - DONE, GATE GREEN
 Owner ask: "build the next part". Of the remaining items, the gamepad is the only one with no hosting, no money and nothing public; it also removes the digit clash between Kevin and a keyboard guest. Mechanics sec. 25.1 (the button layout is a reading, overturnable). **Not deployed**; nothing pushed.
 

@@ -2,7 +2,8 @@
 // Gamepad rehearsal (2026-10-27): a scripted standard gamepad plays the guest seat on the live page. Start asks for a
 // guest and A accepts "Guest"; the d-pad and the stick move them; B targets, A throws, X offers a free name and A takes
 // it; RT then A then Y baits here; Back gives Kevin coins; R3 feeds; Start opens and closes the Almanac; B declines the
-// guest's own question; and the pad never answers one of Kevin's. Needs nothing (no Root is called).
+// guest's own question; and the pad never answers one of Kevin's; RB turns the potion list to a fifth potion. Needs
+// nothing (no Root is called).
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 const require = createRequire('C:/Users/KevinReilly/taipan/package.json');
@@ -77,6 +78,14 @@ ok('Start opens the Almanac for the guest', /^Almanac/.test(head || ''), head);
 await page.screenshot({ path: `${out}/pad-almanac.png` });
 await press(START);
 ok('Start again closes it', await page.evaluate(() => document.getElementById('kPanel').hidden));
+// RB turns the potion list: the fifth potion is reachable from the pad
+const LT = 6, RB = 5;
+await page.evaluate(() => { const g = window.__wb.ketchem.board().root; for (const n of ['Fleetfoot', 'Hush', 'Smoke', 'Decoy', 'Hawkeye']) g.pack.push({ potion: n }); });
+await press(LT); s = await st(); ok('LT lists four potions under A B X Y and says RB has more', /^potion: A Fleetfoot x1, B Hush x1, X Smoke x1, Y Decoy x1 \(RB: more, 1\/2\)/.test(s.gmsg || ''), s.gmsg);
+await press(RB); s = await st(); ok('RB turns to the fifth', /^potion: A Hawkeye x1 \(RB: more, 2\/2\)/.test(s.gmsg || ''), s.gmsg);
+await press(A); s = await st();
+const hk = await page.evaluate(() => window.__wb.ketchem.board().root.pack.filter(x => x.potion === 'Hawkeye').length);
+ok('A uses the fifth potion', hk === 0 && /Hawkeye/i.test(s.gmsg || ''), s.gmsg);
 // a held d-pad is let go when the pad disappears
 await page.evaluate(() => { window.__pad.buttons[15] = { pressed: true, value: 1 }; }); await page.waitForTimeout(150);
 await page.evaluate(() => { window.__pads = []; }); await page.waitForTimeout(200);

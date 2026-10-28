@@ -13,6 +13,10 @@ mkdirSync(out, { recursive: true });
 const browser = await chromium.launch();
 const host = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
 const guest = await (await browser.newContext({ viewport: { width: 420, height: 900 }, hasTouch: true })).newPage();
+await guest.addInitScript(() => {   // a pad on the guest's own screen, held by the script
+  window.__pad = { id: 'guest pad', index: 0, connected: true, mapping: 'standard', buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] };
+  Object.defineProperty(navigator, 'getGamepads', { value: () => [window.__pad], configurable: true });
+});
 const errors = [];
 for (const [who, p] of [['host', host], ['guest', guest]]) {
   p.on('console', m => { if (m.type() === 'error' && !/ERR_(EMPTY_RESPONSE|CONNECTION_RESET|CONNECTION_REFUSED)/.test(m.text())) errors.push(who + ': ' + m.text()); });
@@ -109,6 +113,26 @@ ok('Y on the guest\'s keyboard hides it', await guest.evaluate(() => document.ge
 await guest.keyboard.press('j'); await guest.keyboard.press('4'); await guest.keyboard.press(dirKey15); await host.waitForTimeout(900);
 b15 = await gBaits15(); ok('J 4 and an arrow on the guest\'s keyboard stake Moss', b15.length === 1 && b15[0].kind === 'stake' && b15[0].payload === 'Moss', JSON.stringify(b15) + ' ' + await gmsg());
 await guest.screenshot({ path: `${out}/guest-parity.png`, fullPage: true });
+// a gamepad on the guest's own screen
+const gpress = async i => { await guest.evaluate(i => { window.__pad.buttons[i] = { pressed: true, value: 1 }; }, i); await host.waitForTimeout(250); await guest.evaluate(i => { window.__pad.buttons[i] = { pressed: false, value: 0 }; }, i); await host.waitForTimeout(700); };
+await guest.evaluate(() => window.dispatchEvent(new Event('gamepadconnected')));
+await host.evaluate(() => { const K = window.__wb.ketchem.board(); K.kevin.x = K.root.x; K.kevin.y = K.root.y; K.root.wallet = 40; K.root.pack.push({ type: 'grass', gen: 0 }); K.baits = K.baits.filter(b => b.by !== 'guest'); });
+await host.evaluate(() => window.__wb.ketchem.pause(false)); await host.waitForTimeout(1500); await host.evaluate(() => window.__wb.ketchem.pause(true));   // paused since the start, Sam is winded: let the stride budget refill
+const gx0 = await pos(); await gpress(15); const gx1 = await pos();
+ok('the guest\'s own pad moves Sam', gx1.g[0] !== gx0.g[0] || gx1.g[1] !== gx0.g[1] || /winded|nothing/.test(await gmsg()), JSON.stringify(gx0.g) + ' -> ' + JSON.stringify(gx1.g));
+await host.evaluate(() => { const K = window.__wb.ketchem.board(); K.kevin.x = K.root.x; K.kevin.y = K.root.y; });
+const kp0 = await kw(); await gpress(8);
+await guest.waitForSelector('#q:not([hidden])', { timeout: 8000 });
+q15 = await guest.evaluate(() => [document.getElementById('qText').textContent, document.getElementById('qIn').value]);
+ok('Back on the guest\'s pad asks on their screen', /Give Kevin what\?/.test(q15[0]) && q15[1] === 'coins 10', JSON.stringify(q15));
+await gpress(0); const kp1 = await kw();
+ok('A on the guest\'s pad answers it there', kp1.wallet === kp0.wallet + 10 && await guest.evaluate(() => document.getElementById('q').hidden), JSON.stringify(kp0) + ' -> ' + JSON.stringify(kp1));
+await gpress(7); await gpress(0); await gpress(3);
+b15 = await gBaits15(); const sp = await pos();
+ok('RT, A, Y on the guest\'s pad bait under Sam', b15.length === 1 && b15[0].kind === 'plant' && b15[0].x === sp.g[0] && b15[0].y === sp.g[1], JSON.stringify(b15) + ' ' + await gmsg());
+await gpress(9); const alm2 = await guest.evaluate(() => document.getElementById('alm').hidden ? '' : document.getElementById('alm').textContent);
+ok('Start on the guest\'s pad shows the Almanac there', /^Almanac:/.test(alm2), alm2.split('\n')[0]);
+await gpress(9);
 await host.evaluate(() => window.__wb.ketchem.pause(false));
 await host.screenshot({ path: `${out}/host.png` });
 // leaving closes the link

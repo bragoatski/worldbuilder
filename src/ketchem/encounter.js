@@ -459,6 +459,11 @@ export function freeName(K, base) {
   const used = new Set(named(K).filter(x => x.name).map(x => x.name.toLowerCase()));
   for (let n = 1; ; n++) { const name = base + ' ' + n; if (!used.has(name.toLowerCase())) return name; }
 }
+// A species nickname nobody uses, "New herbivore 1", "New herbivore 2", ... (at most 16 letters): a pad's offer.
+export function freeSpeciesName(K, type) {
+  const used = new Set(Object.values((K.almanac && K.almanac.species) || {}).map(e => String(e.nickname || '').toLowerCase()));
+  for (let n = 1; ; n++) { const name = ('New ' + type).slice(0, 16 - String(n).length - 1) + ' ' + n; if (!used.has(name.toLowerCase())) return name; }
+}
 export function nameCatch(K, p, raw, speciesNick) {
   if (!p.naming && p.namingSpecies) return nameSpecies(K, p, raw);   // nothing caught to name: the evolved species takes the name
   const name = String(raw || '').trim().slice(0, 24);

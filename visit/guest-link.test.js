@@ -24,6 +24,11 @@ describe('the guest link', () => {
     expect(page).toContain('the guest seat'); expect(page).not.toContain(String.fromCharCode(0x2014));
     const r = await fetch(guest + '/frame?code=123456'); expect(r.status).toBe(403); expect((await r.json()).error).toBe('no game here with that code');
   });
+  it('serves the game\'s pad mapping to the guest page, which loads it', async () => {
+    const r = await fetch(guest + '/pad.js'); expect(r.status).toBe(200); expect(r.headers.get('content-type')).toMatch(/javascript/);
+    const js = await r.text(); expect(js).toContain('export function padKey'); expect(js).not.toMatch(/^import /m);
+    expect(await (await fetch(guest + '/')).text()).toContain("from '/pad.js'");
+  });
   it('the guest port has no host side', async () => {
     expect((await jpost(guest, '/host/open', { code: '123456' })).status).toBe(404);
   });

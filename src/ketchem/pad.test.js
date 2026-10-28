@@ -41,6 +41,10 @@ describe('the guest\'s gamepad (25.1)', () => {
     expect(padKey(14, { picking: true })).toBe('ArrowLeft');
     expect(padKey(3, { picking: false })).toBe(';');   // after the kind, Y is "here"
   });
+  it('RB\'s pages: on the second page A B X Y are 5 6 7 8', () => {
+    expect([0, 1, 2, 3].map(i => padKey(i, { picking: true, page: 1 }))).toEqual(['5', '6', '7', '8']);
+    expect(padKey(0, { picking: false, page: 1 })).toBe('/');   // a page means nothing outside a choice
+  });
   it('with the guest\'s question open, A answers, B declines, and nothing else acts', () => {
     expect(padKey(0, { asking: true })).toBe('ok'); expect(padKey(1, { asking: true })).toBe('cancel');
     expect(padKey(12, { asking: true })).toBe(null); expect(padKey(7, { asking: true, picking: true })).toBe(null);

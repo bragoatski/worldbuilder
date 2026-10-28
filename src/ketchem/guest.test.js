@@ -104,6 +104,14 @@ describe('the guest link leaves nothing behind (critic 2026-10-27)', () => {
 });
 
 describe('a name for a guest on a pad (25.1)', () => {
+  it('a species nickname offer is unused, fits 16 letters, and is accepted', () => {
+    const K = world(); Gst.seatGuest(K, false, 'Sam'); const g = K.root;
+    K.almanac.species.x = { nickname: 'New herbivore 1', type: 'herbivore', seen: 1, caught: 0, bestLevel: 1 };
+    expect(E.freeSpeciesName(K, 'herbivore')).toBe('New herbivore 2');
+    const s = E.freeSpeciesName(K, 'scavenger'); expect(s.length).toBeLessThanOrEqual(16); expect(s).toMatch(/ 1$/);
+    const f = put('herbivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(f), 1); g.party.push(f); g.namingSpecies = f.id;
+    expect(E.nameSpecies(K, g, E.freeSpeciesName(K, 'herbivore')).ok).toBe(true);
+  });
   it('is the first "<Type> N" nobody holds, counting both waiting records and bait payloads, and it names the catch', () => {
     const K = world(); K.root = E.initPlayer(C.newPlayer(5, 5), 'root'); K.root.away = true;
     const mk = name => { const f = put('herbivore', 30, 30); sim.fauna.splice(sim.fauna.indexOf(f), 1); f.name = name; return f; };
