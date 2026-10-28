@@ -130,6 +130,8 @@ m15 = await gmsg(); ok('and Moss eats', /"Moss" eats a (rare )?plant/.test(m15),
 await guest.click('#more [data-k="y"]'); await host.waitForTimeout(900);
 const alm = await guest.evaluate(() => document.getElementById('alm').hidden ? '' : document.getElementById('alm').textContent);
 ok('the Almanac button shows the Almanac as text on the guest\'s screen', /^Almanac: \d+ species, \d\/4 stores found/.test(alm) && /caught 1/.test(alm), alm.split('\n').slice(0, 2).join(' | '));
+const glyphs = await guest.evaluate(() => [...document.querySelectorAll('#almG figure')].map(f => [f.querySelector('img').src.slice(0, 22), f.textContent]));
+ok('the guest\'s Almanac shows each species\' drawing', glyphs.length >= 1 && glyphs.every(g => g[0] === 'data:image/png;base64,'), JSON.stringify(glyphs));
 ok('and no panel opens on Kevin\'s screen', await host.evaluate(() => document.getElementById('kPanel') === null || document.getElementById('kPanel').hidden));
 await guest.screenshot({ path: `${out}/guest-almanac.png`, fullPage: true });
 await guest.keyboard.press('y'); await host.waitForTimeout(900);

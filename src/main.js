@@ -30,7 +30,7 @@ import { newPlayer, tryStep, strideStep, interact } from './ketchem/controls.js'
 import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, placeBait, pickPlant, nameCatch, freeName, freeSpeciesName, follow, recall, drainNews, news as pushNews } from './ketchem/encounter.js';
 import { initStores, marketTick, storeAt, shopLists, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, giveSaid, usePotion, almanacLists, almanacText, packSummary, POTIONS } from './ketchem/market.js';
 import { storePanel, almanacPanel, closePanel, panelOpen, panelMode } from './ketchem/panel.js';
-import { hudTick } from './ketchem/hud.js';
+import { hudTick, drawGlyph } from './ketchem/hud.js';
 import { ask, asking, closeAsk, askWho, answerAsk } from './ketchem/ask.js';
 import { padPressed, padEdges, padKey, padArrowUp, PAD_PICK, START as PAD_START } from './ketchem/pad.js';
 import { guestSeated, seatName, seatGuest, unseatGuest } from './ketchem/guest.js';
@@ -991,7 +991,16 @@ function guestFrame(){   // their corner of the world: 33 x 33 tiles around them
 function guestState(){
   if(!guestSeated(K))return {name:null};var g=K.root,ps=packSummary(g);
   return {name:g.display,wallet:g.wallet,stones:g.stones,stone:g.stone,pack:ps.used+'/'+ps.cap,party:g.party.map(function(c){var k=creatureCard(c);return k.name+' L'+k.level+' '+k.elemental+' '+k.type;}),
-    msg:g.msg&&g.msgUntil>Date.now()?g.msg:'',store:guestStore(g),sounds:_gSounds,soundEpoch:_gSoundEpoch,almanac:_gAlmanac?almanacText(K,g):''};
+    msg:g.msg&&g.msgUntil>Date.now()?g.msg:'',store:guestStore(g),sounds:_gSounds,soundEpoch:_gSoundEpoch,almanac:_gAlmanac?almanacText(K,g):'',almanacGlyphs:_gAlmanac?almanacGlyphs():null};
+}
+// The Almanac's drawings for a guest on another screen: each species drawn as the panel draws it, as a small PNG, made
+// once per drawing (the cache is keyed by what the drawing depends on) and sent only while their Almanac is open.
+var _glyphPng=new Map(),_glyphCanvas=null;
+function almanacGlyphs(){
+  if(!_glyphCanvas){_glyphCanvas=document.createElement('canvas');_glyphCanvas.width=_glyphCanvas.height=26;}
+  return almanacLists(K,K.root).species.filter(function(e){return e.glyph;}).map(function(e){var key=JSON.stringify(e.glyph),src=_glyphPng.get(key);
+    if(!src){drawGlyph(_glyphCanvas,e.glyph,13);src=_glyphCanvas.toDataURL('image/png');if(_glyphPng.size>500)_glyphPng.clear();_glyphPng.set(key,src);}
+    return {name:e.nickname||e.scientific||('unnamed '+e.type+' line'),caught:e.caught,src:src};});
 }
 // What a guest on another screen hears: the sounds in their sight, checked every tick (a sound's window is a few ticks;
 // the link only posts five times a second), kept as the last eight with rising numbers.

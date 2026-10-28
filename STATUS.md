@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-27 (s) - Ketch'em the Almanac's drawings on the guest's screen - DONE, GATE GREEN
+Owner ask: "keep going". The last item with no owner decision in it (mechanics 26). **Not deployed**; nothing pushed.
+
+What the game does now: a guest on another screen sees each species' drawing in their Almanac, as Kevin's panel draws it, above the text.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 289/289 (guest-link.test.js +1: both scripts of the served guest page must parse), build green. The lint caught an escape the page's template string swallows, which would have broken the guest page's whole script; the new test fails on exactly that (checked by putting the bug back). No critic: a display-only change whose one risky part the test now guards. Rehearsal: rehearse15 38/38; adversary 0 findings.
+
 ## Session 2026-10-27 (r) - Ketch'em the guest's screen: sound and a store of buttons - DONE, GATE GREEN
 Owner ask: "keep building". Mechanics 26's own "not built" list: sound on the guest's screen and the store panel for a remote guest. **Not deployed**; nothing pushed.
 

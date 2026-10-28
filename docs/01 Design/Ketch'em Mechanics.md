@@ -1332,5 +1332,7 @@ between the two pages. Readings, overturnable.
   synthesis, served by the link; a switch on their bar), and on a store tile the store is a panel of rows with Buy,
   Sell, Sell all, Box and Take buttons (the command line stays for breeding and anything else). An unnamed creature
   has no button until it is named. The shared screen's own sounds are for Kevin and a guest playing at it.
-- Not built: the Almanac's drawings for a remote guest (its text stands in), several guests at once. Bait, give, feed and the Almanac were added
+- The Almanac on the guest's screen shows each species' drawing (as the host's panel draws it) above its text
+  (added 2026-10-27).
+- Not built: several guests at once. Bait, give, feed and the Almanac were added
   2026-10-27; the link's input kinds are unchanged (keys, answers, commands).

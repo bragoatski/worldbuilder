@@ -34,6 +34,12 @@ describe('the guest link', () => {
     expect(js).toContain('export function play'); expect(js).not.toMatch(/^import /m);
     expect(await (await fetch(guest + '/')).text()).toContain("from '/synth.js'");
   });
+  it('the guest page scripts parse (an escape the page template swallows would break the whole page)', async () => {
+    const page = await (await fetch(guest + '/')).text();
+    const classic = page.split('<script>')[1].split('</script>')[0];
+    const mod = page.split('<script type="module">')[1].split('</script>')[0].replace(/^import .*$/gm, '');
+    expect(() => new Function(classic)).not.toThrow(); expect(() => new Function(mod)).not.toThrow();
+  });
   it('the guest port has no host side', async () => {
     expect((await jpost(guest, '/host/open', { code: '123456' })).status).toBe(404);
   });

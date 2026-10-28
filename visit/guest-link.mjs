@@ -128,7 +128,8 @@ button{cursor:pointer;background:transparent}button:active{background:rgba(255,2
 #q[hidden],#join[hidden],#game[hidden]{display:none}#q label{display:block;color:var(--dim);margin-bottom:6px}.row{display:flex;gap:8px}.row input{flex:1;min-width:0}
 #pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:6px}#pad button{font-size:18px}
 #acts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;flex:1;min-width:0}#acts button,#more button{padding:7px 4px;min-width:0}#controls{display:flex;gap:12px;align-items:flex-start}
-.keys{color:var(--faint);font-size:11px;margin-top:8px}#stale{color:var(--faint)}#alm{white-space:pre-wrap;margin:8px 0 0;color:var(--dim);font:inherit}
+.keys{color:var(--faint);font-size:11px;margin-top:8px}#stale{color:var(--faint)}#almG{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}#almG[hidden]{display:none}#almG figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:2px;width:68px;text-align:center;font-size:10px;color:var(--dim);overflow-wrap:anywhere}#almG img{width:26px;height:26px;image-rendering:pixelated;background:var(--bg);border:1px solid var(--border);border-radius:5px}
+#alm{white-space:pre-wrap;margin:8px 0 0;color:var(--dim);font:inherit}
 #more{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:10px}
 #store[hidden]{display:none}#store h2{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:10px 0 4px;font-weight:600}#store h2:first-child{margin-top:0}
 .srow{display:flex;align-items:center;gap:8px;padding:3px 0;border-top:1px solid var(--border)}.srow span{flex:1;min-width:0;overflow-wrap:anywhere}.srow em{color:var(--dim);font-style:normal}.srow button{padding:4px 10px}#snd{padding:2px 8px;font-size:11px;flex:none}
@@ -137,7 +138,7 @@ button{cursor:pointer;background:transparent}button:active{background:rgba(255,2
 <div id="join" class="card"><label for="code">The join code on the host's screen</label><div class="row" style="margin-top:6px"><input id="code" inputmode="numeric" autocomplete="off"><button id="go">Join</button></div><div id="joinMsg" class="keys"></div></div>
 <div id="game" hidden>
 <img id="view" alt="Your corner of the world">
-<div class="card"><div class="row" style="align-items:center"><div id="bar" style="flex:1;min-width:0"></div><button id="snd" type="button"></button></div><div id="party"></div><div id="msg"></div><div id="store" hidden></div><pre id="alm" hidden></pre><div id="stale"></div></div>
+<div class="card"><div class="row" style="align-items:center"><div id="bar" style="flex:1;min-width:0"></div><button id="snd" type="button"></button></div><div id="party"></div><div id="msg"></div><div id="store" hidden></div><div id="almG" hidden></div><pre id="alm" hidden></pre><div id="stale"></div></div>
 <div id="q" class="card" hidden><label id="qText"></label><div class="row"><input id="qIn" autocomplete="off"><button id="qOk">OK</button><button id="qNo">Skip</button></div></div>
 <div class="card"><div id="controls"><div id="pad">
 <span></span><button data-k="ArrowUp" aria-label="Up">&#8593;</button><span></span>
@@ -164,13 +165,19 @@ async function tick(){
     $('stale').textContent=d.fresh?'':'waiting for the host';
     $('bar').innerHTML='<b>'+esc(s.name||'Guest')+'</b> '+esc(s.wallet||0)+' coins &middot; '+['Amber','Geode','Obsidian'].map(n=>esc((s.stone===n?'['+n+' ':n+' ')+((s.stones||{})[n.toLowerCase()]||0)+(s.stone===n?']':''))).join(' ')+' &middot; pack '+esc(s.pack||'');
     $('party').innerHTML=(s.party||[]).map(c=>'<span>'+esc(c)+'</span>').join('');
-    $('msg').textContent=s.msg||'';window.drawStore&&window.drawStore(s.store);window.hearSounds&&window.hearSounds(s);$('alm').textContent=s.almanac||'';$('alm').hidden=!s.almanac;
+    $('msg').textContent=s.msg||'';window.drawStore&&window.drawStore(s.store);window.hearSounds&&window.hearSounds(s);$('alm').textContent=s.almanac||'';$('alm').hidden=!s.almanac;drawGlyphs(s.almanacGlyphs);
     const q=s.question;
     if(q&&(q.id!==lastQ||(answeredAt&&Date.now()-answeredAt>2500))){lastQ=q.id;answeredAt=0;$('qText').textContent=q.text;$('qIn').value=q.initial||'';$('q').hidden=false;$('qIn').focus();}   // an answer that never arrived: ask again
     if(!q&&!$('q').hidden&&lastQ){$('q').hidden=true;}
   }catch(e){$('stale').textContent='the host is not answering';}
   if(running)setTimeout(tick,200);
 }
+// The Almanac's drawings: a figure per species, rebuilt only when the list changes; only PNG data images are shown.
+let glyphSig='';
+function drawGlyphs(list){const el=$('almG'),L=Array.isArray(list)?list:[],sig=L.map(x=>x.name+'|'+x.caught+'|'+String(x.src).length).join(';');
+  el.hidden=!L.length;if(sig===glyphSig)return;glyphSig=sig;el.textContent='';
+  for(const x of L){const f=document.createElement('figure'),i=document.createElement('img'),c=document.createElement('figcaption');
+    if(/^data:image[/]png;base64,[A-Za-z0-9+/=]+$/.test(String(x.src)))i.src=x.src;i.alt='';c.textContent=String(x.name)+(x.caught?'':' (seen)');f.appendChild(i);f.appendChild(c);el.appendChild(f);}}
 function answer(t){push({t:'answer',id:lastQ,text:t});answeredAt=Date.now();$('q').hidden=true;}
 $('qOk').onclick=()=>answer($('qIn').value);$('qNo').onclick=()=>answer(null);
 $('qIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();answer($('qIn').value);}else if(e.key==='Escape'){e.preventDefault();answer(null);}e.stopPropagation();});
