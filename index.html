@@ -424,9 +424,10 @@
   /* === INTRO SCREEN === */
   .intro-overlay {
     position:fixed; inset:0; z-index:200;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    display:flex; flex-direction:column; align-items:center;
     background:#060910;
-    overflow:hidden;
+    /* scrolls when the card is taller than the window (a short phone, a landscape one); the content's auto margins centre it otherwise */
+    overflow-x:hidden; overflow-y:auto;
     transition:opacity 0.6s ease, transform 0.6s ease;
   }
   .intro-overlay.dismissing {
@@ -434,7 +435,7 @@
     pointer-events:none;
   }
   .intro-bg {
-    position:absolute; inset:0; z-index:0;
+    position:fixed; inset:0; z-index:0;
     background:
       radial-gradient(ellipse 80% 60% at 50% 55%, rgba(26,107,74,0.12) 0%, transparent 70%),
       radial-gradient(ellipse 50% 40% at 30% 40%, rgba(59,158,255,0.06) 0%, transparent 60%),
@@ -447,7 +448,7 @@
     opacity:0.7;
   }
   .intro-grid {
-    position:absolute; inset:0; z-index:0;
+    position:fixed; inset:0; z-index:0;
     background-image:
       linear-gradient(rgba(28,38,54,0.3) 1px, transparent 1px),
       linear-gradient(90deg, rgba(28,38,54,0.3) 1px, transparent 1px);
@@ -458,6 +459,7 @@
   .intro-content {
     position:relative; z-index:1;
     display:flex; flex-direction:column; align-items:center; gap:0;
+    margin:auto 0; padding:24px 0; max-width:100%; box-sizing:border-box;
     animation:introFadeUp 1.2s ease both;
   }
   @keyframes introFadeUp {
@@ -523,8 +525,33 @@
   }
   .intro-start:hover::before { opacity:1; }
   .intro-start:active { transform:translateY(0); }
+  /* Play Ketch'em: one button per board setting, rendered from board.js SETTINGS by main.js (labels and blurbs live there). */
+  .intro-boards {
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    margin-top:34px; box-sizing:border-box; max-width:100%; padding:0 16px;
+    animation:introBtn 2.4s ease both;
+  }
+  .intro-boards-title {
+    font-family:var(--mono); font-size:11px; letter-spacing:3px; text-transform:uppercase; color:var(--fg-faint);
+  }
+  .intro-boards-row { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; width:100%; }
+  .intro-board {
+    display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left;
+    flex:1 1 150px; max-width:190px; min-width:0; box-sizing:border-box; padding:10px 14px; border-radius:8px;
+    font-family:var(--mono); cursor:pointer;
+    border:1px solid rgba(56,200,176,0.22);
+    background:linear-gradient(135deg, rgba(26,107,74,0.12) 0%, rgba(56,200,176,0.04) 100%);
+    color:#38c8b0; transition:all 0.25s ease;
+  }
+  .intro-board b { font-size:12px; font-weight:600; letter-spacing:2px; text-transform:uppercase; }
+  .intro-board span { font-size:10px; line-height:1.4; letter-spacing:0.2px; color:var(--fg-dim); }
+  .intro-board:hover, .intro-board:focus-visible {
+    border-color:rgba(56,200,176,0.55); color:#5ae0c8; transform:translateY(-1px);
+    box-shadow:0 0 24px rgba(56,200,176,0.12);
+  }
+  .intro-board:focus-visible { outline:2px solid #e8a838; outline-offset:2px; }
   .intro-version {
-    position:absolute; bottom:24px; left:50%; transform:translateX(-50%);
+    position:relative; z-index:1; flex:none; margin:0 auto 16px;
     font-family:var(--mono); font-size:10px; color:var(--fg-faint);
     letter-spacing:1px; opacity:0.4; z-index:1;
   }
@@ -722,6 +749,10 @@
     <h1 class="intro-title">Worldbuilder</h1>
     <p class="intro-sub">Simulate, Mold &amp; Discover</p>
     <button class="intro-start" id="introStart">Start Simulation</button>
+    <div class="intro-boards">
+      <div class="intro-boards-title">Play Ketch'em</div>
+      <div class="intro-boards-row" id="introBoards"></div>
+    </div>
   </div>
 </div>
 

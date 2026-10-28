@@ -1056,6 +1056,18 @@ Root plays the same verbs through the door. Kevin plays on the page.
 | Esc | close any panel |
 | F5 / F9 | save / load menu |
 
+### 22.2a The Controls panel (built 2026-10-28, owner ask: "I need to be able to see the controls and possibly click them")
+- On a board, a Controls panel docked on the left shows every key in 22.2 as a button with its key chip: the move pad
+  (hold to walk), Throw, Target, Use, Name, Follow, the three stones (the one in hand lit, with counts), Bait, Potion,
+  and Pack, Almanac, Give, Feed, Cabinet, Camera, Sound, Save, Load. A click or tap is the key: it goes through the same
+  code. While a bait or potion choice is open the panel shows only what applies (the kinds, Here and Cancel; the
+  potions as buttons), so a button never means something else than it says; while a question is open it dims. It
+  collapses to a tab and remembers that per browser; it starts collapsed below 1100 px wide (the store panel and the
+  question bar would cover it). It drives Kevin only; a guest plays on the arrows and right-hand keys, a pad or their
+  own screen.
+- The start card offers "Play Ketch'em" under Start Simulation: Continent, Archipelago, Highlands with their lines,
+  each starting the board the `?ketchem=` address starts.
+
 ### 22.3 Camera and HUD
 | element | rule |
 |---|---|

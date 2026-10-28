@@ -2,6 +2,13 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-10-28 (u) - Ketch'em Controls panel and board picker - DONE, GATE GREEN
+Owner asks: "Where do I find the drop down to pick one of the game versions to start", then "I need to be able to see the controls and possibly click them instead of just having keys. We will need a panel for that". Mechanics 22.2a. **Not deployed yet** (live is session (t)).
+
+What the game does now: the start card has a "Play Ketch'em" row (Continent, Archipelago, Highlands); on a board, a Controls panel on the left shows every control with its key and plays it by click or tap (hold the pad to walk), narrows to the bait or potion choice while one is open, dims while a question is open, and collapses to a tab. Playable with a mouse or a touch screen alone.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 329/329 (new `src/ketchem/keypanel.test.js`, 19), build green. Built by a builder subagent from an exact spec; gate re-run here. Critic (Sonnet): 0 blockers, 7 risks, all taken (focus could stay on a button; a redraw could drop a click, now acting on press; Space on a picker card; the start card clipped on short screens; the panel under the store panel below 1100 px; buttons meaning something else during a choice; the panel live under a question) plus 2 nits. Then the screenshots showed "Throw" clipped by its key chip (now full width). Rehearsals: rehearse19 (new) 22/22 three times; rehearse16 21/21, rehearse14 35/35 (the guest's keys unchanged); adversary 0 findings; fuzz seed 239: 0 violations, 0 page errors. Screenshots: `docs/04 Handoffs/img/2026-10-28-ketchem-controls/`.
+
 ## Deployed 2026-10-28T00:15-07:00 (owner ask: "deploy")
 Sessions (i) through (t) are live: main pushed at eaf462d (16 commits), CI verify + Pages deploy green, the live site serves the same bundle as the local build (index-DHLc1O7-.js). Checked as a visitor first on the production build over the LAN, then on the live site: a plain world and a `?ketchem=` board, no console errors, no requests to the relay (7796), the guest link (7797 / 7798) or localhost; the "guest on another screen" chip is never offered. Root and the guest link stay local-only by design. Still the owner's calls: the playtest, several guests, the tailnet, Root on the public site.
 

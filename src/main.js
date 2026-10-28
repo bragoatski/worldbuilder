@@ -31,6 +31,7 @@ import { initEncounters, initPlayer, encounterTick, targetsNear, throwStone, pla
 import { initStores, marketTick, storeAt, shopLists, creatureCard, buy as buyItem, sell as sellItem, box as boxItem, giveSaid, usePotion, almanacLists, almanacText, packSummary, POTIONS } from './ketchem/market.js';
 import { storePanel, almanacPanel, closePanel, panelOpen, panelMode } from './ketchem/panel.js';
 import { hudTick, drawGlyph } from './ketchem/hud.js';
+import { keypanelTick } from './ketchem/keypanel.js';
 import { ask, asking, closeAsk, askWho, answerAsk } from './ketchem/ask.js';
 import { padPressed, padEdges, padKey, padArrowUp, PAD_PICK, START as PAD_START } from './ketchem/pad.js';
 import { guestSeated, seatName, seatGuest, unseatGuest } from './ketchem/guest.js';
@@ -637,6 +638,7 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 // Hotkeys
 window.addEventListener('keydown',function(e){
   if((e.target||{}).id==='kAskIn')return;   // keys typed into the question bar are the bar's (Enter answers, Esc declines), F5 and F9 included
+  if(e.target&&e.target.closest&&e.target.closest('#introOverlay'))return;   // a key on the start card's buttons is that button's (Space on a board button must not toggle the run)
   var tag=(e.target||{}).tagName||'';
   if(/INPUT|SELECT|TEXTAREA/.test(tag)){if(K&&(e.key==='F5'||e.key==='F9'||((tag==='SELECT'||(e.target||{}).type==='range')&&e.key!=='Tab'&&!/^(Shift|Control|Alt|Meta)$/.test(e.key)))){e.target.blur();ketchemKey(e);}return;}   // F5 must never reload an unsaved game because a slider had focus; on a board a focused select or slider gives the keys back to the game
   if(K){if(guestKey(e))return;if(ketchemKey(e))return;if(e.ctrlKey||e.metaKey||e.altKey)return;}   // a board is up: the keys are Kevin's character's, and a browser chord (Ctrl+R, Ctrl+F) is the browser's, never the page's reset
@@ -690,6 +692,7 @@ function draw(){
   if(K){kevinCamera();drawEncounters(ctx,PIX,K);drawPlayers(ctx,PIX,K);}   // tags, rings, baits and animations, then the characters, over the fog
   visitDraw(ctx,PIX);   // Root's body, sight and named places; no-op unless Root is here
   hudTick(K);           // the HUD bar and the party rows (DOM); hidden without a board
+  keypanelTick(K&&K.kevin?keypanelState():null,_kKeyAct);   // the Controls panel (DOM): its buttons feed ketchemKey; hidden without a board
   if(_kProgress)drawBoardProgress();
   drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
 }
@@ -700,7 +703,7 @@ function draw(){
 // Reached for now through ?ketchem=<setting>[&kseed=N][&ksize=96]; the launch card entry is step 4.
 var K=null,_kWorker=null,_kProgress=null;
 // Anything that regenerates the world under a board takes the board down first (a scenario, a JSON load; init() does its own).
-function leaveBoard(){if(!K&&!_kProgress)return;abandonBuild();K=null;document.body.classList.remove('ketchem');closePanel();closeAsk();hudTick(null);}
+function leaveBoard(){if(!K&&!_kProgress)return;abandonBuild();K=null;document.body.classList.remove('ketchem');closePanel();closeAsk();hudTick(null);keypanelTick(null);}
 function _kGround(c,p){drawKetchemGround(c,p,K);}
 function _kTop(c,p){drawFog(c,p,K);}
 function getKetchemParam(){
@@ -788,6 +791,10 @@ function ketchemKey(e){
 // hand at it, 1 / 2 / 3 pick the stone, B then P / S / M / T then a direction baits, F lets the follower out or
 // recalls it, N names the last catch, E picks the plant underfoot (else reads what is there).
 var _kBait=null,_kPotion=false;
+// The Controls panel (src/ketchem/keypanel.js): what it shows of Kevin's state, and how a button reaches the keys. A button's
+// synthetic keydown goes through ketchemKey like the real one, and a released pad key leaves _kPressed as the keyup handler does.
+function keypanelState(){var p=K.kevin,ps=packSummary(p);return {stone:p.stone,stones:p.stones,bait:_kBait?{kind:_kBait.kind}:null,potion:!!_kPotion,asking:asking(),potions:Object.keys(ps.potions).map(function(n){return [n,ps.potions[n]];})};}
+var _kKeyAct={down:function(e){if(K&&K.kevin)ketchemKey(e);},up:function(k){delete _kPressed[k];}};
 // The give and feed questions, the same for Kevin (G, T) and the guest (H, U).
 function giveQ(to){return 'Give '+to+' what? coins N, Amber N, a potion name, plant, or a party creature name';}
 var FEED_Q='Feed which party creature, and what? "Goat" feeds it the first plant in the pack; "Wolf, Snack" feeds Wolf the party creature Snack';
@@ -1626,9 +1633,19 @@ function dismissIntro(){
 (function(){
   var startBtn=document.getElementById('introStart');
   if(startBtn)startBtn.addEventListener('click',dismissIntro);
+  // Play Ketch'em: a button per board setting (labels and blurbs from board.js SETTINGS). A click does what ?ketchem=<setting> does: boot() reads
+  // _pendingKetchem and builds the board over the fresh world. Navigating to the URL would land back on this card and ask for a second click.
+  var boards=document.getElementById('introBoards');
+  if(boards)Object.keys(KETCHEM_SETTINGS).forEach(function(id){
+    var b=document.createElement('button');b.type='button';b.className='intro-board';b.setAttribute('data-setting',id);b.innerHTML='<b></b><span></span>';
+    b.firstChild.textContent=KETCHEM_SETTINGS[id].label;b.lastChild.textContent=KETCHEM_SETTINGS[id].blurb;
+    b.addEventListener('click',function(){var ov=document.getElementById('introOverlay');if(!ov||ov.classList.contains('dismissing'))return;_pendingKetchem={setting:id,seed:undefined,size:96};dismissIntro();});
+    boards.appendChild(b);
+  });
   // Keyboard shortcut: Space or Enter to start
   // Inert once the intro is gone (dismissed by click or key), or it would eat Space/Enter page-wide.
   function introKey(e){var ov=document.getElementById('introOverlay');if(!ov||ov.classList.contains('dismissing')){window.removeEventListener('keydown',introKey);return;}
+    if(e.target&&e.target.closest&&e.target.closest('#introBoards'))return;   // Space or Enter on a focused board button picks that board, not the plain start
     if(e.code==='Space'||e.code==='Enter'){e.preventDefault();dismissIntro();window.removeEventListener('keydown',introKey);}}
   window.addEventListener('keydown',introKey);
 })();
