@@ -3,7 +3,7 @@
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
 ## Session 2026-10-28 (u) - Ketch'em Controls panel and board picker - DONE, GATE GREEN
-Owner asks: "Where do I find the drop down to pick one of the game versions to start", then "I need to be able to see the controls and possibly click them instead of just having keys. We will need a panel for that". Mechanics 22.2a. **Not deployed yet** (live is session (t)).
+Owner asks: "Where do I find the drop down to pick one of the game versions to start", then "I need to be able to see the controls and possibly click them instead of just having keys. We will need a panel for that". Mechanics 22.2a. **Deployed 2026-10-28** (owner ask "deploy"): pushed at 4249278, CI verify + Pages deploy green, the live site serves the same bundle as the local build (index-Dhuz4lJp.js); a visitor check before (the production build over the LAN) and after (the live site) found the picker and the panel, no console errors, and no relay, guest-link or localhost requests.
 
 What the game does now: the start card has a "Play Ketch'em" row (Continent, Archipelago, Highlands); on a board, a Controls panel on the left shows every control with its key and plays it by click or tap (hold the pad to walk), narrows to the bait or potion choice while one is open, dims while a question is open, and collapses to a tab. Playable with a mouse or a touch screen alone.
 
