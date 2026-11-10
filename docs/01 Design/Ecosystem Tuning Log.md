@@ -392,3 +392,28 @@ Flagged to the owner as a changed default. If he wants creatures to self-sort by
 movement-only term in `scoreTileForFauna` (no energy path), measured as its own task; the 2026-06-23 lesson warns that
 even movement-only scoring changes have regressed C2 before, so it is not a quick add.
 
+
+## The default world (2026-11-10): alive, not balanced
+Scope: the watch-it-grow world only (`_applyContinentCfg` in `src/main.js`). The harness protocol (a warmed world with seeded tiers, a 1,000 tick window) never saw this world: land still growing, life arriving by immigration, 10,000 ticks.
+Tool: `node scripts/steady-world.mjs [T10000] [VAL] [-v] key=value ...` (eight hero seeds, or with VAL the seven the tuning never saw; sampled every 10 ticks from tick 1,500). It applies the terrain dials and `founderFloraMin=200` itself, so pass the other knobs to reproduce a row.
+
+Causes, traced on seed 7 with a births-and-deaths ledger:
+1. Numeric response. A carnivore kill pays 55; a child starts at 75 for a cost of 40, so one kill made two carnivores (3 to 42 in 100 ticks). Scavengers and apex bred one per meal: a grazer die-off became 137 scavengers, then 362 apex.
+2. Grazers starved among 4,300 plants: the herd outgrew its own pasture (23 starved per 100 ticks, births falling).
+3. No way back. With the grazers gone, omnivores lived on plants for 3,000 ticks, and the herd waited for an empty world.
+
+Swept and rejected (no gain): carnivore, apex and scavenger repro thresholds and costs raised; `herbivoreSpeed` 12; `faunaMaxPop` 900; `founderFloraMin` 600; `faunaBaseMaxAge` 800. Grazers stayed alive 38-64% of the time against 61%.
+
+Shipped: `founderGrazersOnly` + breeding ratios h 0.02 (x plants), c 0.2 and o 0.15 (x grazers), a 0.15 (x carnivores + scavengers), s 0.25 (x corpses).
+
+| run | grazers alive | carn alive | wipe-outs | preds > grazers | cv H | apex peak |
+|---|---|---|---|---|---|---|
+| before (herd only), tuned seeds | 61% | 46% | 4.0 | 48% | 1.59 | 390 |
+| + founderGrazersOnly | 96% | 77% | 1.4 | 46% | 1.09 | 353 |
+| + c 0.2 a 0.15 s 0.25 | 98% | 83% | 1.0 | 23% | 0.89 | 21 |
+| + o 0.15 h 0.02 (shipped) | 99% | 79% | 0.4 | 10% | 0.71 | 27 |
+| before, unseen seeds | 53% | 40% | 3.9 | 48% | 1.85 | 394 |
+| shipped, unseen seeds | 99% | 82% | 0.3 | 7% | 0.65 | 29 |
+
+Also measured: h 0.035 / 0.05 / 0.08 (cv 0.72-0.79), c 0.12 and 0.4, a 20,000 tick run of the third row (99% / 86%).
+Not done: a prey refuge or predator interference (the local mechanisms the North Star doc names); the ratios are global counts, a blunt instrument. Not applied to boards or scenarios. `npm run measure` is unchanged (all knobs default off, no RNG drawn).

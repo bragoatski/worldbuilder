@@ -216,6 +216,12 @@ var CFG={
   floraPerTileMax:4,               // carrying capacity per tile
   ecotoneFloraBoost:1.6,           // flora spread multiplier at biome edges
   faunaSpawnChance:0.001, faunaMutationChance:0.07, faunaMutationMag:0.6,
+  founderGrazersOnly:false,
+  // Ratio-dependent breeding (0 = off, the shipped default; no RNG either way, so off is byte-identical). A tier breeds
+  // only while it is smaller than ratio x its food: grazers against plants, carnivores and omnivores against grazers,
+  // apex against carnivores + scavengers, scavengers against corpses on the ground. It caps the numeric response that
+  // let one kill make two predators and let a herd outgrow its pasture.
+  herbivoreBreedRatio:0, carnivoreBreedRatio:0, apexBreedRatio:0, scavengerBreedRatio:0, omnivoreBreedRatio:0,
   founderFloraMin:0, founderCount:8, founderCooldown:600,   // the founding herd (founderHerd): 0 = off, the shipped default, so the harness and the tests are byte-identical; the default watch-it-grow world turns it on
   faunaSizeMutationMag:0.09,        // COSMETIC size-gene drift per mutation (sd of the Gaussian step on cRng). Heritable + rendered; never affects energy/eat (balance-safe). Clamped to [0.5,2.2]x.
   // Height axis (Ketch'em Mechanics sec. 17): fit x ((1-w) + w x exp(-dE^2 / (2 x tol^2 x 2))). SHIPPED AT 0 (owner ruling
@@ -1050,7 +1056,10 @@ function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(
 var founderAt=-1e9;
 function _compass(x,y){var ns=y<H/3?'north':(y>=2*H/3?'south':''),ew=x<W/3?'west':(x>=2*W/3?'east':'');return ns&&ew?ns+'-'+ew:(ns||ew||'heart of the land');}
 function founderHerd(){
-  if(!(CFG.founderFloraMin>0)||fauna.length>0||flora.length<CFG.founderFloraMin||tick-founderAt<CFG.founderCooldown)return;
+  if(!(CFG.founderFloraMin>0)||flora.length<CFG.founderFloraMin||tick-founderAt<CFG.founderCooldown)return;
+  // founderGrazersOnly: the herd answers to the grazers alone, so it also comes back while other tiers linger (omnivores
+  // live on plants for thousands of ticks and used to keep the grazers out for good). Otherwise: no animal at all.
+  if(CFG.founderGrazersOnly){for(var fi=0;fi<fauna.length;fi++){if(fauna[fi]&&fauna[fi].type==='herbivore')return;}}else if(fauna.length>0)return;
   var anchor=flora[(eRng()*flora.length)|0];if(!anchor)return;
   var spots=[];for(var dy=-3;dy<=3;dy++)for(var dx=-3;dx<=3;dx++){var x=anchor.x+dx,y=anchor.y+dy;if(!inb(x,y))continue;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC)spots.push(x,y);}
   if(!spots.length)return;
@@ -1156,7 +1165,11 @@ function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefA
 // A fauna death drops a corpse for scavengers (trophic-depth experiment). No-op unless the flag is on -> the
 // eRng stream is byte-identical to C2 when off. No RNG here, so even when on it does not shift the stream.
 function _dropCarrion(x,y){ if(CFG.scavengersEnabled) carrion.push({x:x,y:y,tick:tick}); }
-function faunaStep(){if(!CFG.ecoActive)return;founderHerd();naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(eRng()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
+function faunaStep(){if(!CFG.ecoActive)return;founderHerd();naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];
+  // Ratio-dependent breeding: which tiers may breed this tick (counted once, before anyone moves).
+  var noBreed=null;
+  if(CFG.herbivoreBreedRatio>0||CFG.carnivoreBreedRatio>0||CFG.apexBreedRatio>0||CFG.scavengerBreedRatio>0||CFG.omnivoreBreedRatio>0){var nH=0,nC=0,nS=0,nA=0,nO=0;for(var bq=0;bq<fauna.length;bq++){var bf=fauna[bq];if(!bf)continue;if(bf.type==='herbivore')nH++;else if(bf.type==='carnivore')nC++;else if(bf.type==='scavenger')nS++;else if(bf.type==='apex')nA++;else if(bf.type==='omnivore')nO++;}
+    noBreed={herbivore:CFG.herbivoreBreedRatio>0&&nH>=CFG.herbivoreBreedRatio*flora.length,carnivore:CFG.carnivoreBreedRatio>0&&nC>=CFG.carnivoreBreedRatio*nH,apex:CFG.apexBreedRatio>0&&nA>=CFG.apexBreedRatio*(nC+nS),scavenger:CFG.scavengerBreedRatio>0&&nS>=CFG.scavengerBreedRatio*carrion.length,omnivore:CFG.omnivoreBreedRatio>0&&nO>=CFG.omnivoreBreedRatio*nH};}var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(eRng()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
   for(var oi2=0;oi2<order.length;oi2++){var fi=order[oi2];var f=fauna[fi];if(!f)continue;if(f.held)continue;   // Ketch'em (sec. 6-7): a creature walking to bait, feeding, bolting or fleeing is moved by the encounter, not the sim; nothing held = this line never fires
     var isHerb=(f.type==='herbivore');var climateFit=computeFaunaClimateFit(f);var idleCost=isHerb?CFG.faunaIdleCost:(CFG.faunaIdleCost*0.6);f.energy-=(idleCost+CFG.faunaClimatePenalty*(1-climateFit));f.age++;if(f.energy<=0){deathParticles.push({x:f.x,y:f.y,type:'starve',tick:tick});_dropCarrion(f.x,f.y);fauna[fi]=null;continue;}if(f.age>=f.maxAge){deathParticles.push({x:f.x,y:f.y,type:'age',tick:tick});_dropCarrion(f.x,f.y);fauna[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){fauna[fi]=null;continue;}
     f.moveCD--;f.eatCD--;if(f.moveCD<=0){f.moveCD=isHerb?CFG.herbivoreSpeed:(f.type==='scavenger'?CFG.scavengerSpeed:(f.type==='apex'?CFG.apexSpeed:(f.type==='omnivore'?CFG.omnivoreSpeed:CFG.carnivoreSpeed)));var nbrs=neighbors4(f.x,f.y);var bestScore=scoreTileForFauna(f,f.x,f.y,isHerb);var bestPos=[f.x,f.y];for(var ni=0;ni<nbrs.length;ni++){var nx=nbrs[ni][0],ny=nbrs[ni][1];if(grid[idx(nx,ny)]===T.OCEAN)continue;var score=scoreTileForFauna(f,nx,ny,isHerb)+(eRng()-0.5)*0.5;if(score>bestScore){bestScore=score;bestPos=[nx,ny];}}if(bestPos[0]!==f.x||bestPos[1]!==f.y){f.x=bestPos[0];f.y=bestPos[1];f.energy-=CFG.faunaMoveCost;}}
@@ -1192,7 +1205,7 @@ function faunaStep(){if(!CFG.ecoActive)return;founderHerd();naturalFaunaSpawn();
       // Carnivore hunting: check current tile AND adjacent tiles
       var huntTiles=[tileIdx];var adjH=neighbors4(f.x,f.y);for(var hi=0;hi<adjH.length;hi++){var hti=idx(adjH[hi][0],adjH[hi][1]);if(grid[hti]!==T.OCEAN)huntTiles.push(hti);}
       var hunted=false;for(var ht=0;ht<huntTiles.length&&!hunted;ht++){var herbHere=_herbAtTile[huntTiles[ht]];if(herbHere&&herbHere.length>0){var preyIdx=herbHere[0];if(fauna[preyIdx]){var prey=fauna[preyIdx];foodWeb.cum.carnHerb++;f.energy=Math.min(f.maxEnergy,f.energy+CFG.carnivoreEatGain);deathParticles.push({x:prey.x,y:prey.y,type:'kill',tick:tick});_dropCarrion(prey.x,prey.y);fauna[preyIdx]=null;herbHere.shift();f.eatCD=CFG.carnivoreEatSpeed;hunted=true;}}}}}    var reproThresh=isHerb?CFG.faunaReproThreshold:(f.type==='scavenger'?CFG.scavengerReproThreshold:(f.type==='apex'?CFG.apexReproThreshold:(f.type==='omnivore'?CFG.omnivoreReproThreshold:CFG.carnivoreReproThreshold)));var reproCost=isHerb?CFG.faunaReproCost:(f.type==='scavenger'?CFG.scavengerReproCost:(f.type==='apex'?CFG.apexReproCost:(f.type==='omnivore'?CFG.omnivoreReproCost:CFG.carnivoreReproCost)));
-    if(f.energy>=reproThresh&&fauna.length+newFauna.length<CFG.faunaMaxPop){var reproCands=neighbors4(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(reproCands.length>0){f.energy-=reproCost;var dest=reproCands[(eRng()*reproCands.length)|0];newFauna.push(eRng()<CFG.faunaMutationChance?mutateFaunaChild(f,dest[0],dest[1]):cloneFaunaChild(f,dest[0],dest[1]));}}}
+    if(f.energy>=reproThresh&&!(noBreed&&noBreed[f.type])&&fauna.length+newFauna.length<CFG.faunaMaxPop){var reproCands=neighbors4(f.x,f.y).filter(function(p){var t=grid[idx(p[0],p[1])];return t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC;});if(reproCands.length>0){f.energy-=reproCost;var dest=reproCands[(eRng()*reproCands.length)|0];newFauna.push(eRng()<CFG.faunaMutationChance?mutateFaunaChild(f,dest[0],dest[1]):cloneFaunaChild(f,dest[0],dest[1]));}}}
   flora=flora.filter(function(f){return f!==null;});fauna=fauna.filter(function(f){return f!==null;});for(var j=0;j<newFauna.length;j++)fauna.push(newFauna[j]);
   // Carrion lifecycle: drop eaten (nulled) + rotted corpses. Empty when scavengers are off (never created).
   if(carrion.length) carrion=carrion.filter(function(c){return c&&tick-c.tick<CFG.carrionMaxAge;});}

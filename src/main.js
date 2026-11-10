@@ -1115,7 +1115,7 @@ function adoptBoard(board){
   abandonBuild();followId=null;godCancelMark(null);
   K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);initStores(K);closePanel();if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_gPressed={};_gPotion=false;_gBait=null;_gAlmanac=false;_kBait=null;_kPotion=false;_kOnStore=false;_kAutoAt=tick;
   setHandTool('none');document.body.classList.add('ketchem');
-  CFG.founderFloraMin=0;   // a board's animals are the game's stock: no herd is set down on a board that ran empty
+  CFG.founderFloraMin=0;CFG.herbivoreBreedRatio=CFG.carnivoreBreedRatio=CFG.omnivoreBreedRatio=CFG.apexBreedRatio=CFG.scavengerBreedRatio=0;   // a board's animals are the game's stock and its ecology is the measured C2 one: no herd is set down on a board that ran empty, and no breeding caps
   placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
   speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
   var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
@@ -1552,6 +1552,14 @@ function _applyContinentCfg(){
   CFG.coastalSpreadBase = 0.02;
   CFG.volcanoChancePerTile = 0.0002;
   CFG.founderFloraMin = 200;
+  // The steadier world (2026-11-10, Ecosystem Tuning Log "The default world"): the herd answers to the grazers alone,
+  // so it returns after a wipe-out even while other tiers linger, and every tier breeds only while it is smaller than
+  // a share of its food. Seven hero seeds the tuning never saw, 10,000 ticks: grazers alive 53% -> 99% of the time,
+  // carnivores 40% -> 82%, predators outnumbering grazers 48% -> 7%, the apex peak 394 -> 29. Still boom and bust
+  // (the grazers' numbers swing by about two thirds of their mean), no longer a dead map.
+  CFG.founderGrazersOnly = true;
+  CFG.herbivoreBreedRatio = 0.02; CFG.carnivoreBreedRatio = 0.2; CFG.omnivoreBreedRatio = 0.15;
+  CFG.apexBreedRatio = 0.15; CFG.scavengerBreedRatio = 0.25;
 }
 
 function init(){

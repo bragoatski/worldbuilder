@@ -1174,4 +1174,42 @@ describe('founding herd (the default world gets its grazers early)', () => {
       expect(sim.chronicle.events.some(e => /Herbivores returned/.test(e.text))).toBe(false);   // one arrival, one line
     } finally { sim.CFG.founderFloraMin = 0; }
   });
+
+  it('with founderGrazersOnly the herd returns while other tiers still live', () => {
+    sim.initWorld(31337);
+    for (let i = 0; i < 600; i++) sim.step();
+    sim.seedFloraCluster(40);
+    sim.fauna.length = 0;
+    sim.seedFaunaGroup('omnivore', 3);
+    sim.CFG.founderFloraMin = 1;
+    try {
+      sim.step();
+      expect(sim.fauna.some(f => f && f.type === 'herbivore')).toBe(false);   // any animal alive holds the herd back
+      sim.CFG.founderGrazersOnly = true;
+      sim.step();
+      expect(sim.fauna.filter(f => f && f.type === 'herbivore').length).toBeGreaterThanOrEqual(sim.CFG.founderCount);
+    } finally { sim.CFG.founderFloraMin = 0; sim.CFG.founderGrazersOnly = false; }
+  });
+});
+
+describe('ratio-dependent breeding (the steadier default world)', () => {
+  it('ships off for every tier', () => {
+    for (const k of ['herbivoreBreedRatio', 'carnivoreBreedRatio', 'omnivoreBreedRatio', 'apexBreedRatio', 'scavengerBreedRatio']) expect(sim.DEFAULT_CFG[k]).toBe(0);
+    expect(sim.DEFAULT_CFG.founderGrazersOnly).toBe(false);
+  });
+
+  it('a full-fed carnivore breeds without the cap and not with it while carnivores outnumber their share of grazers', () => {
+    const births = ratio => {
+      sim.initWorld(31337);
+      for (let i = 0; i < 600; i++) sim.step();
+      sim.fauna.length = 0;
+      sim.seedFaunaGroup('carnivore', 6);
+      for (const f of sim.fauna) f.energy = f.maxEnergy;
+      sim.CFG.carnivoreBreedRatio = ratio;
+      try { sim.step(); } finally { sim.CFG.carnivoreBreedRatio = 0; }
+      return sim.fauna.filter(f => f && f.type === 'carnivore').length - 6;
+    };
+    expect(births(0)).toBeGreaterThan(0);
+    expect(births(0.2)).toBe(0);   // six carnivores, no grazers: 6 >= 0.2 x 0
+  });
 });

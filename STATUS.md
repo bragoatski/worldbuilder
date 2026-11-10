@@ -2,6 +2,32 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-11-10 (w) - A steadier default world - DONE, GATE GREEN
+Owner ask: "You can try for a more steady world but it is difficult. Boom bust is ok but take a go at it". **Not deployed**; committed, nothing pushed (session (v) below IS deployed).
+
+What the game does now: in The World the map stays alive. Grazers are on the map almost all the time, predators stay a minority, and the wall of 300+ apex is gone. It still booms and busts.
+
+What was wrong (traced on seed 7, then measured): (1) one kill made two carnivores (a kill pays 55, a child starts at 75 for a cost of 40), and scavengers and apex bred one per meal, so a grazer die-off cascaded into hundreds of scavengers and then apex; (2) grazers starved among thousands of plants by outgrowing their own pasture; (3) once the grazers were gone they stayed gone, because the herd waited for an empty world and omnivores live on plants for thousands of ticks. Repro costs, grazer speed, the population cap, a later herd and a longer life were swept first and none moved it.
+
+What changed, default world only (`_applyContinentCfg`; every knob ships at 0 / false and a board turns them back off):
+- `founderGrazersOnly`: the herd returns whenever no grazer lives, 600 ticks apart at most.
+- Ratio-dependent breeding: a tier breeds only while smaller than a share of its food. Grazers 0.02 x plants, carnivores 0.2 x grazers, omnivores 0.15 x grazers, apex 0.15 x (carnivores + scavengers), scavengers 0.25 x corpses.
+
+Measured, 10,000 ticks, sampled from tick 1,500 (`before` = session (v) as deployed):
+
+| | tuned seeds (8) before | after | unseen seeds (7) before | after |
+|---|---|---|---|---|
+| grazers alive, share of time | 61% | 99% | 53% | 99% |
+| carnivores alive | 46% | 79% | 40% | 82% |
+| grazer wipe-outs per run | 4.0 | 0.4 | 3.9 | 0.3 |
+| predators outnumber grazers | 48% | 10% | 48% | 7% |
+| apex peak | 390 | 27 | 394 | 29 |
+| grazer swing (sd / mean) | 1.59 | 0.71 | 1.85 | 0.65 |
+
+In the browser at three minutes: 124 grazers, 34 carnivores, 28 scavengers, 13 apex, 15 omnivores, one herd, no wipe-out.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 334/334 (sim.test.js +3), build green, `npm run measure` matches the C2 baseline exactly. No critic pass. Open, the owner's calls: whether these caps should become the default for every world (Ketch'em boards and scenarios still run the old ecology; that needs the harness and the Ketch'em economy re-read), and deploying this.
+
 ## Session 2026-11-10 (v) - The base pass: start card as a list, the chronicle on the map, legible animals, life sooner - DONE, GATE GREEN
 Owner asks: "look at the base game and let me know what you think", then "Lets go for your 3 recommendations. Make sure that none of the versions play initially and they are all in an option list to start one as we work out a few". **Not deployed**; committed, nothing pushed.
 
