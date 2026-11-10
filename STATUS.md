@@ -2,6 +2,21 @@
 
 _Current truth. Overwritten each checkpoint. The newest handoff in `docs/04 Handoffs/` has the narrative._
 
+## Session 2026-11-10 (v) - The base pass: start card as a list, the chronicle on the map, legible animals, life sooner - DONE, GATE GREEN
+Owner asks: "look at the base game and let me know what you think", then "Lets go for your 3 recommendations. Make sure that none of the versions play initially and they are all in an option list to start one as we work out a few". **Not deployed**; committed, nothing pushed.
+
+What the game does now:
+- **The start card is one list and nothing runs until a row is picked**: The World, Visitor, Shaper, Sky (the three Root rows appear only once the relay answers, so never on the public site), and Ketch'em with its three boards. No key starts a default (Space, Enter and F used to start a world behind the card). A Root row starts the world and calls Root in that mode on the model last chosen on the launch card.
+- **The chronicle shows on the map**: each new event is a line over the top of the map for seven seconds, three at most. Hidden on a Ketch'em board.
+- **Animals read as animals at the default zoom**: the glyph nearly fills its tile, sits on a dark plate, and the dark tiers are lifted. Party cards are unchanged.
+- **Life arrives sooner in the default world**: once 200 plants stand and no animal lives, a herd of eight grazers lands together beside a plant ("A herd of grazers came ashore in the south-west."). It also re-founds after a total wipe-out, at most once per 600 ticks. Default world only; a board turns it off.
+
+Measured (eight hero seeds, 6,000 ticks, `founderFloraMin` 0 vs 200): animals first hold (10 alive) at tick 1,507 mean (1,111 to 2,340) against 4,765; ten or more animals alive for 59% of the ticks against 17%; grazers alive 46% against 20%. In the browser the herd landed 31 s after the pick.
+
+**Found and NOT fixed, the owner's call:** the default world's ecology is boom and bust with or without the herd. Grazers die out 1.5 times per 6,000 ticks without it and 3.5 times with it (more starts, more crashes); single runs showed 250 apex against 66 grazers and 365 apex against none. The C2 balance was measured on the harness protocol (a warmed world, seeded tiers), not on a world still growing its land. This is the "steady-state long-run balance" item in the North Star doc and it is what a watcher of The World actually sees. Thresholds 600, 1,200 and 2,000 and a herd of 16 were tried: none steadies it.
+
+Gate: typecheck clean, lint 0 errors (31 warnings, baseline), 331/331 (sim.test.js +2), build green. `npm run measure` matches the C2 baseline exactly (extinction 0%, carn-persistence 3/6, lag +65t, fauna 49.3, flora 2119.2, cap-hits 0): the herd is off by default and draws nothing. rehearse19 (the picker) all PASS. The Root row was rehearsed with the summon request answered inside the browser (it posted `{model: sonnet, mode: shaper}` and the world started); **a real Root arrival from the start card was not run.** No critic pass. Screenshots: `docs/04 Handoffs/img/2026-11-10-base-pass/`.
+
 ## Session 2026-10-28 (u) - Ketch'em Controls panel and board picker - DONE, GATE GREEN
 Owner asks: "Where do I find the drop down to pick one of the game versions to start", then "I need to be able to see the controls and possibly click them instead of just having keys. We will need a panel for that". Mechanics 22.2a. **Deployed 2026-10-28** (owner ask "deploy"): pushed at 4249278, CI verify + Pages deploy green, the live site serves the same bundle as the local build (index-Dhuz4lJp.js); a visitor check before (the production build over the LAN) and after (the live site) found the picker and the panel, no console errors, and no relay, guest-link or localhost requests.
 

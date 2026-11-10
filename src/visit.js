@@ -786,9 +786,16 @@ export async function mirrorDelete(slot) {
 
 function worldKey() { return 's' + _seed + '-' + W + 'x' + H; }
 
+// The start card lists Root's visits beside the other ways in. visitReady settles true once the relay has answered
+// (so the card offers them on this machine only, never on the public site); callRootAs(mode) then does what Begin
+// on the launch card does, on the model last chosen there.
+let _readyDone, _beginAs = null;
+export const visitReady = new Promise(r => { _readyDone = r; });
+export function callRootAs(mode) { if (_beginAs && V && V.phase === 'idle') _beginAs(modeOf(mode)); }
+
 // hooks: { draw, screenToTile, canvas, getSpeed, setSpeed, onGodMark }
 export function bootVisit(hooks) {
-  if (!LOCAL) return;
+  if (!LOCAL) { _readyDone(false); return; }
   V = { st: newVisitState(), key: null, here: false, phase: 'idle', said: null, retired: false, points: [], speedBefore: null, mode: null };
   V.hooks = hooks;
   (async function start() {
@@ -797,7 +804,7 @@ export function bootVisit(hooks) {
     for (let k = 0; k < 8 && !ok; k++) {
       try { ok = (await fetch(RELAY + '/page/hello?page=' + PAGE_ID)).ok; } catch { await sleep(1000); }
     }
-    if (!ok) return;
+    if (!ok) { _readyDone(false); return; }
     panel();
     const summon = (mode, model) => {
       V.mode = mode;
@@ -807,7 +814,7 @@ export function bootVisit(hooks) {
         else logLine('s', r ? 'Root is already here or on the way.' : 'The relay did not answer.');
       }).catch(() => logLine('s', 'The relay is not running.'));
     };
-    const card = launchCard((mode, model, setting, seed) => {
+    const begin = (mode, model, setting, seed) => {
       // The game mode needs a board under both players: build one first if the page has none, then call Root.
       if (MODES[mode].board && hooks.ketchem) {
         const K = hooks.ketchem.board();
@@ -820,7 +827,9 @@ export function bootVisit(hooks) {
         logLine('s', 'Using the board already up (' + K.setting + ' ' + K.seed + '); reset the world for a different one.');
       }
       summon(mode, model);
-    });
+    };
+    const card = launchCard(begin);
+    _beginAs = mode => { remember('wb.rootMode', mode); showPanel(); begin(mode, recall('wb.rootModel', 'sonnet'), recall('wb.ketchemBoard', 'continent')); };
     const btn = callButton(() => {
       if (V.phase === 'idle') {
         card.toggle(btn);
@@ -830,6 +839,7 @@ export function bootVisit(hooks) {
       }
     });
     paint('idle');
+    _readyDone(true);
     wireInput(hooks);
     watchStatus();
     pump(hooks);

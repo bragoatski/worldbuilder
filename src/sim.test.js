@@ -1148,3 +1148,30 @@ describe("Ketch'em step 1: height axis, roads, widened species key", () => {
     expect(sim.road.length).toBe(32 * 32);
   });
 });
+
+describe('founding herd (the default world gets its grazers early)', () => {
+  it('ships off, so the harness and every other world are untouched', () => {
+    expect(sim.DEFAULT_CFG.founderFloraMin).toBe(0);
+  });
+
+  it('sets one herd down together beside a plant, tells the chronicle once, and does not repeat while animals live', () => {
+    sim.initWorld(31337);
+    for (let i = 0; i < 600; i++) sim.step();
+    sim.seedFloraCluster(40);
+    sim.fauna.length = 0;
+    const herdLines = () => sim.chronicle.events.filter(e => /herd of grazers came ashore/.test(e.text));
+    sim.step();
+    expect(herdLines().length).toBe(0);                 // off: plants and no animals, and still no herd
+    sim.fauna.length = 0;
+    sim.CFG.founderFloraMin = 1;
+    try {
+      sim.step();
+      const herd = sim.fauna.filter(f => f && f.type === 'herbivore');
+      expect(herd.length).toBeGreaterThanOrEqual(sim.CFG.founderCount);
+      expect(herdLines().length).toBe(1);
+      for (let i = 0; i < 40; i++) sim.step();
+      expect(herdLines().length).toBe(1);               // animals live (or the cooldown holds): no second herd
+      expect(sim.chronicle.events.some(e => /Herbivores returned/.test(e.text))).toBe(false);   // one arrival, one line
+    } finally { sim.CFG.founderFloraMin = 0; }
+  });
+});

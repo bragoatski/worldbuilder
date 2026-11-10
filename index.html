@@ -496,45 +496,59 @@
     margin:0 0 48px;
     animation:introFadeUp 1.6s ease both;
   }
-  .intro-start {
-    font-family:var(--mono); font-size:14px; font-weight:600;
-    letter-spacing:2px; text-transform:uppercase;
-    padding:14px 44px; border-radius:8px;
-    border:1px solid rgba(56,200,176,0.35);
-    background:linear-gradient(135deg, rgba(26,107,74,0.2) 0%, rgba(56,200,176,0.08) 100%);
-    color:#38c8b0; cursor:pointer;
-    transition:all 0.25s ease;
-    box-shadow:0 0 20px rgba(56,200,176,0.06);
-    animation:introBtn 2.0s ease both;
-    position:relative; overflow:hidden;
-  }
   @keyframes introBtn {
     0% { opacity:0; transform:translateY(16px); }
     100% { opacity:1; transform:translateY(0); }
   }
-  .intro-start::before {
-    content:''; position:absolute; inset:-1px; border-radius:8px;
-    background:linear-gradient(135deg, rgba(56,200,176,0.15), transparent, rgba(59,158,255,0.15));
-    z-index:-1; opacity:0; transition:opacity 0.3s;
-  }
-  .intro-start:hover {
-    border-color:rgba(56,200,176,0.6);
-    color:#5ae0c8;
-    box-shadow:0 0 30px rgba(56,200,176,0.15), 0 0 60px rgba(56,200,176,0.05);
-    transform:translateY(-1px);
-  }
-  .intro-start:hover::before { opacity:1; }
-  .intro-start:active { transform:translateY(0); }
-  /* Play Ketch'em: one button per board setting, rendered from board.js SETTINGS by main.js (labels and blurbs live there). */
-  .intro-boards {
-    display:flex; flex-direction:column; align-items:center; gap:10px;
-    margin-top:34px; box-sizing:border-box; max-width:100%; padding:0 16px;
-    animation:introBtn 2.4s ease both;
-  }
-  .intro-boards-title {
+  /* The start card's option list: every way in is one row of the same weight, and none is a default. */
+  .intro-pick {
     font-family:var(--mono); font-size:11px; letter-spacing:3px; text-transform:uppercase; color:var(--fg-faint);
+    margin-bottom:14px; animation:introBtn 2.0s ease both;
   }
-  .intro-boards-row { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; width:100%; }
+  .intro-options {
+    display:flex; flex-direction:column; gap:10px; width:560px; max-width:100%;
+    box-sizing:border-box; padding:0 16px; animation:introBtn 2.0s ease both;
+  }
+  .intro-opt {
+    position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:5px; text-align:left;
+    box-sizing:border-box; width:100%; padding:13px 16px; border-radius:8px;
+    font-family:var(--mono); cursor:pointer;
+    border:1px solid rgba(56,200,176,0.22);
+    background:linear-gradient(135deg, rgba(26,107,74,0.12) 0%, rgba(56,200,176,0.04) 100%);
+    color:#38c8b0; transition:all 0.25s ease;
+  }
+  .intro-opt b { font-size:13px; font-weight:600; letter-spacing:2px; text-transform:uppercase; }
+  .intro-opt span { font-size:11px; line-height:1.45; letter-spacing:0.2px; color:var(--fg-dim); }
+  .intro-opt em {
+    position:absolute; top:13px; right:16px; font-style:normal; font-size:9px; letter-spacing:1.5px;
+    text-transform:uppercase; color:#e8a838; opacity:0.85;
+  }
+  button.intro-opt:hover, button.intro-opt:focus-visible {
+    border-color:rgba(56,200,176,0.55); color:#5ae0c8; transform:translateY(-1px);
+    box-shadow:0 0 24px rgba(56,200,176,0.12);
+  }
+  button.intro-opt:focus-visible { outline:2px solid #e8a838; outline-offset:2px; }
+  .intro-opt-group { cursor:default; }
+  /* Ketch'em's boards: one button per board setting, rendered from board.js SETTINGS by main.js (labels and blurbs live there). */
+  .intro-boards-row { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:10px; width:100%; margin-top:6px; }
+
+  /* The chronicle on the map (main.js renderTicker): the newest events, over the top of the map, for a few seconds each. */
+  .map-ticker {
+    position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:6;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    width:max-content; max-width:min(92%, 620px); pointer-events:none;
+  }
+  .tick-line {
+    display:flex; align-items:center; gap:9px; padding:7px 14px; border-radius:999px;
+    background:rgba(6,9,16,0.82); border:1px solid var(--border);
+    font-family:var(--mono); font-size:12px; line-height:1.35; color:var(--fg);
+    box-shadow:0 4px 18px rgba(0,0,0,0.45);
+    animation:tickIn 0.4s ease both; transition:opacity 0.8s ease;
+  }
+  .tick-line.out { opacity:0; }
+  .tick-line i { flex:none; width:7px; height:7px; border-radius:50%; }
+  @keyframes tickIn { 0% { opacity:0; transform:translateY(-6px); } 100% { opacity:1; transform:translateY(0); } }
+  body.ketchem .map-ticker { display:none; }   /* a board has its own HUD and bubbles */
   .intro-board {
     display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left;
     flex:1 1 150px; max-width:190px; min-width:0; box-sizing:border-box; padding:10px 14px; border-radius:8px;
@@ -748,10 +762,14 @@
   <div class="intro-content">
     <h1 class="intro-title">Worldbuilder</h1>
     <p class="intro-sub">Simulate, Mold &amp; Discover</p>
-    <button class="intro-start" id="introStart">Start Simulation</button>
-    <div class="intro-boards">
-      <div class="intro-boards-title">Play Ketch'em</div>
-      <div class="intro-boards-row" id="introBoards"></div>
+    <!-- Every way in, as one list; nothing runs until one is picked. Root's three visits are added by main.js once the relay answers (this machine only). -->
+    <div class="intro-pick">Choose a way in</div>
+    <div class="intro-options" id="introOptions">
+      <button class="intro-opt" id="introStart" type="button"><b>The World</b><span>Watch a world grow from open ocean, and shape it with the Hand.</span></button>
+      <div class="intro-opt intro-opt-group" id="introKetchem">
+        <b>Ketch'em</b><span>Walk a fogged board and catch, breed and trade what lives there. Pick a board:</span>
+        <div class="intro-boards-row" id="introBoards"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -905,6 +923,7 @@
   <div class="layout">
     <div class="canvas-wrap">
       <canvas id="c"></canvas>
+      <div class="map-ticker" id="mapTicker" aria-live="polite"></div>
       <div class="brush-ring" id="brushRing"></div>
       <div class="hand-rail" id="handRail">
         <button class="hand-btn" id="handEarth" type="button" data-tip="Shape land|Drag on the map to raise ground. Hold Alt to sink it.">

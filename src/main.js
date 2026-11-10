@@ -22,7 +22,7 @@ import {
 } from './sim.js';
 import * as SIM from './sim.js';   // the live module, for the ?debug handle only (a URL import after a hot reload is a second instance)
 import { drawWorld } from './render.js';
-import { bootVisit, visitDraw, visitTick, boardAdopted, rootPlaying } from './visit.js';
+import { bootVisit, visitDraw, visitTick, boardAdopted, rootPlaying, visitReady, callRootAs } from './visit.js';
 import { SETTINGS as KETCHEM_SETTINGS } from './ketchem/board.js';
 import { drawKetchemGround, drawFog, drawPlayers } from './ketchem/render.js';
 import { isRevealed } from './ketchem/fog.js';
@@ -638,7 +638,7 @@ if(climateSeasonLenEl&&climateSeasonLenOutEl){climateSeasonLenEl.value=CFG.clima
 // Hotkeys
 window.addEventListener('keydown',function(e){
   if((e.target||{}).id==='kAskIn')return;   // keys typed into the question bar are the bar's (Enter answers, Esc declines), F5 and F9 included
-  if(e.target&&e.target.closest&&e.target.closest('#introOverlay'))return;   // a key on the start card's buttons is that button's (Space on a board button must not toggle the run)
+  var introUp=document.getElementById('introOverlay');if(introUp&&introUp.style.display!=='none')return;   // the start card is up: nothing starts until an option is picked (F or Space used to start a world behind it), and a key on its buttons is that button's
   var tag=(e.target||{}).tagName||'';
   if(/INPUT|SELECT|TEXTAREA/.test(tag)){if(K&&(e.key==='F5'||e.key==='F9'||((tag==='SELECT'||(e.target||{}).type==='range')&&e.key!=='Tab'&&!/^(Shift|Control|Alt|Meta)$/.test(e.key)))){e.target.blur();ketchemKey(e);}return;}   // F5 must never reload an unsaved game because a slider had focus; on a board a focused select or slider gives the keys back to the game
   if(K){if(guestKey(e))return;if(ketchemKey(e))return;if(e.ctrlKey||e.metaKey||e.altKey)return;}   // a board is up: the keys are Kevin's character's, and a browser chord (Ctrl+R, Ctrl+F) is the browser's, never the page's reset
@@ -694,7 +694,7 @@ function draw(){
   hudTick(K);           // the HUD bar and the party rows (DOM); hidden without a board
   keypanelTick(K&&K.kevin?keypanelState():null,_kKeyAct);   // the Controls panel (DOM): its buttons feed ketchemKey; hidden without a board
   if(_kProgress)drawBoardProgress();
-  drawHUD();renderChronicle();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
+  drawHUD();renderChronicle();renderTicker();renderObjective();renderSpecies();renderFoodWeb();updateFollow();
 }
 
 // ===== Ketch'em: the board (step 3, 2026-10-24) =====
@@ -1115,6 +1115,7 @@ function adoptBoard(board){
   abandonBuild();followId=null;godCancelMark(null);
   K=board;if(!K.kevin)K.kevin=newPlayer(K.starts[0].x,K.starts[0].y);initPlayer(K.kevin,'kevin');initEncounters(K);initStores(K);closePanel();if(K.tick0===undefined)K.tick0=tick;if(!K.cam)K.cam='kevin';_kCamAt=null;_kPressed={};_gPressed={};_gPotion=false;_gBait=null;_gAlmanac=false;_kBait=null;_kPotion=false;_kOnStore=false;_kAutoAt=tick;
   setHandTool('none');document.body.classList.add('ketchem');
+  CFG.founderFloraMin=0;   // a board's animals are the game's stock: no herd is set down on a board that ran empty
   placeMode='none';resetZoomPan();resize();syncUIToConfig();buildSliders();
   speed=18;var spK=document.getElementById('speed');if(spK)spK.value=18;
   var hSeedK=document.getElementById('hSeed');if(hSeedK)hSeedK.textContent=_seed;
@@ -1365,6 +1366,20 @@ function renderChronicle(){
     rec.innerHTML='<span>Events <b>'+chronicle.events.length+'</b></span><span>Peak herb <b>'+r.peakHerb+'</b></span><span>Peak carn <b>'+r.peakCarn+'</b></span><span>Top gen <b>'+topGen+'</b></span><span>Oldest <b>'+r.oldestAge+'</b></span><span>Biggest <b>'+(r.peakSize?r.peakSize.toFixed(2)+'×':'--')+'</b></span>'; }
   var badge=document.getElementById('chronicleBadge'); if(badge) badge.textContent=String(chronicle.events.length);
 }
+// The chronicle on the map: each new event shows as a line over the top of the map for a few seconds, so the world
+// tells its story where the player is looking and not only in the This world drawer. Three lines at most. A new
+// world starts the telling over; a restored one (undo, a load) does not replay what was already told.
+var _tickSeen=-1,_tickOf=null;
+function renderTicker(){
+  var box=document.getElementById('mapTicker');if(!box)return;
+  var evs=chronicle.events;
+  if(_tickOf!==chronicle){_tickOf=chronicle;box.textContent='';_tickSeen=evs.length>1?evs[evs.length-1].id:-1;}
+  for(var i=Math.max(0,evs.length-3);i<evs.length;i++){var e=evs[i];if(e.id<=_tickSeen)continue;_tickSeen=e.id;
+    var line=document.createElement('div');line.className='tick-line';var dot=document.createElement('i');dot.style.background=e.color;var tx=document.createElement('span');tx.textContent=e.text;
+    line.appendChild(dot);line.appendChild(tx);box.appendChild(line);
+    while(box.children.length>3)box.removeChild(box.firstChild);
+    (function(l){setTimeout(function(){l.classList.add('out');},7000);setTimeout(function(){if(l.parentNode)l.parentNode.removeChild(l);},7900);})(line);}
+}
 
 // ======================================================================
 //  SPECIATION (chunk 6, pillar C): lineage drift -> named, diverging species
@@ -1528,12 +1543,15 @@ var _pendingWorldCode = getWorldCodeParam();
 var HERO_SEEDS = [3,7,9,12,23,42,55,64,88,111,144,256,314,512,808];
 var _heroBootPending = true;
 function _applyContinentCfg(){
-  // Pangaea base + full coastal fill toward a big landmass. Terrain dials ONLY - the tuned ecology
-  // rates are untouched, so ecosystem balance is unaffected.
+  // Pangaea base + full coastal fill toward a big landmass. Terrain dials, the tuned ecology rates untouched,
+  // plus the founding herd (sim.js founderHerd): once 200 plants stand and no animal lives, a herd of grazers
+  // lands together. Measured on eight of the hero seeds over 6,000 ticks: animals first hold (10 alive) at tick
+  // 1,100-2,350, mean 1,500, against a mean of 4,750 without it. It does not steady the boom and bust that follows.
   _applyPresetCfg('pangaea');
   CFG.maxLandCap = 0.87;
   CFG.coastalSpreadBase = 0.02;
   CFG.volcanoChancePerTile = 0.0002;
+  CFG.founderFloraMin = 200;
 }
 
 function init(){
@@ -1620,7 +1638,8 @@ function runTests(){
 // ===== Boot =====
 function boot(){
   try{if(!canvas||!canvas.getContext)throw new Error('Canvas unsupported');if(!ctx)ctx=canvas.getContext('2d');ctx.fillStyle='#00111a';ctx.fillRect(0,0,canvas.width||512,canvas.height||512);ctx.fillStyle='#3b9eff';ctx.font='13px "JetBrains Mono",monospace';ctx.fillText('initializing…',12,22);running=true;if(loopTimer){clearTimeout(loopTimer);loopTimer=null;}if(!started){started=true;init();
-      if(_pendingKetchem){var kp=_pendingKetchem;_pendingKetchem=null;startKetchem(kp.setting,kp.seed,kp.size);}}   // ?ketchem= boot: build a board over the fresh world
+      if(_pendingKetchem){var kp=_pendingKetchem;_pendingKetchem=null;startKetchem(kp.setting,kp.seed,kp.size);}   // ?ketchem= boot: build a board over the fresh world
+      else if(_pendingRoot){var rm=_pendingRoot;_pendingRoot=null;callRootAs(rm);}}   // a Root visit picked on the start card: the world starts, then Root is called into it
     draw();loop();}
   catch(e){var err=document.getElementById('err');if(err){err.style.display='block';err.textContent='Boot error: '+e.message+'\n'+(e.stack||'');}console.error(e);}
 }
@@ -1630,10 +1649,27 @@ function dismissIntro(){
   overlay.classList.add('dismissing');
   setTimeout(function(){overlay.style.display='none';boot();},600);
 }
+// The start card is a list of every way in, and nothing runs until one is picked (owner ruling 2026-11-10): the
+// world alone, Root's three visits (offered only once the relay answers, so never on the public site), and Ketch'em
+// by board. No key starts a default: Tab and Enter work on the options as on any buttons.
+var _pendingRoot=null;
+var INTRO_ROOT={visitor:'Root walks this world with nine tiles of sight, and you talk as it goes.',
+  shaper:'Root walks it and reshapes it with the Hand, wherever it stands.',
+  sky:'Root sees the whole world from above and works the Hand anywhere.'};
 (function(){
   var startBtn=document.getElementById('introStart');
   if(startBtn)startBtn.addEventListener('click',dismissIntro);
-  // Play Ketch'em: a button per board setting (labels and blurbs from board.js SETTINGS). A click does what ?ketchem=<setting> does: boot() reads
+  var group=document.getElementById('introKetchem');
+  visitReady.then(function(ok){
+    if(!ok||!group)return;var ov=document.getElementById('introOverlay');if(!ov||ov.classList.contains('dismissing'))return;
+    Object.keys(INTRO_ROOT).forEach(function(mode){
+      var b=document.createElement('button');b.type='button';b.className='intro-opt';b.setAttribute('data-root',mode);b.innerHTML='<b></b><span></span><em>with Root</em>';
+      b.firstChild.textContent=mode.charAt(0).toUpperCase()+mode.slice(1);b.children[1].textContent=INTRO_ROOT[mode];
+      b.addEventListener('click',function(){if(ov.classList.contains('dismissing'))return;_pendingRoot=mode;dismissIntro();});
+      group.parentNode.insertBefore(b,group);
+    });
+  });
+  // Ketch'em: a button per board setting (labels and blurbs from board.js SETTINGS). A click does what ?ketchem=<setting> does: boot() reads
   // _pendingKetchem and builds the board over the fresh world. Navigating to the URL would land back on this card and ask for a second click.
   var boards=document.getElementById('introBoards');
   if(boards)Object.keys(KETCHEM_SETTINGS).forEach(function(id){
@@ -1642,12 +1678,6 @@ function dismissIntro(){
     b.addEventListener('click',function(){var ov=document.getElementById('introOverlay');if(!ov||ov.classList.contains('dismissing'))return;_pendingKetchem={setting:id,seed:undefined,size:96};dismissIntro();});
     boards.appendChild(b);
   });
-  // Keyboard shortcut: Space or Enter to start
-  // Inert once the intro is gone (dismissed by click or key), or it would eat Space/Enter page-wide.
-  function introKey(e){var ov=document.getElementById('introOverlay');if(!ov||ov.classList.contains('dismissing')){window.removeEventListener('keydown',introKey);return;}
-    if(e.target&&e.target.closest&&e.target.closest('#introBoards'))return;   // Space or Enter on a focused board button picks that board, not the plain start
-    if(e.code==='Space'||e.code==='Enter'){e.preventDefault();dismissIntro();window.removeEventListener('keydown',introKey);}}
-  window.addEventListener('keydown',introKey);
 })();
 
 // Root's visit: on a locally served page with the relay running, a "Call Root" toggle joins the top bar.

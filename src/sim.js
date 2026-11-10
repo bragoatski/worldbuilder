@@ -216,6 +216,7 @@ var CFG={
   floraPerTileMax:4,               // carrying capacity per tile
   ecotoneFloraBoost:1.6,           // flora spread multiplier at biome edges
   faunaSpawnChance:0.001, faunaMutationChance:0.07, faunaMutationMag:0.6,
+  founderFloraMin:0, founderCount:8, founderCooldown:600,   // the founding herd (founderHerd): 0 = off, the shipped default, so the harness and the tests are byte-identical; the default watch-it-grow world turns it on
   faunaSizeMutationMag:0.09,        // COSMETIC size-gene drift per mutation (sd of the Gaussian step on cRng). Heritable + rendered; never affects energy/eat (balance-safe). Clamped to [0.5,2.2]x.
   // Height axis (Ketch'em Mechanics sec. 17): fit x ((1-w) + w x exp(-dE^2 / (2 x tol^2 x 2))). SHIPPED AT 0 (owner ruling
   // pending, 2026-10-24): fit is the per-tick energy tax, so any weight is a survival tax on every creature off its birth
@@ -1041,6 +1042,23 @@ function computeFaunaClimateFit(f){var i=idx(f.x,f.y);if(!inb(f.x,f.y)||grid[i]=
   return fit;}
 function seedFaunaGroup(type,n){var placed=0,guard=5000;while(placed<n&&guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));placed++;}}}
 function spawnFaunaAt(type){var guard=50;while(guard-->0){var x=(eRng()*W)|0,y=(eRng()*H)|0;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC){fauna.push(makeFauna(x,y,type,null));return;}}}
+// The founding herd. A world with plants and no animal at all gets a small herd of grazers set down together beside
+// a plant, instead of waiting on the lone-immigrant trickle (one arrival per ~1,400 ticks, alone, usually on bare
+// ground, usually dead before it breeds: the default world sat empty of animals for its first ~4,500 ticks).
+// Off unless CFG.founderFloraMin > 0, and the off path draws no eRng. It also re-founds after a total extinction,
+// once per founderCooldown. founderAt is not saved: a loaded empty world may get its herd one cooldown early.
+var founderAt=-1e9;
+function _compass(x,y){var ns=y<H/3?'north':(y>=2*H/3?'south':''),ew=x<W/3?'west':(x>=2*W/3?'east':'');return ns&&ew?ns+'-'+ew:(ns||ew||'heart of the land');}
+function founderHerd(){
+  if(!(CFG.founderFloraMin>0)||fauna.length>0||flora.length<CFG.founderFloraMin||tick-founderAt<CFG.founderCooldown)return;
+  var anchor=flora[(eRng()*flora.length)|0];if(!anchor)return;
+  var spots=[];for(var dy=-3;dy<=3;dy++)for(var dx=-3;dx<=3;dx++){var x=anchor.x+dx,y=anchor.y+dy;if(!inb(x,y))continue;var t=grid[idx(x,y)];if(t!==T.OCEAN&&t!==T.MOUNTAIN&&t!==T.VOLCANIC)spots.push(x,y);}
+  if(!spots.length)return;
+  founderAt=tick;var placed=CFG.founderCount;
+  for(var k=0;k<placed;k++){var s=((eRng()*(spots.length/2))|0)*2;fauna.push(makeFauna(spots[s],spots[s+1],'herbivore',null));}
+  chronicleAdd('arrival','A herd of grazers came ashore in the '+_compass(anchor.x,anchor.y)+'.','#5bb8f0');
+  if(chronicle.prev)chronicle.prev.herb=placed;   // the sampler would otherwise add its own "Herbivores returned" line for the same arrival
+}
 function naturalFaunaSpawn(){if(fauna.length>=CFG.faunaMaxPop)return;
   // Count the tiers SEPARATELY: lumping scavengers/apex/omnivore into cc would starve knob D's carnivore rescue
   // of headroom once those tiers exist (a confound). All are 0 when their flags are off, so cc == carnivores as before.
@@ -1138,7 +1156,7 @@ function cloneFaunaChild(parent,cx,cy){return makeFauna(cx,cy,parent.type,{prefA
 // A fauna death drops a corpse for scavengers (trophic-depth experiment). No-op unless the flag is on -> the
 // eRng stream is byte-identical to C2 when off. No RNG here, so even when on it does not shift the stream.
 function _dropCarrion(x,y){ if(CFG.scavengersEnabled) carrion.push({x:x,y:y,tick:tick}); }
-function faunaStep(){if(!CFG.ecoActive)return;naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(eRng()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
+function faunaStep(){if(!CFG.ecoActive)return;founderHerd();naturalFaunaSpawn();buildSpatialIndex();var newFauna=[];var order=[];for(var oi=0;oi<fauna.length;oi++)order.push(oi);for(var si=order.length-1;si>0;si--){var ri=(eRng()*(si+1))|0;var tmp=order[si];order[si]=order[ri];order[ri]=tmp;}
   for(var oi2=0;oi2<order.length;oi2++){var fi=order[oi2];var f=fauna[fi];if(!f)continue;if(f.held)continue;   // Ketch'em (sec. 6-7): a creature walking to bait, feeding, bolting or fleeing is moved by the encounter, not the sim; nothing held = this line never fires
     var isHerb=(f.type==='herbivore');var climateFit=computeFaunaClimateFit(f);var idleCost=isHerb?CFG.faunaIdleCost:(CFG.faunaIdleCost*0.6);f.energy-=(idleCost+CFG.faunaClimatePenalty*(1-climateFit));f.age++;if(f.energy<=0){deathParticles.push({x:f.x,y:f.y,type:'starve',tick:tick});_dropCarrion(f.x,f.y);fauna[fi]=null;continue;}if(f.age>=f.maxAge){deathParticles.push({x:f.x,y:f.y,type:'age',tick:tick});_dropCarrion(f.x,f.y);fauna[fi]=null;continue;}if(grid[idx(f.x,f.y)]===T.OCEAN){fauna[fi]=null;continue;}
     f.moveCD--;f.eatCD--;if(f.moveCD<=0){f.moveCD=isHerb?CFG.herbivoreSpeed:(f.type==='scavenger'?CFG.scavengerSpeed:(f.type==='apex'?CFG.apexSpeed:(f.type==='omnivore'?CFG.omnivoreSpeed:CFG.carnivoreSpeed)));var nbrs=neighbors4(f.x,f.y);var bestScore=scoreTileForFauna(f,f.x,f.y,isHerb);var bestPos=[f.x,f.y];for(var ni=0;ni<nbrs.length;ni++){var nx=nbrs[ni][0],ny=nbrs[ni][1];if(grid[idx(nx,ny)]===T.OCEAN)continue;var score=scoreTileForFauna(f,nx,ny,isHerb)+(eRng()-0.5)*0.5;if(score>bestScore){bestScore=score;bestPos=[nx,ny];}}if(bestPos[0]!==f.x||bestPos[1]!==f.y){f.x=bestPos[0];f.y=bestPos[1];f.energy-=CFG.faunaMoveCost;}}
@@ -1856,7 +1874,7 @@ function initWorld(seedOverride){
   cRng=mulberry32((_seed ^ 0x85EBCA6B) >>> 0);
   hRng=mulberry32((_seed ^ 0xC2B2AE35) >>> 0);
   if(W<=0||H<=0){W=96;H=96;}
-  tick=0;_godUndo=null;springs=[];grid=new Uint8Array(W*H);road=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
+  tick=0;founderAt=-1e9;_godUndo=null;springs=[];grid=new Uint8Array(W*H);road=new Uint8Array(W*H);elev=new Float32Array(W*H);aridity=new Float32Array(W*H);waterDist=new Float32Array(W*H);tempField=new Float32Array(W*H);sunlight=new Float32Array(W*H);coastTTL=new Int16Array(W*H);adjCooldown=new Uint16Array(W*H);ringDone=new Uint8Array(W*H);hillDecayCount=new Uint8Array(W*H);peakVolcano=new Uint8Array(W*H);volcActive=new Uint8Array(W*H);volcAge=new Int32Array(W*H);volcLife=new Int32Array(W*H);volcanoRing=new Uint8Array(W*H);volcanoCenters=[];biomeStability=new Uint8Array(W*H);biomeDesiredNext=new Uint8Array(W*H);yearlyVariation=1.0;anomalyBlobs=null;seasonAnchorTick=0;_prevSeasonalTilt=!!CFG.seasonalTilt;_prevAnomalies=!!CFG.anomalies;climateInit();flora=[];fauna=[];floraIdCounter=0;faunaIdCounter=0;
   popHistory={flora:[],herb:[],carn:[],scav:[],apex:[],omni:[],ticks:[]};biomeBoundary=new Uint8Array(W*H);floraRemnants=[];deathParticles=[];carrion=[];speciesNameCache={};chronicle=newChronicle();speciesRegistry=newSpeciesRegistry();foodWeb=newFoodWeb();clearRivers();
   for(var i0=0;i0<W*H;i0++){grid[i0]=T.OCEAN;coastTTL[i0]=0;volcActive[i0]=0;volcAge[i0]=0;volcLife[i0]=0;elev[i0]=0;adjCooldown[i0]=0;ringDone[i0]=0;hillDecayCount[i0]=0;peakVolcano[i0]=0;volcanoRing[i0]=0;biomeStability[i0]=0;biomeDesiredNext[i0]=T.OCEAN;}
   pickWorldMeta();reseedSunlight();computeSunlight();computeTemperature();computeAridity();applyClimate();applyElevationIntensity();

@@ -111,9 +111,13 @@ export function drawWorld(ctx, PIX, opts){
   if(CFG.ecoRender){for(var fi=0;fi<flora.length;fi++){var f=flora[fi];if(!f)continue;var fw=riverData&&riverData[idx(f.x,f.y)];if(fw&&fw.lake)continue;var brightness=0.4+0.6*f.health;var fCol=hsv2hex(f.hue,f.sat*(0.3+0.7*f.health),f.val*brightness);ctx.fillStyle=fCol;var px=f.x*PIX,py=f.y*PIX;var sz=Math.max(1,PIX<6?1:2);var off=((PIX-sz)/2)|0;
     if(f.shape==='dot'){ctx.fillRect(px+off,py+off,sz,sz);}else if(f.shape==='plus'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='x'){ctx.fillRect(px+off-1,py+off-1,1,1);ctx.fillRect(px+off+sz,py+off-1,1,1);ctx.fillRect(px+off,py+off,sz,sz);ctx.fillRect(px+off-1,py+off+sz,1,1);ctx.fillRect(px+off+sz,py+off+sz,1,1);}else if(f.shape==='ring'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,1,sz);ctx.fillRect(px+off+sz,py+off,1,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else if(f.shape==='diamond'){ctx.fillRect(px+off,py+off-1,sz,1);ctx.fillRect(px+off-1,py+off,sz+2,sz);ctx.fillRect(px+off,py+off+sz,sz,1);}else{ctx.fillRect(px+off,py+off,sz,sz);}}}
   // Fauna render
-  if(CFG.ecoRender){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var aBright=0.4+0.6*(a.energy/a.maxEnergy);var apx=a.x*PIX,apy=a.y*PIX;
+  if(CFG.ecoRender){for(var ai=0;ai<fauna.length;ai++){var a=fauna[ai];if(!a)continue;var aw=riverData&&riverData[idx(a.x,a.y)];if(aw&&aw.lake)continue;var aBright=Math.min(1/Math.max(0.2,a.val),(0.55+0.45*(a.energy/a.maxEnergy))*1.5);var apx=a.x*PIX,apy=a.y*PIX;   // lifted on the map: the dark tiers (apex crimson, scavenger olive, carnivore slate) vanished into the plate at their gene value
     // Heritable SIZE gene -> rendered marker dimension. This is the visible part of evolution; cosmetic only.
-    var dim=clamp(Math.round(Math.min(4,PIX-1)*(a.size||1)),2,Math.round(PIX*2.2));
+    // An animal must read as an animal at the default zoom: from 7 px a tile its glyph nearly fills the tile (it was
+    // 4 px, the size of a plant's glyph, and the two read as one texture), and from 5 px it sits on a dark plate one
+    // pixel wider than itself, which lifts it off the terrain and the plants.
+    var dim=clamp(Math.round((PIX>=7?PIX-2:Math.min(4,PIX-1))*(a.size||1)),2,Math.round(PIX*2.2));
+    if(PIX>=5){ctx.fillStyle='rgba(4,8,14,0.62)';var bs=dim+2;var bo=((PIX-bs)/2)|0;ctx.fillRect(apx+bo,apy+bo,bs,bs);}
     drawCreatureShape(ctx,a,apx,apy,PIX,dim,aBright);
     // Follow highlight: an accent ring around the creature the camera is tracking.
     if(followId!=null&&a.id===followId){ctx.strokeStyle='#3b9eff';ctx.lineWidth=1;var rs=dim+4;var ro=((PIX-rs)/2)|0;ctx.strokeRect(apx+ro+0.5,apy+ro+0.5,rs-1,rs-1);}}}
