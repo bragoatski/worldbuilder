@@ -57,7 +57,7 @@ function Stop-Servers {
     foreach ($procId in $owners) {
       $p = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
       # Only our own node servers, never whatever else might hold the port.
-      if ($p -and $p.Name -eq 'node.exe' -and $p.CommandLine -match 'vite\\bin\\vite\.js|visit\\relay\.mjs') {
+      if ($p -and $p.Name -eq 'node.exe' -and $p.CommandLine -match 'vite[\\/]bin[\\/]vite\.js|visit[\\/]relay\.mjs') {   # Vite spawns the relay as visit/relay.mjs
         Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
         Log "stopped $port (PID $procId)"
       }
