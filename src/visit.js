@@ -143,7 +143,9 @@ function creatureCode(f, sx, sy, st, K = null) {
 export function perceive(st, K = null) {
   const sx = st.x, sy = st.y, i0 = idx(sx, sy);
   const head = ['t' + tick, seasonCode(), '@' + sx + ',' + sy, TNAME[grid[i0]].toLowerCase(), 'e' + elev[i0].toFixed(1),
-    tempWord(tempField[i0]), aridWord(aridity[i0]), K && st.boat ? 'boat' : ''].filter(Boolean).join(' ');
+    tempWord(tempField[i0]), aridWord(aridity[i0]), K && st.boat ? 'boat' : '',
+    // the view's edge in world coordinates, so an empty square reads as "nothing here", not "nothing anywhere" (mattdamon, Fork c1358)
+    'view ' + (sx - SIGHT) + '..' + (sx + SIGHT) + ',' + (sy - SIGHT) + '..' + (sy + SIGHT)].filter(Boolean).join(' ');
   const storeAt = K ? new Set(K.stores.map(s => idx(s.x, s.y))) : null;
   const byTile = new Map();
   for (let k = 0; k < fauna.length; k++) {
@@ -194,6 +196,12 @@ export function perceive(st, K = null) {
   if (friend && (Math.abs(friend.x - sx) > SIGHT || Math.abs(friend.y - sy) > SIGHT)) tail.push('"' + st.companion.name + '" out of sight');
   const near = st.places.filter(p => Math.abs(p.x - sx) <= SIGHT && Math.abs(p.y - sy) <= SIGHT);
   if (near.length) tail.push('named ' + near.map(p => '"' + p.name + '" ' + bearing(p.x - sx, p.y - sy)).join(', '));
+  // A known place outside the square is said to be out of view with its bearing, never dropped silently; the 3 nearest only,
+  // because every look stays in context for the rest of the visit.
+  const far = st.places.filter(p => !near.includes(p))
+    .sort((a, b) => Math.max(Math.abs(a.x - sx), Math.abs(a.y - sy)) - Math.max(Math.abs(b.x - sx), Math.abs(b.y - sy)));
+  if (far.length) tail.push('not in view ' + far.slice(0, 3).map(p => '"' + p.name + '" ' + bearing(p.x - sx, p.y - sy)).join(', ') +
+    (far.length > 3 ? ' +' + (far.length - 3) : ''));
   out.push(tail.join(' · '));
   if (K) {
     out.push(...lookLines(K, sx, sy, SIGHT, 'root'));

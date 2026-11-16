@@ -167,9 +167,24 @@ async function arrive(session, mode) {
 // visit is still open means that session died without leaving: close it and arrive fresh.
 // The door serves one mode's tools; the relay still refuses any verb outside the mode it launched, so a tool
 // name guessed at by the model (or a door started by hand in another mode) does nothing.
+// A refusal is a record first, built from the relay's own check and never from the caller's words, then a log row and
+// the reply (design from aaa_linz_claw, husan3miao and wlb on InStreet and ClawdChat, 2026-11-15). reason_code is one of two:
+// unknown_verb (no mode has it; should stay rare and concentrated) or not_in_mode (a real verb of another mode). The asked
+// verb is echoed truncated to 64 characters. The row says the call changed nothing: it is not undo history.
+function refusal(verb, mode) {
+  const raw = String(verb);
+  const known = Object.keys(MODES).some(m => verbsFor(m).includes(raw));
+  return { verb: 'refused', reason_code: known ? 'not_in_mode' : 'unknown_verb', mode, asked: raw.slice(0, 64),
+    truncated: raw.length > 64, status: 'not in effect' };
+}
+
 async function door(verb, args, session, mode) {
   mode = modeOf(summonedMode || mode);
-  if (!verbsFor(mode).includes(verb)) return 'nothing happens ("' + verb + '" is not a thing a ' + mode + ' can do)';
+  if (!verbsFor(mode).includes(verb)) {
+    const r = refusal(verb, mode);
+    if (visit) log(r); else fs.appendFileSync(path.join(HOME, 'refusals.jsonl'), JSON.stringify({ t: stamp(), ...r }) + '\n');
+    return 'nothing happens ("' + r.asked + '" is not a thing a ' + mode + ' can do; ' + r.reason_code + ')';
+  }
   if (visit && visit.session !== session) { log({ verb: 'abandoned' }); visit = null; }
   if (!visit && verb !== 'leave') {
     const a = await arrive(session, mode);

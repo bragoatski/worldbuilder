@@ -34,6 +34,12 @@ describe('visit: what Root perceives', () => {
     expect(rows[0][0][v.SIGHT]).toBe('M');        // the mountain 4 north is inside the square
   });
 
+  it('states its view edge in world coordinates and names a known place out of view (mattdamon c1358)', () => {
+    expect(v.perceive(st).split('\n')[0]).toMatch(/ view 12\.\.20,12\.\.20$/);
+    st.places.push({ name: 'Far Pond', x: 16 + v.SIGHT + 3, y: 16 });
+    expect(v.perceive(st)).toMatch(/not in view "Far Pond" 7E/);
+  });
+
   it('does not see a creature one tile outside its sight', () => {
     sim.fauna.push(sim.makeFauna(16 + v.SIGHT + 1, 16, 'herbivore'));
     expect(v.perceive(st)).not.toMatch(/^H /m);
